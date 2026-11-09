@@ -178,35 +178,105 @@ fn read_text_macos() -> Option<Content> {
     non_empty_text(text)
 }
 
-fn read_windows() -> Option<Content> {
-    let script = "Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $ms = New-Object System.IO.MemoryStream; $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); [System.Convert]::ToBase64String($ms.ToArray()) }";
-    let output = Command::new("powershell.exe")
-        .args(["-NonInteractive", "-NoProfile", "-Command", script])
-        .stdin(Stdio::null())
-        .output()
-        .ok()?;
-    let data = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if output.status.success() && !data.is_empty() {
-        return Some(Content::Image {
-            mime: "image/png".into(),
-            data,
-        });
+/// The Windows image bridge: the clipboard image as base64 on stdout.
+const WINDOWS_IMAGE_SCRIPT: &str = "Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $ms = New-Object System.IO.MemoryStream; $img.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); [System.Convert]::ToBase64String($ms.ToArray()) }";
+
+/// Windows clipboard access is contended: the app that owns the clipboard may
+/// hold it while another read races it, and `OpenClipboard` fails with
+/// `CLIPBRD_E_CANT_OPEN`. A few short retries absorb that race; the count is
+/// bounded so a wedged clipboard costs a moment, not a hang.
+const WINDOWS_READ_ATTEMPTS: u32 = 3;
+const WINDOWS_RETRY_DELAY_MS: u64 = 50;
+
+/// One attempt to run a Windows clipboard script. `Output` carries the stdout
+/// bytes of a clean exit; `Failed` covers spawn errors and nonzero exits, the
+/// transient cases a retry can still recover.
+enum WindowsOutput {
+    Output(Vec<u8>),
+    Failed,
+}
+
+/// Read the clipboard through a script, retrying script failures. A script
+/// that ran and found nothing is a definitive answer and stops the retries;
+/// `parse` decides what the bytes mean.
+fn windows_read<T>(
+    script: &str,
+    delay_ms: u64,
+    mut invoke: impl FnMut(&str) -> WindowsOutput,
+    parse: impl Fn(&[u8]) -> Option<T>,
+) -> Option<T> {
+    for attempt in 1..=WINDOWS_READ_ATTEMPTS {
+        match invoke(script) {
+            WindowsOutput::Output(bytes) => return parse(&bytes),
+            WindowsOutput::Failed if attempt < WINDOWS_READ_ATTEMPTS => {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+            WindowsOutput::Failed => return None,
+        }
     }
     None
 }
 
-fn read_text_windows() -> Option<Content> {
-    let output = Command::new("powershell.exe")
-        .args([
-            "-NonInteractive",
-            "-NoProfile",
-            "-Command",
-            "Get-Clipboard -Raw",
-        ])
+fn run_powershell(script: &str) -> WindowsOutput {
+    match Command::new("powershell.exe")
+        .args(["-NonInteractive", "-NoProfile", "-Command", script])
         .stdin(Stdio::null())
         .output()
-        .ok()?;
-    non_empty_text(String::from_utf8_lossy(&output.stdout).to_string())
+    {
+        Ok(output) if output.status.success() => WindowsOutput::Output(output.stdout),
+        _ => WindowsOutput::Failed,
+    }
+}
+
+fn read_windows() -> Option<Content> {
+    windows_read(
+        WINDOWS_IMAGE_SCRIPT,
+        WINDOWS_RETRY_DELAY_MS,
+        run_powershell,
+        parse_windows_image,
+    )
+}
+
+fn read_text_windows() -> Option<Content> {
+    windows_read(
+        "Get-Clipboard -Raw",
+        WINDOWS_RETRY_DELAY_MS,
+        run_powershell,
+        parse_windows_text,
+    )
+}
+
+/// The image bridge returns base64 of the PNG bytes. Keep it only when it is
+/// canonical base64, so console noise can never reach the engine as pixels.
+fn parse_windows_image(bytes: &[u8]) -> Option<Content> {
+    let data = parse_base64_payload(bytes)?;
+    Some(Content::Image {
+        mime: "image/png".into(),
+        data,
+    })
+}
+
+fn parse_base64_payload(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?.trim();
+    let canonical = !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='));
+    canonical.then(|| text.to_string())
+}
+
+/// `-Raw` output carries one console-added newline terminator; a newline the
+/// clipboard itself holds survives as the second one, so trim exactly one.
+fn parse_windows_text(bytes: &[u8]) -> Option<Content> {
+    non_empty_text(trim_console_newline(
+        String::from_utf8_lossy(bytes).to_string(),
+    ))
+}
+
+fn trim_console_newline(text: String) -> String {
+    text.strip_suffix("\r\n")
+        .map(str::to_string)
+        .unwrap_or_else(|| text.strip_suffix('\n').map(str::to_string).unwrap_or(text))
 }
 
 fn read_linux(wayland: bool) -> Option<Content> {
@@ -412,5 +482,108 @@ mod tests {
         std::fs::write(&path, b"").unwrap();
         assert!(read_host_image(Some(&path)).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The Windows retry harness: a contended clipboard can fail to open a few
+    /// times before it answers. `windows_read` takes its script runner as a
+    /// parameter, so the retry semantics run on every platform's CI, not only
+    /// where a clipboard exists.
+    #[test]
+    fn windows_read_retries_a_failed_script_until_it_runs() {
+        let mut attempts = 0;
+        let content = windows_read(
+            "script",
+            0,
+            |_| {
+                attempts += 1;
+                if attempts < 3 {
+                    WindowsOutput::Failed
+                } else {
+                    WindowsOutput::Output(b"cG5n".to_vec())
+                }
+            },
+            parse_windows_image,
+        );
+        assert_eq!(attempts, 3, "the third attempt carried the answer");
+        assert_eq!(
+            content,
+            Some(Content::Image {
+                mime: "image/png".into(),
+                data: "cG5n".into()
+            })
+        );
+    }
+
+    /// A script that ran and found nothing is a definitive answer: retrying
+    /// cannot turn "no image" into one, so the loop stops after one attempt.
+    #[test]
+    fn windows_read_stops_at_a_definitive_answer() {
+        let mut attempts = 0;
+        let content = windows_read(
+            "script",
+            0,
+            |_| {
+                attempts += 1;
+                WindowsOutput::Output(Vec::new())
+            },
+            parse_windows_image,
+        );
+        assert_eq!(attempts, 1, "an empty stdout is an answer, not a failure");
+        assert_eq!(content, None);
+    }
+
+    /// A wedged clipboard must not hang the read: the attempts are bounded.
+    #[test]
+    fn windows_read_gives_up_after_the_bounded_attempts() {
+        let mut attempts = 0;
+        let content = windows_read(
+            "script",
+            0,
+            |_| {
+                attempts += 1;
+                WindowsOutput::Failed
+            },
+            parse_windows_image,
+        );
+        assert_eq!(attempts, WINDOWS_READ_ATTEMPTS);
+        assert_eq!(content, None);
+    }
+
+    /// Console noise can never reach the engine as pixels: only canonical
+    /// base64 passes as the image bridge's payload.
+    #[test]
+    fn parse_windows_image_accepts_only_canonical_base64() {
+        assert_eq!(
+            parse_windows_image(b"cG5n\n"),
+            Some(Content::Image {
+                mime: "image/png".into(),
+                data: "cG5n".into()
+            })
+        );
+        assert_eq!(parse_windows_image(b"Add-Type : error at line 1"), None);
+        assert_eq!(parse_windows_image(b""), None);
+    }
+
+    /// PowerShell's `-Raw` adds one newline as a console terminator; a newline
+    /// the clipboard itself holds survives as the second one.
+    #[test]
+    fn parse_windows_text_trims_only_the_console_newline() {
+        assert_eq!(
+            parse_windows_text(b"hello\r\n"),
+            Some(Content::Text("hello".into()))
+        );
+        assert_eq!(
+            parse_windows_text(b"hello\n"),
+            Some(Content::Text("hello".into()))
+        );
+        assert_eq!(
+            parse_windows_text(b"a\r\nb\r\n"),
+            Some(Content::Text("a\r\nb".into()))
+        );
+        assert_eq!(
+            parse_windows_text(b"\r\n"),
+            None,
+            "a bare console terminator is not text"
+        );
     }
 }

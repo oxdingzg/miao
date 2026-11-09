@@ -811,9 +811,12 @@ fn placeholder_kind(inner: &str) -> Option<Placeholder> {
     if inner == "File" || inner.starts_with("File ") {
         return Some(Placeholder::Attachment);
     }
-    let count = inner
+    let rest = inner
         .strip_prefix("Pasted ~")
         .and_then(|rest| rest.strip_suffix(" lines"))?;
+    // ` #N` distinguishes a second paste of the same size; what the operator
+    // reads is still the line count before it.
+    let count = rest.split_once(" #").map_or(rest, |(count, _)| count);
     numbered(count).then_some(Placeholder::Paste)
 }
 
@@ -1317,7 +1320,22 @@ impl Composer {
                 // TypeScript prompt uses.
                 let lines = normalized.lines().count();
                 if lines >= 3 || normalized.chars().count() > 150 {
-                    let placeholder = format!("[Pasted ~{lines} lines]");
+                    // Two pastes of one size must not share a marker: submit
+                    // expands by marker text, so identical markers would hand
+                    // the first paste's text to both. A sequence suffix keeps
+                    // every marker 1:1 with its payload.
+                    let base = format!("Pasted ~{lines} lines");
+                    let mut marker = base.clone();
+                    let mut sequence = 1;
+                    while self
+                        .pastes
+                        .iter()
+                        .any(|(placeholder, _)| placeholder == &format!("[{marker}]"))
+                    {
+                        sequence += 1;
+                        marker = format!("{base} #{sequence}");
+                    }
+                    let placeholder = format!("[{marker}]");
                     self.pastes.push((placeholder.clone(), normalized));
                     self.editor.insert_str(&placeholder);
                 } else {
@@ -1356,7 +1374,13 @@ impl Composer {
             format!("[File {name}] ")
         };
         self.editor.insert_str(&marker);
-        self.attachments.push(json!({ "mime": mime, "data": data }));
+        let mut attachment = json!({ "mime": mime, "data": data });
+        if !name.is_empty() {
+            // The name rides as metadata so the engine names the materialized
+            // copy after it and durable history matches the marker on screen.
+            attachment["metadata"] = json!({ "name": name });
+        }
+        self.attachments.push(attachment);
         self.refresh_completion();
         images + 1
     }
@@ -2239,6 +2263,89 @@ mod tests {
 
     /// Bracketed prose the operator typed is still ordinary text: only the
     /// markers the composer writes read as one unit.
+    /// Two pastes of one size used to share one marker, so submit handed the
+    /// first paste's text to both. The sequence suffix keeps every marker 1:1
+    /// with its payload, and each marker expands in place to its own block.
+    #[test]
+    fn two_same_size_pastes_keep_distinct_markers_and_payloads() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-paste-pair-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        let first = "one\ntwo\nthree";
+        let second = "alpha\nbeta\ngamma";
+        composer.paste(first);
+        composer.paste(second);
+        assert_eq!(
+            composer.editor.text(),
+            "[Pasted ~3 lines][Pasted ~3 lines #2]",
+            "the second paste of one size gets a sequence suffix"
+        );
+        let Action::Submit { text, .. } = composer.submit() else {
+            panic!("placeholders keep the composer non-empty");
+        };
+        assert_eq!(
+            text,
+            format!("{first}{second}"),
+            "each marker expands to its own block, in place"
+        );
+    }
+
+    /// The numbered marker reads as one unit and takes its own block with it:
+    /// deleting the second paste must not drop the first one's text, and a
+    /// third paste of the same size reuses the freed base marker.
+    #[test]
+    fn backspace_takes_the_numbered_paste_marker_and_drops_its_text() {
+        let dir =
+            std::env::temp_dir().join(format!("miao-tui-paste-pair-del-{}", std::process::id()));
+        let mut composer = composer(&dir);
+        composer.paste("one\ntwo\nthree");
+        composer.paste("alpha\nbeta\ngamma");
+        composer.handle_edit_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &Keymap::default(),
+        );
+        assert_eq!(composer.editor.text(), "[Pasted ~3 lines]");
+        assert_eq!(
+            composer.pastes,
+            vec![(
+                "[Pasted ~3 lines]".to_string(),
+                "one\ntwo\nthree".to_string()
+            )],
+            "the second block went with its marker; the first survives"
+        );
+        composer.paste("x\ny\nz");
+        assert_eq!(
+            composer.editor.text(),
+            "[Pasted ~3 lines][Pasted ~3 lines #2]"
+        );
+        let Action::Submit { text, .. } = composer.submit() else {
+            panic!("placeholders keep the composer non-empty");
+        };
+        assert_eq!(text, "one\ntwo\nthreex\ny\nz");
+    }
+
+    /// A file-backed attachment carries its name as metadata, so the engine
+    /// names the materialized copy after it and durable history matches the
+    /// marker on screen. A clipboard image has no source name and carries none.
+    #[test]
+    fn a_pasted_file_names_its_attachment_but_a_clipboard_image_does_not() {
+        let dir = std::env::temp_dir().join(format!("miao-tui-attach-name-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("plan.pdf"), b"%PDF-1.4").expect("write pdf");
+        let mut composer = composer(&dir);
+        composer.paste("plan.pdf");
+        assert_eq!(
+            composer.attachments[0]["metadata"],
+            json!({ "name": "plan.pdf" }),
+            "the file name rides with the bytes"
+        );
+        composer.attach_image("image/png", "cG5n");
+        assert!(
+            composer.attachments[1].get("metadata").is_none(),
+            "a clipboard image has no source name"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn typed_brackets_still_delete_one_character_at_a_time() {
         let dir = std::env::temp_dir().join(format!("miao-tui-brackets-{}", std::process::id()));
