@@ -2211,6 +2211,7 @@ mod tests {
             visible: (0..labels.len()).collect(),
             search: false,
             slots: Vec::new(),
+            previewed: Vec::new(),
         }
     }
 
