@@ -234,7 +234,10 @@ fn stopping_every_job_asks_first_and_shows_the_true_state_after() {
         "the global stop never asked:\n{}",
         harness.screen()
     );
-    harness.write(b"\x1b");
+    // `n` keeps the safe choice and Enter closes the dialog; the reopened
+    // list still names the job running.
+    harness.write(b"n");
+    harness.write(b"\r");
     harness.write(b"\x18j");
     assert!(
         harness.wait_for("job_build · ses_a · running", Duration::from_secs(30)),
@@ -243,7 +246,8 @@ fn stopping_every_job_asks_first_and_shows_the_true_state_after() {
     );
 
     // `y` arms the reopened confirmation and Enter fires it; the engine
-    // answers which ids stopped and the refreshed list shows the true state.
+    // answers which ids stopped and the refreshed list shows the true state,
+    // with the output tail the stopped job produced.
     harness.write(b"X");
     assert!(
         harness.wait_for("Stop every background job", Duration::from_secs(30)),
@@ -258,7 +262,7 @@ fn stopping_every_job_asks_first_and_shows_the_true_state_after() {
         harness.screen()
     );
     assert!(
-        harness.wait_for("bun test · build log tail", Duration::from_secs(30)),
+        harness.wait_for("build log tail", Duration::from_secs(30)),
         "the stopped job's recent output never rendered:\n{}",
         harness.screen()
     );

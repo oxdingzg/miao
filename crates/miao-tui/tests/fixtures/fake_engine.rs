@@ -515,9 +515,16 @@ fn main() {
                     "stopped" => "cancelled",
                     _ => "running",
                 };
+                // A stopped job kept what it produced, so the preview answer
+                // names the same tail the list row already carried.
+                let result = if phase == "stopped" {
+                    json!({"stdout":"build log tail"})
+                } else {
+                    json!(null)
+                };
                 send(
                     &mut out,
-                    json!({"id":id,"result":{"state":state,"result":null}}),
+                    json!({"id":id,"result":{"state":state,"result":result}}),
                 );
             }
             "stop_all_jobs" if jobs_phase.is_some() => {
