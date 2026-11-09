@@ -1512,6 +1512,14 @@ impl App {
             MouseEventKind::ScrollDown => 1,
             _ => return,
         };
+        // An open dialog owns the wheel first: the notch moves what the
+        // pointer is over instead of the transcript behind it. Dialogs move
+        // one row per notch, the way their arrow keys do; the transcript keeps
+        // the configured speed and burst.
+        if let Some(dialog) = self.dialog.as_mut() {
+            dialog.scroll(delta);
+            return;
+        }
         match self.screen {
             Screen::Session => {
                 // One notch moves `scroll_speed` rows, or more when the notches
@@ -5383,6 +5391,36 @@ mod tests {
         assert_eq!(
             app.shell.composer.notice, None,
             "two cells are two clicks, not a word grab"
+        );
+    }
+
+    /// UX-02: the wheel over an open dialog moves the dialog, not the
+    /// transcript behind it.
+    #[test]
+    fn a_wheel_notch_moves_an_open_dialog_not_the_transcript() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        app.dialog = Some(Dialog::Message(TextDialog {
+            title: "details",
+            lines: (0..20).map(|index| format!("line {index}")).collect(),
+            scroll: 3,
+        }));
+        let tail = app.shell.transcript_scroll();
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        let scroll = match app.dialog.as_ref() {
+            Some(Dialog::Message(text)) => text.scroll,
+            _ => panic!("the text dialog stays open"),
+        };
+        assert_eq!(scroll, 4, "one notch moved the dialog one row");
+        assert_eq!(
+            app.shell.transcript_scroll(),
+            tail,
+            "the transcript behind the dialog did not move"
         );
     }
 

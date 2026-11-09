@@ -1532,6 +1532,52 @@ impl Dialog {
         }
     }
 
+    /// Move the open dialog by wheel notches: one row per notch, the way the
+    /// arrow keys move. Dialogs with nothing to scroll — an editor or a
+    /// choice — keep the notch.
+    pub fn scroll(&mut self, rows: i32) {
+        match self {
+            Dialog::SavedPermissions(dialog) => dialog.scroll(rows),
+            Dialog::WorkspaceChanges(dialog) => dialog.scroll(rows),
+            Dialog::Models(list)
+            | Dialog::ModelProviders(list)
+            | Dialog::Theme(list)
+            | Dialog::Sessions(list)
+            | Dialog::ProviderAccounts(list)
+            | Dialog::Accounts(list)
+            | Dialog::Stash(list)
+            | Dialog::Timeline(list)
+            | Dialog::Status(list)
+            | Dialog::Debug(list)
+            | Dialog::Help(list)
+            | Dialog::Mcp(list)
+            | Dialog::Providers(list)
+            | Dialog::Devices(list)
+            | Dialog::Jobs(list)
+            | Dialog::Schedule(list)
+            | Dialog::Skills(list)
+            | Dialog::Workspaces(list)
+            | Dialog::Worktrees(list)
+            | Dialog::TurnTimings(list) => list.move_cursor(rows),
+            Dialog::Message(text) => {
+                text.scroll = text.scroll.saturating_add_signed(rows as isize);
+            }
+            Dialog::Palette(palette) => {
+                if palette.visible.is_empty() {
+                    return;
+                }
+                palette.selected = (palette.selected as i32 + rows)
+                    .clamp(0, palette.visible.len() as i32 - 1)
+                    as usize;
+            }
+            Dialog::Rename(_)
+            | Dialog::Tag(_)
+            | Dialog::SignIn(_)
+            | Dialog::WorktreeNew(_)
+            | Dialog::Confirm(_) => {}
+        }
+    }
+
     pub fn title(&self) -> &'static str {
         match self {
             Dialog::SavedPermissions(_) => "saved permissions",
@@ -2096,6 +2142,64 @@ fn comparable(model: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    fn list_dialog(labels: &[&str]) -> ListDialog {
+        let rows = labels
+            .iter()
+            .map(|label| Row {
+                id: (*label).to_string(),
+                label: (*label).to_string(),
+                detail: String::new(),
+            })
+            .collect();
+        ListDialog {
+            title: "test",
+            rows,
+            selected: 0,
+            kind: ListKind::Plain,
+            hint: "",
+            filter: Editor::new(),
+            visible: (0..labels.len()).collect(),
+            search: false,
+            slots: Vec::new(),
+        }
+    }
+
+    /// UX-02: the wheel has to move the open dialog the notch is over, one row
+    /// per notch, the way the arrow keys do — including at the ends.
+    #[test]
+    fn a_wheel_notch_moves_a_list_dialog_selection() {
+        let mut dialog = Dialog::Models(list_dialog(&["a", "b", "c"]));
+        let selected = |dialog: &Dialog| dialog.list().expect("a list dialog").selected;
+        assert_eq!(selected(&dialog), 0);
+        dialog.scroll(1);
+        assert_eq!(selected(&dialog), 1);
+        dialog.scroll(-1);
+        assert_eq!(selected(&dialog), 0, "the notch came back");
+        dialog.scroll(-5);
+        assert_eq!(selected(&dialog), 0, "the top clamps");
+        dialog.scroll(5);
+        assert_eq!(selected(&dialog), 2, "the bottom clamps");
+    }
+
+    /// The wheel on a text dialog is the j/k keys, and scrolling up past the
+    /// top must not underflow.
+    #[test]
+    fn a_wheel_notch_scrolls_a_text_dialog_without_underflow() {
+        let mut dialog = Dialog::Message(TextDialog {
+            title: "details",
+            lines: (0..20).map(|index| format!("line {index}")).collect(),
+            scroll: 2,
+        });
+        let scroll = |dialog: &Dialog| match dialog {
+            Dialog::Message(text) => text.scroll,
+            _ => unreachable!("a text dialog"),
+        };
+        dialog.scroll(5);
+        assert_eq!(scroll(&dialog), 7);
+        dialog.scroll(-20);
+        assert_eq!(scroll(&dialog), 0, "the top clamps instead of panicking");
+    }
 
     #[test]
     fn the_workspace_changes_panel_grows_with_its_change_set() {
