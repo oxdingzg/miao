@@ -619,16 +619,6 @@ impl ListDialog {
         }
     }
 
-    /// Whether the detail of `id` is already known, so a preview is asked for
-    /// once per row instead of on every cursor move.
-    pub(crate) fn detail_of(&self, id: &str) -> Option<&str> {
-        self.rows
-            .iter()
-            .find(|row| row.id == id)
-            .map(|row| row.detail.as_str())
-            .filter(|detail| !detail.is_empty())
-    }
-
     /// Whether the preview for `id` was already asked for, once per row
     /// instead of on every cursor move.
     pub(crate) fn preview_asked(&self, id: &str) -> bool {
@@ -3052,7 +3042,7 @@ mod tests {
     }
 
     #[test]
-    fn X_names_the_global_stop_and_the_confirmation_gates_it() {
+    fn x_names_the_global_stop_and_the_confirmation_gates_it() {
         // `X` does not name a row: it opens the confirmation, whatever the
         // cursor is on.
         let mut dialog = Dialog::jobs(&[JobRow {
@@ -3105,16 +3095,28 @@ mod tests {
         let list = dialog.list_mut().expect("list");
         assert_eq!(list.selected_id().as_deref(), Some("job_1"));
         assert_eq!(
-            list.detail_of("job_1"),
+            list.rows
+                .iter()
+                .find(|row| row.id == "job_1")
+                .map(|row| row.detail.as_str()),
             Some("bun test"),
             "the command is known before any preview answer lands"
         );
 
         list.set_detail("job_2", "running · no result yet".into());
         let list = dialog.list().expect("list");
-        assert_eq!(list.detail_of("job_1"), Some("bun test"));
         assert_eq!(
-            list.detail_of("job_2"),
+            list.rows
+                .iter()
+                .find(|row| row.id == "job_1")
+                .map(|row| row.detail.as_str()),
+            Some("bun test")
+        );
+        assert_eq!(
+            list.rows
+                .iter()
+                .find(|row| row.id == "job_2")
+                .map(|row| row.detail.as_str()),
             Some("running · no result yet"),
             "the answer names its job, so it fills that row only"
         );
