@@ -292,10 +292,7 @@ fn parse_inline(text: &str, style: Style, theme: &Theme, spans: &mut Vec<Span<'s
             if let Some(end) = find_char(&chars, index + 1, '`') {
                 push_plain(spans, &mut plain, style);
                 let code: String = chars[index + 1..end].iter().collect();
-                spans.push(Span::styled(
-                    code,
-                    style.fg(palette.accent).bg(palette.surface),
-                ));
+                spans.push(Span::styled(code, style.fg(palette.accent)));
                 index = end + 1;
                 continue;
             }
@@ -444,7 +441,11 @@ mod tests {
             .find(|span| span.content.as_ref() == "code")
             .expect("code span");
         assert_eq!(code.style.fg, Some(theme().palette.accent));
-        assert_eq!(code.style.bg, Some(theme().palette.surface));
+        // Inline code used to carry a `surface` background, and a prose line
+        // full of identifiers then read as patchy strips of highlight. Claude
+        // Code marks inline code by ink alone, so the background is gone and
+        // the accent color carries the distinction.
+        assert_eq!(code.style.bg, None);
         let gone = line
             .spans
             .iter()
