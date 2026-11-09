@@ -392,10 +392,7 @@ mod tests {
                 seen[frame["producer"].as_u64().expect("producer tag") as usize]
                     .push(frame["seq"].as_u64().expect("seq tag"));
             }
-            assert_eq!(
-                signals, 1,
-                "stalled reader {index}: one stall, one report"
-            );
+            assert_eq!(signals, 1, "stalled reader {index}: one stall, one report");
             assert_batches_complete(&format!("stalled reader {index}"), &seen, batch);
         }
     }
