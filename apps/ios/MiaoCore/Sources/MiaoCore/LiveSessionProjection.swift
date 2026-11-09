@@ -37,20 +37,23 @@ public struct LiveSessionProjection: Sendable {
     }
 
     public func displaying(_ messages: [JSONValue]) -> [JSONValue] {
-        messages.map { message in
-            guard message["id"]?.string == messageID, message["type"]?.string == "assistant",
-                  message["time"]?["completed"] == nil, var value = message.object else { return message }
-            value["content"] = .array((message["content"]?.array ?? []).map { part in
-                guard var content = part.object,
-                      let live = parts.first(where: { $0["id"] == part["id"] && $0["kind"] == part["type"] }),
-                      part["text"]?.string == "" else { return part }
-                content["text"] = live["text"]
-                if live["truncated"]?.bool == true {
-                    content["text"] = .string((live["text"]?.string ?? "") + "\n实时预览已达长度上限，完整内容将在完成后同步。")
-                }
-                return .object(content)
-            })
-            return .object(value)
-        }
+        // Only the one in-progress assistant message can carry live parts, so
+        // copy the array once instead of rebuilding every message per render.
+        guard let messageID, let index = messages.firstIndex(where: { $0["id"]?.string == messageID }),
+              messages[index]["type"]?.string == "assistant", messages[index]["time"]?["completed"] == nil,
+              var value = messages[index].object else { return messages }
+        value["content"] = .array((value["content"]?.array ?? []).map { part in
+            guard var content = part.object,
+                  let live = parts.first(where: { $0["id"] == part["id"] && $0["kind"] == part["type"] }),
+                  part["text"]?.string == "" else { return part }
+            content["text"] = live["text"]
+            if live["truncated"]?.bool == true {
+                content["text"] = .string((live["text"]?.string ?? "") + "\n实时预览已达长度上限，完整内容将在完成后同步。")
+            }
+            return .object(content)
+        })
+        var next = messages
+        next[index] = .object(value)
+        return next
     }
 }

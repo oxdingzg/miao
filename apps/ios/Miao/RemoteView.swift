@@ -6,6 +6,7 @@ import MiaoCore
 struct RemoteView: View {
     @Bindable var model: AppModel
     @Environment(\.scenePhase) private var phase
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var sceneID = UUID()
     @State private var hostID: UUID?
     @State private var pairing = false
@@ -25,11 +26,7 @@ struct RemoteView: View {
     @State private var hostToForget: AuthorizedHost?
 
     var body: some View {
-        ZStack {
-            mainContent
-                .accessibilityHidden(sidebarVisible)
-            if sidebarVisible { sidebar }
-        }
+        layout
         .task {
             model.scene(sceneID, phase: phase)
             await model.load()
@@ -73,13 +70,19 @@ struct RemoteView: View {
         }
         .task(id: phase) {
             guard phase == .active else { return }
+            var cycle = 0
             while !Task.isCancelled {
                 await model.refreshDirectory()
                 for client in model.clients.values where client.record.accountID != nil {
                     await client.scene(sceneID, phase: .active)
-                    if client.ready { await client.refreshLists() }
-                    if client.ready { await client.loadInbox() }
+                    // The sidebar is the only consumer of list and inbox data,
+                    // so skip their per-project reloads while it stays closed.
+                    if client.ready, sidebarVisible || cycle % 3 == 0 {
+                        await client.refreshLists()
+                        await client.loadInbox()
+                    }
                 }
+                cycle += 1
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
@@ -113,6 +116,24 @@ struct RemoteView: View {
             Button("取消", role: .cancel) {}
         } message: { record in
             Text("将从本机移除「\(record.host.label)」及其缓存，电脑上的任务继续运行。账号电脑不会自动重新添加，可在中继账号中点击「连接我的电脑」恢复。要撤销授权，请在电脑的设备接入界面操作。")
+        }
+    }
+
+    /// iPhone keeps the overlay drawer; regular-width layouts (iPad) get a real
+    /// leading column so the session area is not covered.
+    @ViewBuilder private var layout: some View {
+        if sizeClass == .regular {
+            HStack(spacing: 0) {
+                if sidebarVisible { sidebarPanel }
+                mainContent
+            }
+            .animation(.easeInOut(duration: 0.25), value: sidebarVisible)
+        } else {
+            ZStack {
+                mainContent
+                    .accessibilityHidden(sidebarVisible)
+                if sidebarVisible { sidebar }
+            }
         }
     }
 
@@ -194,18 +215,22 @@ struct RemoteView: View {
         ZStack(alignment: .leading) {
             Color.black.opacity(0.35).ignoresSafeArea()
                 .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { sidebarVisible = false } }
-            Group {
-                if let hostID, let client = model.clients[hostID] {
-                    sidebarContent(client)
-                } else {
-                    emptySidebar
-                }
-            }
-            .frame(maxWidth: 330)
-            .frame(maxHeight: .infinity)
-            .background(.background)
-            .transition(.move(edge: .leading))
+            sidebarPanel
         }
+    }
+
+    private var sidebarPanel: some View {
+        Group {
+            if let hostID, let client = model.clients[hostID] {
+                sidebarContent(client)
+            } else {
+                emptySidebar
+            }
+        }
+        .frame(maxWidth: 330)
+        .frame(maxHeight: .infinity)
+        .background(.background)
+        .transition(.move(edge: .leading))
     }
 
     @ViewBuilder private func sidebarContent(_ client: HostClient) -> some View {
@@ -621,6 +646,11 @@ private struct SessionView: View {
     @State private var selectedAction: String?
     @State private var title = ""
     @State private var queue = false
+    @State private var followsLatest = true
+    @State private var viewport: CGFloat = 0
+    @State private var searchPresented = false
+    @State private var jumpTarget: String?
+    private let bottomID = "session-bottom"
     /// Queueing is only meaningful while a turn is running.
     private var running: Bool { session.pending["execution"]?["type"]?.string == "running" }
     @State private var notice: String?
@@ -628,17 +658,56 @@ private struct SessionView: View {
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                if !client.ready { Label("连接恢复后可继续操作，输入会保存在本机", systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary) }
-                if session.loading { ProgressView("正在同步会话…") }
-                if session.timeline.revert != nil { Label("电脑上有待确认的回退操作", systemImage: "arrow.uturn.backward").font(.footnote) }
-                ForEach(Array(session.visibleMessages.enumerated()), id: \.element.messageID) { _, message in
-                    MessageView(message: message)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    if !client.ready { Label("连接恢复后可继续操作，输入会保存在本机", systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary) }
+                    if session.loading { ProgressView("正在同步会话…") }
+                    if session.timeline.revert != nil { Label("电脑上有待确认的回退操作", systemImage: "arrow.uturn.backward").font(.footnote) }
+                    ForEach(Array(session.displayed.enumerated()), id: \.element.messageID) { _, message in
+                        MessageView(message: message)
+                    }
+                    PendingView(client: client, session: session)
+                    if let error = session.error { Text(error).font(.footnote).foregroundStyle(.red) }
+                    // A real anchor at the end scrolls past the last bubble, which
+                    // anchoring to a message cannot do while it grows.
+                    Color.clear.frame(height: 1).id(bottomID)
+                        .background(GeometryReader { geo in
+                            Color.clear.onChange(of: geo.frame(in: .named("session")).minY) { _, y in
+                                guard viewport > 0 else { return }
+                                followsLatest = y <= viewport
+                            }
+                        })
+                }.padding()
+            }
+            .coordinateSpace(name: "session")
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: session.revision) { _, _ in pin(proxy) }
+            .onAppear { pin(proxy) }
+            .onChange(of: jumpTarget) { _, target in
+                guard let target else { return }
+                jumpTarget = nil
+                followsLatest = false
+                jump(proxy, to: target)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !followsLatest {
+                    Button {
+                        followsLatest = true
+                        pin(proxy)
+                    } label: {
+                        Label("跳到最新", systemImage: "arrow.down")
+                            .font(.footnote).padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                    .padding(.trailing, 12).padding(.bottom, 12)
+                    .accessibilityIdentifier("jumpLatest")
                 }
-                PendingView(client: client, session: session)
-                if let error = session.error { Text(error).font(.footnote).foregroundStyle(.red) }
-            }.padding()
+            }
+            .background(GeometryReader { geo in
+                Color.clear.onAppear { viewport = geo.size.height }
+                    .onChange(of: geo.size.height) { _, value in viewport = value }
+            })
         }
         .safeAreaInset(edge: .bottom) { composer }
         .navigationTitle(session.timeline.title.isEmpty ? session.summary.title : session.timeline.title)
@@ -669,6 +738,7 @@ private struct SessionView: View {
                 renamePresented = true
             }
             if action == "selection" { selectionPresented = true }
+            if action == "search" { searchPresented = true }
             if action == "diff" { Task { await session.loadDiff(); diffPresented = session.diff != nil } }
         }) {
             NavigationStack {
@@ -676,6 +746,8 @@ private struct SessionView: View {
                     if client.record.grant.permissions.contains(.sessionSelection) {
                         Button("Agent / 模型") { selectedAction = "selection"; menuPresented = false }
                     }
+                    Button("搜索消息") { selectedAction = "search"; menuPresented = false }
+                        .accessibilityIdentifier("searchMessages")
                     Button("查看文件变化") { selectedAction = "diff"; menuPresented = false }
                     if client.record.grant.permissions.contains(.sessionRename) {
                         Button("重命名") { selectedAction = "rename"; menuPresented = false }
@@ -690,8 +762,14 @@ private struct SessionView: View {
         .onDisappear { speech.stop(); session.disappear() }
         .onChange(of: phase) { _, value in if value == .background { speech.stop(); composing = false } }
         .sheet(isPresented: $diffPresented) {
-            NavigationStack { ScrollView { Text(session.diff?.formatted ?? "").font(.system(.footnote, design: .monospaced)).textSelection(.enabled).padding() }
-                .navigationTitle("文件变化").toolbar { Button("关闭") { diffPresented = false } } }
+            NavigationStack {
+                ScrollView { if let diff = session.diff { DiffView(diff: diff) } }
+                    .navigationTitle("文件变化")
+                    .toolbar { Button("关闭") { diffPresented = false } }
+            }
+        }
+        .sheet(isPresented: $searchPresented) {
+            MessageSearchView(messages: session.displayed) { jumpTarget = $0 }
         }
         .sheet(isPresented: $selectionPresented) {
             SessionSelectionView(client: client, session: session)
@@ -700,6 +778,21 @@ private struct SessionView: View {
             RenameSessionView(initialTitle: title) { value in
                 Task { _ = await session.command(.sessionRename, kind: .sessionRename, payload: .object(["title": .string(value)])) }
             }
+        }
+    }
+
+    private func pin(_ proxy: ScrollViewProxy) {
+        guard followsLatest else { return }
+        proxy.scrollTo(bottomID, anchor: .bottom)
+    }
+
+    /// LazyVStack renders on demand: a second pass settles rows the first pass
+    /// could not have materialized yet.
+    private func jump(_ proxy: ScrollViewProxy, to id: String) {
+        proxy.scrollTo(id, anchor: .top)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            proxy.scrollTo(id, anchor: .top)
         }
     }
 
@@ -756,8 +849,10 @@ private struct SessionView: View {
 private extension JSONValue { var messageID: String { self["id"]?.string ?? "" } }
 
 @MainActor
-private struct MessageView: View {
+private struct MessageView: View, Equatable {
     let message: JSONValue
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.message == rhs.message }
 
     var body: some View {
         if message["type"]?.string == "user" {
@@ -777,25 +872,31 @@ private struct MessageView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let text = message["text"]?.string { Text(text).textSelection(.enabled) }
-            if let summary = message["summary"]?.string { Text(summary).textSelection(.enabled) }
+            if let summary = message["summary"]?.string { LocalMarkdown(text: summary) }
             ForEach(Array((message["content"]?.array ?? []).enumerated()), id: \.offset) { _, part in
                 if part["type"]?.string == "reasoning" {
-                    DisclosureGroup("思考过程") { Text(part["text"]?.string ?? part.formatted).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
-                } else if let text = part["text"]?.string { Text(text).textSelection(.enabled) }
-                else {
-                    DisclosureGroup { Text(part.formatted).font(.system(.caption, design: .monospaced)).textSelection(.enabled) } label: {
+                    DisclosureGroup("思考过程") {
+                        ExpandingText(text: part["text"]?.string ?? part.formatted, font: .footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if part["type"]?.string == "text", let text = part["text"]?.string {
+                    LocalMarkdown(text: text)
+                } else if let text = part["text"]?.string {
+                    Text(text).textSelection(.enabled)
+                } else {
+                    DisclosureGroup { ExpandingText(text: part.formatted) } label: {
                         Label(part["name"]?.string ?? part["type"]?.string ?? "操作详情", systemImage: "wrench.and.screwdriver")
                             .font(.footnote.weight(.medium))
                     }.accentColor(.secondary)
                 }
             }
             if let command = message["command"]?.string {
-                DisclosureGroup { Text(command).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) } label: {
+                DisclosureGroup { ExpandingText(text: command) } label: {
                     Label("命令", systemImage: "terminal").font(.footnote.weight(.medium))
                 }.accentColor(.secondary)
             }
             if let output = message["output"]?.string {
-                DisclosureGroup { Text(output).font(.system(.footnote, design: .monospaced)).textSelection(.enabled) } label: {
+                DisclosureGroup { ExpandingText(text: output) } label: {
                     Label("输出", systemImage: "text.quote").font(.footnote.weight(.medium))
                 }.accentColor(.secondary)
             }
@@ -803,6 +904,140 @@ private struct MessageView: View {
                 Text(message["agent"]?.string ?? message["model"]?.formatted ?? "").font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
             }
             if let error = message["error"] { Text(error.formatted).font(.footnote).foregroundStyle(.red) }
+        }
+    }
+}
+
+/// Caps oversized tool output in the view: collapsed by default with an expand
+/// action, so one huge read or shell result cannot stall layout.
+@MainActor
+private struct ExpandingText: View {
+    let text: String
+    var font: Font = .system(.footnote, design: .monospaced)
+    @State private var expanded = false
+
+    private static let limit = 20_000
+
+    var body: some View {
+        let truncated = !expanded && text.count > Self.limit
+        VStack(alignment: .leading, spacing: 6) {
+            Text(truncated ? String(text.prefix(Self.limit)) + "\n…" : text)
+                .font(font).textSelection(.enabled)
+            if truncated {
+                Button("展开全部（\(text.count) 字符）") { expanded = true }
+                    .font(.footnote)
+            }
+        }
+    }
+}
+
+/// Renders the structured file diff line by line instead of one monospaced
+/// Text, so a large change set stays scrollable.
+@MainActor
+private struct DiffView: View {
+    let diff: JSONValue
+    @State private var expandedAll = false
+
+    private struct Line: Identifiable {
+        let id: Int
+        let text: String
+        let color: Color?
+    }
+
+    private static let lineLimit = 4000
+
+    private var lines: [Line] {
+        let files = diff["data"]?.array ?? []
+        let raw = files.flatMap { file -> [String] in
+            var out = [file["file"]?.string ?? ""]
+            if let patch = file["patch"]?.string {
+                out += patch.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            }
+            return out
+        }
+        let shown = expandedAll ? raw : Array(raw.prefix(Self.lineLimit))
+        return shown.enumerated().map { index, line in
+            let color: Color? = line.hasPrefix("+++") || line.hasPrefix("---") ? .secondary
+                : line.hasPrefix("@@") ? .blue
+                : line.hasPrefix("+") ? .green
+                : line.hasPrefix("-") ? .red
+                : nil
+            return Line(id: index, text: line, color: color)
+        }
+    }
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(lines) { line in
+                Text(line.text)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(line.color ?? .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            if !expandedAll {
+                Button("展开全部") { expandedAll = true }.font(.footnote).padding(.top, 8)
+            }
+        }
+        .padding()
+    }
+}
+
+/// Searches the loaded timeline and jumps to the tapped message.
+@MainActor
+private struct MessageSearchView: View {
+    let messages: [JSONValue]
+    let onSelect: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private struct Match: Identifiable {
+        let id: String
+        let snippet: String
+    }
+
+    private static let resultLimit = 200
+
+    private var matches: [Match] {
+        guard query.count >= 2 else { return [] }
+        var found: [Match] = []
+        for message in messages {
+            guard let id = message["id"]?.string, !id.isEmpty,
+                  let text = searchableText(message),
+                  let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else { continue }
+            let start = text.index(range.lowerBound, offsetBy: -40, limitedBy: text.startIndex) ?? text.startIndex
+            let end = text.index(range.upperBound, offsetBy: 80, limitedBy: text.endIndex) ?? text.endIndex
+            found.append(Match(id: id, snippet: String(text[start..<end])))
+            if found.count >= Self.resultLimit { break }
+        }
+        return found
+    }
+
+    private func searchableText(_ message: JSONValue) -> String? {
+        let parts = [message["text"]?.string, message["summary"]?.string, message["output"]?.string, message["command"]?.string]
+            + (message["content"]?.array ?? []).compactMap { $0["text"]?.string }
+        let joined = parts.compactMap { $0 }.joined(separator: "\n")
+        return joined.isEmpty ? nil : joined
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(matches) { match in
+                    Button {
+                        onSelect(match.id)
+                        dismiss()
+                    } label: {
+                        Text(match.snippet).font(.footnote).lineLimit(3)
+                    }.buttonStyle(.plain)
+                }
+            }
+            .overlay {
+                if matches.isEmpty { ContentUnavailableView.search(text: query) }
+            }
+            .navigationTitle("搜索消息")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+            .searchable(text: $query, prompt: "在会话中搜索")
         }
     }
 }

@@ -852,15 +852,12 @@ final class HostClient {
         guard !closed else { throw CancellationError() }
         guard let data = projects["data"]?.array else { throw RemoteConnectionError.protocolIncompatible }
         self.projects = data
-        print("MIAO-DBG sync projects=", data.count, "grantProjects=", record.grant.projectIDs,
-            "grantSessions=", record.grant.sessionIDs.count, "expired=", record.expired)
         if record.accountID != nil {
             try await loadList(nil, connection: connection)
         } else {
             if record.grant.sessionIDs.count > 0 { try await loadList(nil, connection: connection) }
             for project in record.grant.projectIDs { try await loadList(project, connection: connection) }
         }
-        print("MIAO-DBG lists=", lists.map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: ","))
     }
 
     func scene(_ id: UUID, phase: ScenePhase) async {
@@ -975,7 +972,11 @@ final class RemoteSession {
     private var address: SessionAddress
     var timeline = SessionTimeline()
     private var live: LiveSessionProjection?
-    var visibleMessages: [JSONValue] { live?.displaying(timeline.messages) ?? timeline.messages }
+    /// Projection cache for the view; rebuilt only when timeline or live change.
+    private(set) var displayed: [JSONValue] = []
+    /// Bumped on every timeline/live change so the view can pin the scroll
+    /// position without diffing whole timelines.
+    private(set) var revision = 0
     var pending: JSONValue = .object([:])
     var draft = ""
     var error: String?
@@ -984,24 +985,62 @@ final class RemoteSession {
     private var viewers = 0
     private var poll: Task<Void, Never>?
     private var draftTail: Task<Void, Never>?
+    private var checkpointTail: Task<Void, Never>?
+    private var checkpointSavedAt = Date.distantPast
+    private var checkpointDirty = false
     private var epoch = 0
     private var draftRevision = 0
 
     init(summary: SessionSummary, client: HostClient) {
         self.summary = summary; self.client = client
         address = SessionAddress(hostID: client.record.host.target.hostID, runtimeID: client.runtimeID, sessionID: summary.id)
+        displayed = timeline.messages
     }
     func updateRuntime(_ runtimeID: String) {
         guard address.runtimeID != runtimeID else { return }
         pause()
         address = SessionAddress(hostID: address.hostID, runtimeID: runtimeID, sessionID: address.sessionID)
         timeline = SessionTimeline(); pending = .object([:]); loading = true
+        install(timeline, live: nil)
         edit(draft)
     }
     func appear() { viewers += 1; resume() }
-    func disappear() { viewers = max(0, viewers - 1); if viewers == 0 { pause() } }
-    func pause() { epoch += 1; poll?.cancel(); live = nil }
-    func drain() async { let old = poll; pause(); await old?.value; await draftTail?.value }
+    /// Releasing the last viewer drops the in-memory timeline; re-viewing
+    /// restores it from the checkpoint, so a long session cannot stay resident.
+    func disappear() {
+        viewers = max(0, viewers - 1)
+        guard viewers == 0 else { return }
+        pause()
+        Task {
+            let generation = epoch
+            await flushCheckpoint()
+            await flushDraft()
+            guard epoch == generation else { return }
+            timeline = SessionTimeline()
+            install(timeline, live: nil)
+            pending = .object([:])
+            loading = true
+        }
+    }
+    func pause() {
+        epoch += 1
+        poll?.cancel()
+        install(timeline, live: nil)
+    }
+    func drain() async {
+        let old = poll
+        pause()
+        await old?.value
+        await flushCheckpoint()
+        await flushDraft()
+    }
+
+    private func install(_ value: SessionTimeline, live projection: LiveSessionProjection?) {
+        timeline = value
+        live = projection
+        displayed = projection?.displaying(value.messages) ?? value.messages
+        revision += 1
+    }
 
     func resume() {
         guard viewers > 0, poll == nil, let client, client.ready else { return }
@@ -1018,9 +1057,10 @@ final class RemoteSession {
                 try Task.checkCancellation()
                 guard epoch == generation else { return }
                 if let saved = checkpoint.sessions.first(where: { $0.address == address }) {
-                    let value = try JSONDecoder().decode(SessionTimeline.self, from: saved.state)
+                    let value = try await offMain { try JSONDecoder().decode(SessionTimeline.self, from: saved.state) }
                     guard value.cursor == saved.cursor else { throw ClientStateError.invalidStorage }
-                    timeline = value
+                    guard epoch == generation else { return }
+                    install(value, live: nil)
                 }
                 if draftRevision == revision {
                     draft = checkpoint.drafts.first(where: { $0.address == address })?.text
@@ -1029,41 +1069,96 @@ final class RemoteSession {
                 }
                 while !Task.isCancelled, epoch == generation, client.ready {
                     let page = try await client.request(.sessionEvents, sessionID: summary.id, payload: .object([
-                        "after": .number(Double(timeline.cursor)), "limit": .number(100), "waitMs": .number(1000)]))
+                        "after": .number(Double(timeline.cursor)), "limit": .number(100), "waitMs": .number(10_000)]))
                     try Task.checkCancellation()
                     guard epoch == generation else { return }
                     let projection = try LiveSessionProjection(page["live"])
-                    var next = timeline
-                    try next.apply(page, sessionID: summary.id)
-                    if next.cursor != timeline.cursor {
-                        try await client.store.save(SessionCheckpoint(address: address, state: JSONEncoder().encode(next), cursor: next.cursor))
-                        guard epoch == generation else { return }
-                        timeline = next
+                    let base = timeline
+                    let sessionID = summary.id
+                    let merged = try await offMain {
+                        var value = base
+                        try value.apply(page, sessionID: sessionID)
+                        return value
                     }
-                    live = projection
+                    guard epoch == generation else { return }
+                    install(merged, live: projection)
                     loading = page["hasMore"]?.bool == true
+                    if merged.cursor != base.cursor { enqueueCheckpoint(merged) }
                     if !loading {
                         let value = try await client.request(.sessionPending, sessionID: summary.id)
                         guard epoch == generation else { return }
                         pending = value
                     }
                 }
-            } catch is CancellationError {}
-            catch { if epoch == generation { live = nil; self.error = userMessage(error) } }
+                if checkpointDirty { await flushCheckpoint() }
+            } catch is CancellationError {
+                if checkpointDirty { await flushCheckpoint() }
+            } catch {
+                if epoch == generation {
+                    install(timeline, live: nil)
+                    self.error = userMessage(error)
+                }
+            }
         }
+    }
+
+    /// Checkpoint writes coalesce: the newest state lands at most every few
+    /// seconds, pause/drain flush the tail, and a crash after a skipped write
+    /// only re-downloads those events from the saved cursor.
+    private func enqueueCheckpoint(_ value: SessionTimeline) {
+        checkpointDirty = true
+        guard Date().timeIntervalSince(checkpointSavedAt) >= 5 else { return }
+        checkpointSavedAt = Date()
+        checkpointDirty = false
+        let address = address
+        let previous = checkpointTail
+        checkpointTail = Task {
+            await previous?.value
+            await writeCheckpoint(value, address: address)
+        }
+    }
+
+    func flushCheckpoint() async {
+        await checkpointTail?.value
+        guard checkpointDirty else { return }
+        checkpointDirty = false
+        checkpointSavedAt = Date()
+        let value = timeline
+        let address = address
+        let previous = checkpointTail
+        checkpointTail = Task {
+            await previous?.value
+            await writeCheckpoint(value, address: address)
+        }
+        await checkpointTail?.value
+    }
+
+    private func writeCheckpoint(_ value: SessionTimeline, address: SessionAddress) async {
+        guard let client else { return }
+        do {
+            let state = try await offMain { try JSONEncoder().encode(value) }
+            try await client.store.save(SessionCheckpoint(address: address, state: state, cursor: value.cursor))
+        } catch { self.error = userMessage(error) }
     }
 
     func edit(_ text: String) {
         guard let client else { return }
         draftRevision += 1
         draft = text
-        let previous = draftTail
+        draftTail?.cancel()
         let captured = Draft(address: address, text: text)
         draftTail = Task {
-            await previous?.value
+            // One debounced save per typing pause; disappear/drain flush the
+            // tail so leaving the view never loses the draft.
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
             do { try await client.store.save(captured) }
             catch { self.error = userMessage(error) }
         }
+    }
+
+    func flushDraft() async {
+        await draftTail?.value
     }
 
     func send(queue: Bool) async {
@@ -1092,6 +1187,11 @@ final class RemoteSession {
 private func publicKey(_ key: P256.Signing.PrivateKey) -> String {
     key.publicKey.x963Representation.base64EncodedString().replacingOccurrences(of: "+", with: "-")
         .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+}
+/// Runs pure CPU work (timeline apply, checkpoint JSON encode/decode) off the
+/// main actor; arguments and results are Sendable values.
+private func offMain<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    try await Task.detached(priority: .userInitiated) { try work() }.value
 }
 private func operationStatus(_ value: String?) -> OperationStatus? {
     switch value { case "accepted": .accepted; case "completed": .completed; case "rejected": .rejected; case "outcome_unknown": .outcomeUnknown; default: nil }
