@@ -7514,8 +7514,8 @@ mod tests {
         app.handle(frame(serde_json::json!({"kind": "tool.input.delta", "delta": "\",\"hi\"]}"})));
         let painted = drafted(&mut app);
         assert!(
-            painted.contains("run_command"),
-            "the draft names the tool the engine opened: {painted:?}"
+            painted.contains("bash"),
+            "the draft names the tool the engine opened (run_command renders as bash): {painted:?}"
         );
         assert!(
             painted.contains("echo hi"),
