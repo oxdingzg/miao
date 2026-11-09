@@ -84,11 +84,7 @@ async fn a_window_read_stays_inside_the_32768_byte_bound_and_the_ranged_cap_hold
         "{whole}"
     );
 
-    let window = read(
-        &tools,
-        json!({"path":"wide.txt","offset":1,"limit":20}),
-    )
-    .await;
+    let window = read(&tools, json!({"path":"wide.txt","offset":1,"limit":20})).await;
     let text = window["text"].as_str().unwrap();
     assert!(text.len() <= 32768, "{}", text.len());
     assert!(text.contains("line-07-"), "{}", text.len());
