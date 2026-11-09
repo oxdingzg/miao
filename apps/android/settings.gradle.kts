@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 rootProject.name = "miao-android"
 
 include(":core")
+include(":app")

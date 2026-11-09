@@ -1,0 +1,60 @@
+name: android
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    # The image's Android SDK drifts; catch breakage before a pull request does.
+    - cron: "23 5 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-android-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-core-${{ hashFiles('apps/android/**/*.gradle.kts', 'apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Protocol core tests
+        working-directory: apps/android
+        run: ./gradlew :core:test --console=plain
+      - uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --ignore-scripts --frozen-lockfile
+      - name: Build the interop probe
+        working-directory: apps/android
+        run: ./gradlew :core:installDist --console=plain
+      - name: WebCrypto and Kotlin interoperability
+        env:
+          MIAO_KOTLIN_PROBE_COMMAND: '["apps/android/core/build/install/core/bin/core"]'
+        run: bun apps/android/scripts/check-interop.ts
+
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-app-${{ hashFiles('apps/android/**/*.gradle.kts', 'apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Compose app build
+        working-directory: apps/android
+        run: ./gradlew :app:assembleDebug --console=plain

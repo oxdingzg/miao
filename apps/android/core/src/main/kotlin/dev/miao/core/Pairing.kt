@@ -202,7 +202,7 @@ object DeviceFingerprint {
     fun ofUrl(publicKey: ByteArray): String = BinaryEncoding.encode(Crypto.sha256(publicKey))
 }
 
-data class PairedConnection(val host: ApprovedHost, val grant: DeviceGrant)
+data class PairedConnection(val host: ApprovedHost, val grant: DeviceGrant, val connection: HubConnection)
 
 internal data class PairingNotification(
     val version: Int,

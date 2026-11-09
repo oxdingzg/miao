@@ -23,7 +23,7 @@ class HubConnection private constructor(
     private val socket: WebSocket,
     private val channel: SecureSession,
     private val reconcile: suspend (HubConnection) -> Unit,
-) {
+) : ClientConnection {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonValue>>()
     private val outbound = Channel<ByteArray>(Channel.UNLIMITED)
@@ -34,7 +34,7 @@ class HubConnection private constructor(
     val target: RemoteTarget get() = host.target
 
     /** Revalidate authorization and reconcile the operation ledger before becoming ready. */
-    suspend fun synchronize() {
+    override suspend fun synchronize() {
         request(RemoteMethod.Capabilities)
         reconcile(this)
     }
@@ -75,7 +75,7 @@ class HubConnection private constructor(
         return result
     }
 
-    suspend fun close() {
+    override suspend fun close() {
         if (!stopped.compareAndSet(false, true)) return
         socket.cancel()
         scope.cancel()
@@ -84,7 +84,7 @@ class HubConnection private constructor(
         if (!disconnect.isCompleted) disconnect.complete(RemoteRPCException.Disconnected())
     }
 
-    suspend fun awaitDisconnect(): Throwable = disconnect.await()
+    override suspend fun awaitDisconnect(): Throwable = disconnect.await()
 
     private fun start(socket: WebSocket, inbound: Channel<String>) {
         scope.launch { sendLoop(socket) }
@@ -242,11 +242,172 @@ class HubConnection private constructor(
                     persist(host, grant)
                     val connection = HubConnection(host, bridge.socket, channel, reconcile)
                     connection.start(bridge.socket, bridge.inbound)
-                    return PairedConnection(host, grant)
+                    return PairedConnection(host, grant, connection)
                 }
             } catch (error: Throwable) {
                 bridge.socket.cancel()
                 if (provisional) throw PairingException(PairingException.Reason.APPROVAL_UNCERTAIN)
+                throw mapHandshakeError(error, bridge)
+            }
+        }
+
+        /**
+         * Owner opt-in: same-account devices claim admission with the directory key
+         * pinned on first use; the computer signs the roster locally and returns an
+         * encrypted grant. No RPC reader starts before the caller durably saves it.
+         */
+        suspend fun autoAdmit(
+            account: HubAccount,
+            discovered: HubDirectoryHost,
+            identity: P256SigningKey,
+            accountAccess: Boolean = false,
+            existingID: UUID? = null,
+            persist: suspend (ApprovedHost, DeviceGrant) -> Unit,
+            reconcile: suspend (HubConnection) -> Unit,
+        ): PairedConnection {
+            val (generation, accountID) = account.enrollmentContext()
+            val deviceKey = identity.publicKeyEncoded
+            if (!discovered.online || discovered.revokedAt != null || discovered.name.isEmpty()) {
+                throw AuthorizationBlockedException()
+            }
+            val runtimeID = discovered.runtimeID ?: throw AuthorizationBlockedException()
+            account.requireGeneration(generation)
+            val target = RemoteTarget(discovered.hostID, runtimeID)
+            val authorization = account.relayAuthorization(account.origin, target.hostID, runtimeID)
+            return admitWithClaim(
+                claimType = if (accountAccess) "accountClaim" else "rosterClaim",
+                accountID = accountID,
+                identity = identity,
+                target = target,
+                pinnedKey = discovered.publicKey,
+                roster = null,
+                authorization = authorization,
+                label = discovered.name,
+                hubURL = account.origin,
+                existingID = existingID,
+                generation = generation,
+                account = account,
+                persist = persist,
+                reconcile = reconcile,
+            )
+        }
+
+        /** Admission uses independently endorsed pins and an accepted local roster, never directory keys as authority. */
+        suspend fun admit(
+            account: HubAccount,
+            enrollment: AcceptedAccountEnrollment,
+            discovered: HubDirectoryHost,
+            identity: P256SigningKey,
+            existingID: UUID? = null,
+            persist: suspend (ApprovedHost, DeviceGrant) -> Unit,
+            reconcile: suspend (HubConnection) -> Unit,
+        ): PairedConnection {
+            val (generation, accountID) = account.enrollmentContext()
+            val origin = account.origin
+            val deviceKey = identity.publicKeyEncoded
+            val runtimeID = discovered.runtimeID ?: throw AuthorizationBlockedException()
+            val pin = enrollment.hosts.firstOrNull { it.hostID == discovered.hostID }
+            if (
+                enrollment.hubURL != origin ||
+                enrollment.authority.accountID != accountID ||
+                enrollment.roster.roster.accountID != accountID ||
+                enrollment.roster.roster.devices.none { it.publicKey == deviceKey } ||
+                pin == null || pin.publicKey != discovered.publicKey ||
+                discovered.revokedAt != null || !discovered.online
+            ) {
+                throw AuthorizationBlockedException()
+            }
+            val accepted = enrollment.roster.accept(accountID, enrollment.authority)
+            if (accepted != enrollment.authority) throw AuthorizationBlockedException()
+            val directory = account.hosts()
+            if (directory.none {
+                    it.hostID == pin.hostID && it.runtimeID == runtimeID && it.publicKey == pin.publicKey &&
+                        it.online && it.revokedAt == null
+                }
+            ) {
+                throw AuthorizationBlockedException()
+            }
+            account.requireGeneration(generation)
+            val target = RemoteTarget(pin.hostID, runtimeID)
+            val authorization = account.relayAuthorization(origin, target.hostID, runtimeID)
+            return admitWithClaim(
+                claimType = "rosterClaim",
+                accountID = accountID,
+                identity = identity,
+                target = target,
+                pinnedKey = pin.publicKey,
+                roster = enrollment.roster,
+                authorization = authorization,
+                label = discovered.name,
+                hubURL = origin,
+                existingID = existingID,
+                generation = generation,
+                account = account,
+                persist = persist,
+                reconcile = reconcile,
+            )
+        }
+
+        private suspend fun admitWithClaim(
+            claimType: String,
+            accountID: String,
+            identity: P256SigningKey,
+            target: RemoteTarget,
+            pinnedKey: String,
+            roster: SignedAccountRoster?,
+            authorization: String,
+            label: String,
+            hubURL: String,
+            existingID: UUID?,
+            generation: Long,
+            account: HubAccount,
+            persist: suspend (ApprovedHost, DeviceGrant) -> Unit,
+            reconcile: suspend (HubConnection) -> Unit,
+        ): PairedConnection {
+            val endpoint = clientEndpoint(java.net.URI(hubURL).toURL(), target.hostID, false, target.runtimeID)
+            val bridge = connect(endpoint, authorization)
+            try {
+                val handshake = ClientHandshake(identity, target)
+                val claim = JsonValue.obj(
+                    "version" to JsonValue.of(1),
+                    "type" to JsonValue.of(claimType),
+                    "accountID" to JsonValue.of(accountID),
+                    "hello" to handshake.hello.asJson(),
+                    "roster" to (roster?.toJson() ?: JsonValue.Null),
+                )
+                bridge.send(BinaryEncoding.encode(CanonicalJson.encodeBytes(claim)))
+                val reply = bridge.receive(8192) ?: throw RemoteRPCException.Malformed()
+                val serverHello = ServerHello.fromJson(
+                    CanonicalJson.parse(BinaryEncoding.decodeOrNull(reply, null) ?: throw RemoteRPCException.Malformed()),
+                )
+                val channel = handshake.finish(serverHello, pinnedKey)
+                val assembler = ResponseAssembler(setOf("roster"))
+                while (true) {
+                    val text = bridge.receiveOrNull(30_000) ?: throw RemoteRPCException.Timeout()
+                    val plaintext = assembler.append(channel.open(text)) ?: continue
+                    val approval = RosterNotification.fromJson(CanonicalJson.parse(plaintext))
+                    if (approval.version != 1 || approval.type != "roster" || approval.status != "approved") {
+                        throw RemoteRPCException.Malformed()
+                    }
+                    approval.grant.validate(identity.publicKeyEncoded)
+                    account.requireGeneration(generation)
+                    val host = ApprovedHost.create(
+                        id = existingID ?: UUID.randomUUID(),
+                        label = label,
+                        hubURL = hubURL,
+                        target = target,
+                        publicKey = pinnedKey,
+                        grantID = approval.grant.id,
+                        grantVersion = approval.grant.version,
+                    )
+                    persist(host, approval.grant)
+                    account.requireGeneration(generation)
+                    val connection = HubConnection(host, bridge.socket, channel, reconcile)
+                    connection.start(bridge.socket, bridge.inbound)
+                    return PairedConnection(host, approval.grant, connection)
+                }
+            } catch (error: Throwable) {
+                bridge.socket.cancel()
                 throw mapHandshakeError(error, bridge)
             }
         }
