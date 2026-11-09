@@ -185,6 +185,8 @@ export namespace ServerConnection {
     url: string
     username?: string
     password?: string
+    /** Bearer credential for a loopback engine attachment, which has no basic auth. */
+    token?: string
   }
 
   // Regular web connections

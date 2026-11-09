@@ -1,7 +1,7 @@
 import { usePlatform } from "@/context/platform"
 import { ClientError, OpenCode } from "@miao/client"
 import { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "./server"
+import { authorizationHeader } from "./server"
 import { Accessor, createEffect, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
@@ -88,11 +88,7 @@ export async function checkServerHealth(
     const current = await OpenCode.make({
       baseUrl: server.url,
       fetch,
-      headers: server.password
-        ? {
-            Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}`,
-          }
-        : undefined,
+      headers: authorizationHeader(server),
     })
       .health.get({ signal })
       .then((x) =>
