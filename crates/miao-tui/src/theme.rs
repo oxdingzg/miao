@@ -119,6 +119,33 @@ pub fn colorless(no_color: Option<&str>, term: Option<&str>) -> bool {
         || term.is_some_and(|term| term.eq_ignore_ascii_case("dumb"))
 }
 
+/// Which half of a `{dark, light}` color pair a palette resolves. Terminal
+/// auto-detection (a luma probe or an OSC query) stays open: until it exists,
+/// an operator who wants light pins it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemeMode {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl ThemeMode {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "dark" => Some(Self::Dark),
+            "light" => Some(Self::Light),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub name: String,
@@ -139,6 +166,8 @@ pub struct Loaded {
     pub theme: Theme,
     pub catalog: Catalog,
     pub warnings: Vec<String>,
+    /// The mode every palette in this load resolved under.
+    pub mode: ThemeMode,
 }
 
 const BUILTIN_THEMES: &[(&str, Palette)] = &[
@@ -856,6 +885,7 @@ pub fn load(workspace: &Path) -> Loaded {
 
 pub(crate) fn load_at(workspace: &Path, global: Option<&Path>) -> Loaded {
     let mut warnings = Vec::new();
+    let mode = locked_mode(&mut warnings);
     let mut name = String::new();
     for path in crate::config::files(workspace, global) {
         match std::fs::read_to_string(&path) {
@@ -863,7 +893,7 @@ pub(crate) fn load_at(workspace: &Path, global: Option<&Path>) -> Loaded {
             Err(err) => warnings.push(format!("failed to read {}: {err}", path.display())),
         }
     }
-    let catalog = Catalog::from_custom(custom_themes(workspace, global, &mut warnings));
+    let catalog = Catalog::from_custom(custom_themes(workspace, global, mode, &mut warnings));
     if name.is_empty() {
         // A saved choice only fills in when no config file named a theme.
         name = crate::state::preferences().theme.unwrap_or_default();
@@ -885,7 +915,21 @@ pub(crate) fn load_at(workspace: &Path, global: Option<&Path>) -> Loaded {
         theme: Theme { name, palette },
         catalog,
         warnings,
+        mode,
     }
+}
+
+/// The operator's pinned mode, or dark while nothing is pinned.
+fn locked_mode(warnings: &mut Vec<String>) -> ThemeMode {
+    let lock = crate::state::preferences().theme_mode_lock;
+    let Some(text) = lock else {
+        return ThemeMode::Dark;
+    };
+    let Some(mode) = ThemeMode::parse(&text) else {
+        warnings.push(format!("unknown theme mode lock \"{text}\", using dark"));
+        return ThemeMode::Dark;
+    };
+    mode
 }
 
 /// Directories that may hold a `themes/` folder, in the order the TypeScript
@@ -906,6 +950,7 @@ fn theme_dirs(workspace: &Path, global: Option<&Path>) -> Vec<PathBuf> {
 fn custom_themes(
     workspace: &Path,
     global: Option<&Path>,
+    mode: ThemeMode,
     warnings: &mut Vec<String>,
 ) -> BTreeMap<String, Palette> {
     let mut themes = BTreeMap::new();
@@ -934,13 +979,17 @@ fn custom_themes(
                     continue;
                 }
             };
-            match parse_theme(&text) {
+            let mut parse_warnings = Vec::new();
+            match parse_theme(&text, mode, &mut parse_warnings) {
                 Ok(palette) => {
                     themes.insert(name.to_string(), palette);
                 }
                 Err(reason) => {
                     warnings.push(format!("skipping theme {}: {reason}", file.display()))
                 }
+            }
+            for warning in parse_warnings.drain(..) {
+                warnings.push(format!("{}: {warning}", file.display()));
             }
         }
     }
@@ -949,8 +998,13 @@ fn custom_themes(
 
 /// Reads the TypeScript theme file shape: a `theme` object of named colors,
 /// `defs` for shared references, `{dark, light}` pairs, and ANSI color codes.
-/// The Rust TUI is dark-only for now, so the `dark` half of a pair wins.
-fn parse_theme(text: &str) -> Result<Palette, String> {
+/// A pair resolves to the half the requested mode names; a pair missing that
+/// half warns and resolves to the other one.
+fn parse_theme(
+    text: &str,
+    mode: ThemeMode,
+    warnings: &mut Vec<String>,
+) -> Result<Palette, String> {
     let value: serde_json::Value = serde_json::from_str(text).map_err(|err| err.to_string())?;
     let theme = value
         .get("theme")
@@ -961,7 +1015,7 @@ fn parse_theme(text: &str) -> Result<Palette, String> {
         let raw = theme
             .get(key)
             .ok_or_else(|| format!("missing theme.{key}"))?;
-        resolve_color(raw, theme, defs, &mut Vec::new())
+        resolve_color(raw, theme, defs, &mut Vec::new(), mode, warnings)
     };
     Ok(Palette {
         primary: color("primary")?,
@@ -985,6 +1039,8 @@ fn resolve_color(
     theme: &serde_json::Map<String, serde_json::Value>,
     defs: Option<&serde_json::Map<String, serde_json::Value>>,
     chain: &mut Vec<String>,
+    mode: ThemeMode,
+    warnings: &mut Vec<String>,
 ) -> Result<Color, String> {
     match value {
         serde_json::Value::String(text) if text == "transparent" || text == "none" => {
@@ -1003,7 +1059,7 @@ fn resolve_color(
                 .or_else(|| theme.get(name))
                 .ok_or_else(|| format!("color reference \"{name}\" not found"))?;
             chain.push(name.clone());
-            let resolved = resolve_color(next, theme, defs, chain);
+            let resolved = resolve_color(next, theme, defs, chain, mode, warnings);
             chain.pop();
             resolved
         }
@@ -1013,8 +1069,23 @@ fn resolve_color(
             .map(ansi_color)
             .ok_or_else(|| format!("invalid ANSI color code {code}")),
         serde_json::Value::Object(variant) => {
-            let dark = variant.get("dark").ok_or("color has no \"dark\" value")?;
-            resolve_color(dark, theme, defs, chain)
+            let other = match mode {
+                ThemeMode::Dark => "light",
+                ThemeMode::Light => "dark",
+            };
+            let half = match variant.get(mode.as_str()) {
+                Some(half) => half,
+                None => {
+                    warnings.push(format!(
+                        "color has no \"{}\" value, using \"{other}\"",
+                        mode.as_str()
+                    ));
+                    variant
+                        .get(other)
+                        .ok_or("color has neither \"dark\" nor \"light\" value")?
+                }
+            };
+            resolve_color(half, theme, defs, chain, mode, warnings)
         }
         _ => Err(format!("unsupported color value {value}")),
     }
@@ -1055,26 +1126,6 @@ fn ansi_color(code: u8) -> Color {
     Color::Rgb(gray, gray, gray)
 }
 
-/// Top-level `tui.json` fields the TypeScript host understands. The ones this
-/// loader does not read belong to another loader or are not mirrored yet, but
-/// none of them is an unknown field.
-const KNOWN_FIELDS: &[&str] = &[
-    "$schema",
-    "theme",
-    "tui",
-    "keybinds",
-    "plugin",
-    "plugin_enabled",
-    "leader_timeout",
-    "attention",
-    "prompt",
-    "scroll_speed",
-    "scroll_acceleration",
-    "diff_style",
-    "cursor",
-    "mouse",
-];
-
 fn merge(text: &str, path: &Path, name: &mut String, warnings: &mut Vec<String>) {
     let stripped = strip_jsonc(text);
     let value: serde_json::Value = match serde_json::from_str(&stripped) {
@@ -1105,14 +1156,7 @@ fn merge(text: &str, path: &Path, name: &mut String, warnings: &mut Vec<String>)
             )),
         }
     }
-    for key in object.keys() {
-        if !KNOWN_FIELDS.contains(&key.as_str()) {
-            warnings.push(format!(
-                "tui config {}: ignoring unsupported field \"{key}\"",
-                path.display()
-            ));
-        }
-    }
+    crate::config::warn_unknown_fields(object, path, warnings);
 }
 
 pub(crate) fn strip_jsonc(input: &str) -> String {
@@ -1473,6 +1517,7 @@ mod tests {
 
     #[test]
     fn a_custom_theme_file_joins_the_menu_and_resolves_references() {
+        let _env = crate::state::env_lock();
         let dir = workspace("custom");
         let themes = dir.join(".miao").join("themes");
         std::fs::create_dir_all(&themes).unwrap();
@@ -1498,6 +1543,7 @@ mod tests {
 
     #[test]
     fn a_custom_theme_replaces_the_built_in_of_the_same_name() {
+        let _env = crate::state::env_lock();
         let dir = workspace("override");
         let themes = dir.join(".miao").join("themes");
         std::fs::create_dir_all(&themes).unwrap();
@@ -1624,5 +1670,131 @@ mod tests {
         for colour in [syntax.comment, syntax.string, syntax.number, syntax.keyword] {
             assert_eq!(colour, Color::Reset);
         }
+    }
+
+    #[test]
+    fn a_pair_resolves_to_the_half_the_pinned_mode_names() {
+        let mut warnings = Vec::new();
+        let dark = parse_theme(CUSTOM, ThemeMode::Dark, &mut warnings).expect("parses");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(dark.primary, Color::Rgb(255, 0, 0));
+        let mut warnings = Vec::new();
+        let light = parse_theme(CUSTOM, ThemeMode::Light, &mut warnings).expect("parses");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(light.primary, Color::Rgb(0xaa, 0, 0));
+    }
+
+    #[test]
+    fn a_pair_missing_the_pinned_half_warns_and_falls_back_to_the_other() {
+        let text = r##"{"theme": {"primary": {"light": "#abcdef"}, "secondary": "#111111", "accent": "#00ff00", "error": "#ff0000", "warning": "#ffaa00", "success": "#00ff00", "text": "#eeeeee", "textMuted": "#808080", "background": "#101010", "backgroundPanel": "#181818", "backgroundElement": "#202020", "border": 8, "borderActive": "#ffffff"}}"##;
+        let mut warnings = Vec::new();
+        let dark = parse_theme(text, ThemeMode::Dark, &mut warnings).expect("parses");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].contains("no \"dark\" value, using \"light\""),
+            "{warnings:?}"
+        );
+        assert_eq!(dark.primary, Color::Rgb(0xab, 0xcd, 0xef));
+        let mut warnings = Vec::new();
+        let light = parse_theme(text, ThemeMode::Light, &mut warnings).expect("parses");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(light.primary, Color::Rgb(0xab, 0xcd, 0xef));
+    }
+
+    #[test]
+    fn the_mode_lock_roundtrips_and_an_unknown_lock_falls_back_to_dark() {
+        let _env = crate::state::env_lock();
+        let state = workspace("lock-state");
+        let dir = workspace("lock-ws");
+        std::env::set_var("MIAO_TUI_STATE_DIR", &state);
+
+        crate::state::save_mode_lock(Some("light"));
+        assert_eq!(
+            crate::state::preferences().theme_mode_lock.as_deref(),
+            Some("light")
+        );
+        assert_eq!(load_at(&dir, None).mode, ThemeMode::Light);
+
+        crate::state::save_mode_lock(Some("neon"));
+        let mut warnings = Vec::new();
+        assert_eq!(locked_mode(&mut warnings), ThemeMode::Dark);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].contains("unknown theme mode lock"),
+            "{warnings:?}"
+        );
+
+        crate::state::save_mode_lock(None);
+        assert_eq!(load_at(&dir, None).mode, ThemeMode::Dark);
+        assert_eq!(crate::state::preferences().theme_mode_lock, None);
+
+        std::env::remove_var("MIAO_TUI_STATE_DIR");
+        let _ = std::fs::remove_dir_all(&state);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn theme_and_config_read_one_chain() {
+        let _env = crate::state::env_lock();
+        let state = workspace("chain-state");
+        let global = workspace("chain-global");
+        let holder = workspace("chain-env");
+        let dir = workspace("chain-ws");
+        std::env::set_var("MIAO_TUI_STATE_DIR", &state);
+        std::env::set_var("MIAO_CONFIG_DIR", &global);
+        let env_file = holder.join("tui.json");
+        std::fs::write(&env_file, r#"{"leader_timeout": 900}"#).unwrap();
+        std::env::set_var("MIAO_TUI_CONFIG", &env_file);
+        std::fs::create_dir_all(global.join("themes")).unwrap();
+        std::fs::write(global.join("themes").join("paired.json"), CUSTOM).unwrap();
+        std::fs::write(
+            global.join("tui.json"),
+            r#"{"theme": "paired", "leader_timeout": 700}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join(".miao")).unwrap();
+        std::fs::write(
+            dir.join(".miao").join("tui.json"),
+            r#"{"theme": "paired", "prompt": {"max_width": 120}}"#,
+        )
+        .unwrap();
+
+        let loaded = load_at(&dir, Some(&global));
+        assert_eq!(loaded.mode, ThemeMode::Dark);
+        assert_eq!(loaded.theme.name, "paired", "the project file wins");
+        assert_eq!(
+            loaded.theme.palette.primary,
+            Color::Rgb(255, 0, 0),
+            "nothing pinned, the dark half resolves"
+        );
+        assert!(
+            loaded.warnings.is_empty(),
+            "every chained field is known: {:?}",
+            loaded.warnings
+        );
+        assert_eq!(
+            loaded.catalog.palette("paired").map(|palette| palette.primary),
+            Some(Color::Rgb(255, 0, 0)),
+            "the custom theme came from the global dir of the same chain"
+        );
+
+        let (config, warnings) = crate::config::load(&dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            config.leader_timeout_ms, 900,
+            "the MIAO_TUI_CONFIG file is later in the chain than the global dir"
+        );
+        assert_eq!(
+            config.prompt_max_width,
+            crate::config::PromptWidth::Fixed(120)
+        );
+
+        for variable in ["MIAO_TUI_STATE_DIR", "MIAO_CONFIG_DIR", "MIAO_TUI_CONFIG"] {
+            std::env::remove_var(variable);
+        }
+        let _ = std::fs::remove_dir_all(&state);
+        let _ = std::fs::remove_dir_all(&global);
+        let _ = std::fs::remove_dir_all(&holder);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1720,7 +1720,10 @@ impl App {
 
     fn open_theme(&mut self) {
         let current = self.shell.theme().name.clone();
-        self.open_dialog(Dialog::theme(&current, &self.themes));
+        let lock = crate::state::preferences()
+            .theme_mode_lock
+            .and_then(|mode| theme::ThemeMode::parse(&mode));
+        self.open_dialog(Dialog::theme(&current, lock, &self.themes));
     }
 
     fn open_sessions(&mut self) {
@@ -2126,10 +2129,24 @@ impl App {
                     engine.move_session(&session_id, &directory);
                 }
             }
-            Some(Dialog::Theme(_)) => {
-                let name = self.themes.names().get(index).map(|name| name.to_string());
-                if let Some(name) = name {
-                    self.apply_theme(&name);
+            Some(Dialog::Theme(list)) => {
+                let Some(row) = list.rows.get(index) else {
+                    return;
+                };
+                match row.id.as_str() {
+                    "mode:dark" => self.set_mode_lock(Some("dark")),
+                    "mode:light" => self.set_mode_lock(Some("light")),
+                    "mode:unlock" => self.set_mode_lock(None),
+                    _ => {
+                        let name = row
+                            .id
+                            .parse::<usize>()
+                            .ok()
+                            .and_then(|index| self.themes.names().get(index).map(str::to_string));
+                        if let Some(name) = name {
+                            self.apply_theme(&name);
+                        }
+                    }
                 }
             }
             Some(Dialog::ModelProviders(list)) => {
@@ -3200,6 +3217,19 @@ impl App {
         };
         self.shell.set_theme(theme.clone());
         self.home.set_theme(theme);
+    }
+
+    fn set_mode_lock(&mut self, mode: Option<&str>) {
+        state::save_mode_lock(mode);
+        let loaded = theme::load(&self.workspace);
+        self.themes = loaded.catalog;
+        self.shell.set_theme(loaded.theme.clone());
+        self.home.set_theme(loaded.theme);
+        self.notice(match mode {
+            Some("dark") => "theme pinned to dark",
+            Some("light") => "theme pinned to light",
+            _ => "theme unlocked, dark by default",
+        });
     }
 
     fn session_id(&self) -> Option<String> {
@@ -9408,6 +9438,64 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
         ));
+    }
+
+    /// UX-01: pinning light recolours every `{dark, light}` pair at once and
+    /// survives a reload, because the pin lives in the state dir, not in App.
+    #[test]
+    fn pinning_light_recolours_and_survives_a_reload() {
+        let _env = crate::state::env_lock();
+        let dir = std::env::temp_dir().join(format!("miao-tui-app-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config_dir = dir.join(".miao");
+        std::fs::create_dir_all(config_dir.join("themes")).unwrap();
+        std::fs::write(config_dir.join("tui.json"), r#"{"theme": "paired"}"#).unwrap();
+        std::fs::write(
+            config_dir.join("themes").join("paired.json"),
+            r#"{"theme": {"primary": {"dark": "#ff0000", "light": "#00ff00"}, "secondary": "#111111", "accent": "#00ff00", "error": "#ff0000", "warning": "#ffaa00", "success": "#00ff00", "text": "#eeeeee", "textMuted": "#808080", "background": "#101010", "backgroundPanel": "#181818", "backgroundElement": "#202020", "border": 8, "borderActive": "#ffffff"}}"#,
+        )
+        .unwrap();
+        let state = dir.join("state");
+        std::env::set_var("MIAO_TUI_STATE_DIR", &state);
+
+        let loaded = theme::load(&dir);
+        assert_eq!(loaded.mode, theme::ThemeMode::Dark);
+        assert_eq!(loaded.theme.name, "paired");
+        let mut app = App::new(
+            dir.clone(),
+            loaded.theme,
+            loaded.catalog,
+            Keymap::default(),
+            crate::config::AttentionConfig::default(),
+            Startup::default(),
+        );
+        app.set_mode_lock(Some("light"));
+        assert_eq!(
+            app.shell.theme().palette.primary,
+            ratatui::style::Color::Rgb(0, 255, 0)
+        );
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("theme pinned to light")
+        );
+        assert_eq!(
+            app.themes.palette("paired").map(|palette| palette.primary),
+            Some(ratatui::style::Color::Rgb(0, 255, 0))
+        );
+
+        // What a restart does: load again from disk and stay light.
+        let reloaded = theme::load(&dir);
+        assert_eq!(reloaded.mode, theme::ThemeMode::Light);
+        assert_eq!(
+            reloaded
+                .catalog
+                .palette("paired")
+                .map(|palette| palette.primary),
+            Some(ratatui::style::Color::Rgb(0, 255, 0))
+        );
+
+        std::env::remove_var("MIAO_TUI_STATE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

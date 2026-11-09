@@ -974,23 +974,59 @@ impl Dialog {
         ))
     }
 
-    pub fn theme(current: &str, catalog: &crate::theme::Catalog) -> Self {
+    /// The palette list leads with the mode rows: pinning dark or light picks
+    /// which half of every `{dark, light}` pair resolves, so it sits above the
+    /// palettes, and the lock row only appears while a pin exists.
+    pub fn theme(
+        current: &str,
+        lock: Option<crate::theme::ThemeMode>,
+        catalog: &crate::theme::Catalog,
+    ) -> Self {
         let names = catalog.names();
+        let mut rows = vec![
+            Row {
+                id: "mode:dark".into(),
+                label: "pin dark".into(),
+                detail: if lock == Some(crate::theme::ThemeMode::Dark) {
+                    "pinned".into()
+                } else {
+                    String::new()
+                },
+            },
+            Row {
+                id: "mode:light".into(),
+                label: "pin light".into(),
+                detail: if lock == Some(crate::theme::ThemeMode::Light) {
+                    "pinned".into()
+                } else {
+                    String::new()
+                },
+            },
+        ];
+        if lock.is_some() {
+            rows.push(Row {
+                id: "mode:unlock".into(),
+                label: "unlock".into(),
+                detail: "back to dark".into(),
+            });
+        }
+        let offset = rows.len();
+        rows.extend(names.iter().enumerate().map(|(index, name)| Row {
+            id: index.to_string(),
+            label: name.to_string(),
+            detail: String::new(),
+        }));
         let mut list = ListDialog::new(
             "theme",
-            names
-                .iter()
-                .enumerate()
-                .map(|(index, name)| Row {
-                    id: index.to_string(),
-                    label: name.to_string(),
-                    detail: String::new(),
-                })
-                .collect(),
+            rows,
             ListKind::Plain,
             "enter apply · esc close",
         );
-        list.selected = names.iter().position(|name| *name == current).unwrap_or(0);
+        list.selected = names
+            .iter()
+            .position(|name| *name == current)
+            .map(|index| index + offset)
+            .unwrap_or(0);
         Dialog::Theme(list)
     }
 
@@ -3053,7 +3089,7 @@ mod tests {
         let dialogs = vec![
             Dialog::model_provider_filter(&[]),
             Dialog::models(&[], None),
-            Dialog::theme("miao", &theme),
+            Dialog::theme("miao", None, &theme),
             Dialog::sessions(&[]),
             Dialog::provider_accounts(Vec::new()),
             Dialog::accounts(&[]),
