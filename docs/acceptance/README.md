@@ -71,6 +71,7 @@ newer record is the one to read.
 | `2026-11-07-tool01-lsp-result-budget.md` | `e4e9996cf6` | TOOL-01 (the LSP call-hierarchy bounds — item limit, call-count limit, 64 KiB result budget — and the wire's per-response cap, completing criterion 1; criterion 2 stays partial and the retrieval measurement stays open) |
 | `2026-11-07-tool02-rename-large-unicode.md` | `1580c08bfe` | TOOL-02 (renames, large files and edit Unicode, closing the criteria `2026-11-05-tool02-versioned-edits.md` left open) |
 | `2026-11-07-tool05-family-matrix.md` | `9f56d83eaa` | TOOL-05 (the family × budget matrix on one tree, with the new read-window suite; the 2026-11-05 runaway "not tested" paragraph is superseded by `tests/process.rs`; the web `timeout` bound stays open) |
+| `2026-11-07-media01-materialization.md` | `7157d9cb01` | MEDIA-01 (capability-dependent materialization into the confined workspace with recovery, consistent capability refusal with the tool-read fallback, rejection of unsupported/oversized/mislabelled/count-over media before durable state, cancellation durability, >1 MiB stdio admission frames and in-place oversized refusal; URI resolution stays above the engine boundary and the ffmpeg-gated video workflow stays run-on-demand) |
 | `2026-11-07-tui03-stream-render.md` | `e170b105ee` | TUI-03 (incremental text/reasoning/tool pins, single-replace state settling, opaque vs transparent reasoning; a live provider wire and a real-client run stay open) |
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
