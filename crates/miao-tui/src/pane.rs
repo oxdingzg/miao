@@ -3038,14 +3038,10 @@ impl Pane for SidebarPane {
             ],
         };
         if self.session.is_some() {
-            lines.push(Line::default());
-            lines.extend(hourly_lines(
-                self.usage_hourly.as_ref(),
-                text_width,
-                &palette,
-            ));
             // Context: the same billed usage the status dialog reads, kept
             // beside the transcript so cost and throughput stay glanceable.
+            // It leads because these are the numbers this session is burning
+            // right now; the fleet-wide Last 24h read sits at the bottom.
             lines.push(Line::default());
             lines.push(Line::from(Span::styled(
                 "▾ Context",
@@ -3283,6 +3279,15 @@ impl Pane for SidebarPane {
                 )));
             }
         }
+        // Last 24h: the fleet-wide reference read, demoted to the bottom of
+        // the column — the session's own numbers above are what the
+        // operator acts on first.
+        lines.push(Line::default());
+        lines.extend(hourly_lines(
+            self.usage_hourly.as_ref(),
+            text_width,
+            &palette,
+        ));
         // No wrapping: a long title or todo would otherwise split into several
         // rows, pushing the rest of the column off the screen and reading as one
         // character per line for CJK.
@@ -6752,9 +6757,16 @@ mod tests {
             .iter()
             .position(|row| row.contains("Todo"))
             .expect("todo header");
-        // The column's left border survives trimming, so a padding row still
-        // reads as "│    "; only a row with content counts.
-        let below = rows[header + 1..]
+        // The Last 24h reference block now sits below the checklist; the count
+        // stops at its header so only the todo's own rows are counted. The
+        // column's left border survives trimming, so a padding row still reads
+        // as "│    "; only a row with content counts.
+        let last24 = rows[header + 1..]
+            .iter()
+            .position(|row| row.contains("Last 24h"))
+            .map(|offset| header + 1 + offset)
+            .expect("last 24h header");
+        let below = rows[header + 1..last24]
             .iter()
             .filter(|row| {
                 !row.trim_matches(|c: char| c == '│' || c.is_whitespace())
