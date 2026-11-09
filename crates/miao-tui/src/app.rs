@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
@@ -501,8 +501,15 @@ pub struct App {
     /// someone asks; asking once per open is enough, and an empty queue clears
     /// the record so the next queued message asks again.
     wake_asked: Option<String>,
-    /// The Zed selection already sent with an earlier prompt.
-    zed_selection_key: Option<String>,
+    /// The Zed context this process last attached: the selection key it came
+    /// from and the exact draft prefix it placed, so the same selection is
+    /// never attached twice and a changed one replaces its own text.
+    zed_context: Option<(String, String)>,
+    /// The last time the Zed database was probed for a selection.
+    zed_polled: Option<Instant>,
+    /// Where the current Zed selection is read from. A field so tests feed a
+    /// fixture instead of the operator's live Zed database.
+    zed_probe: fn(&Path) -> Option<zed::Selection>,
     clipboard_busy: bool,
     startup: Startup,
     /// Built-in plus custom themes, in menu order.
@@ -636,7 +643,9 @@ impl App {
             mtty_state: crate::mtty_state::Reporter::from_env(),
             notified: Vec::new(),
             wake_asked: None,
-            zed_selection_key: None,
+            zed_context: None,
+            zed_polled: None,
+            zed_probe: zed::selection,
             clipboard_busy: false,
             startup,
             themes,
@@ -825,7 +834,10 @@ impl App {
             self.home.wake();
         }
         match event {
-            AppEvent::Key(key) => self.handle_key(key),
+            AppEvent::Key(key) => {
+                self.poll_zed_context();
+                self.handle_key(key);
+            }
             AppEvent::Paste(text) => {
                 // A dialog that owns a text field takes the paste. Keystrokes
                 // are already modal, but a paste carries its own event: the
@@ -3045,17 +3057,67 @@ impl App {
         }
     }
 
-    /// Prepend the current Zed selection once per selection. The engine sees
-    /// one prompt string, so the context travels as text rather than a part.
-    fn zed_context(&mut self) -> Option<String> {
-        let selection = zed::selection(&self.workspace)?;
-        let context = zed::context(&selection)?;
-        let key = zed::key(&selection);
-        if self.zed_selection_key.as_deref() == Some(key.as_str()) {
+    /// Make the current Zed selection part of the draft: the context text
+    /// sits in the composer where the operator can read, edit, or delete it
+    /// before it is sent, instead of being prepended out of sight at submit.
+    fn poll_zed_context(&mut self) {
+        // Probing reads Zed's database through the sqlite3 CLI, so a
+        // keystroke burst probes once per window, not once per key.
+        if self
+            .zed_polled
+            .is_some_and(|at| at.elapsed() < Duration::from_millis(500))
+        {
+            return;
+        }
+        self.zed_polled = Some(Instant::now());
+        let selection = (self.zed_probe)(&self.workspace);
+        self.attach_zed_context(selection);
+    }
+
+    fn attach_zed_context(&mut self, selection: Option<zed::Selection>) {
+        if self.dialog.is_some() || self.shell.panel.is_some() {
+            return;
+        }
+        let text = self.shell.composer.editor.text().to_string();
+        // A slash draft is a command, and commands never carried the context.
+        if text.trim_start().starts_with('/') {
+            return;
+        }
+        let fresh = selection.and_then(|selection| self.fresh_zed_context(&selection));
+        if let Some(attached) = self.merged_draft(&text, fresh) {
+            self.shell.composer.editor.set_text(&attached);
+        }
+    }
+
+    /// The context of a selection this process has not attached before.
+    fn fresh_zed_context(&self, selection: &zed::Selection) -> Option<(String, String)> {
+        if self
+            .zed_context
+            .as_ref()
+            .is_some_and(|(seen, _)| *seen == zed::key(selection))
+        {
             return None;
         }
-        self.zed_selection_key = Some(key);
-        Some(context)
+        let context = zed::context(selection)?;
+        Some((zed::key(selection), format!("{context}\n")))
+    }
+
+    /// Where a fresh context meets a draft: a draft still carrying the
+    /// context it supersedes swaps the prefix, so a changed selection never
+    /// stacks a second reminder; anything the operator edited or removed
+    /// stays as they left it.
+    fn merged_draft(&mut self, text: &str, fresh: Option<(String, String)>) -> Option<String> {
+        let (key, prefix) = fresh?;
+        let body = match self.zed_context.take() {
+            Some((_, old)) if text.starts_with(old.as_str()) => text[old.len()..].to_string(),
+            seen => {
+                self.zed_context = seen;
+                text.to_string()
+            }
+        };
+        let merged = format!("{prefix}{body}");
+        self.zed_context = Some((key, prefix));
+        Some(merged)
     }
 
     fn apply_theme(&mut self, name: &str) {
@@ -4273,12 +4335,13 @@ impl App {
         // sidebar and the terminal tab stop reading "New session" the moment it
         // is sent rather than after some later reopen.
         self.name_session_from_prompt(&session_id, &text);
-        // Editor context is a prompt prefix rather than a wire field: the
-        // engine admits one text string, and the TS client does the same.
-        let text = match self.zed_context() {
-            Some(context) => format!("{context}\n\n{text}"),
-            None => text,
-        };
+        // The context is draft text the operator saw in the composer; the
+        // engine still admits one text string. A flow that never met the
+        // keyboard (a startup prompt, the editor's return) attaches here,
+        // and a selection already in the draft is never added twice.
+        let selection = (self.zed_probe)(&self.workspace);
+        let fresh = selection.and_then(|selection| self.fresh_zed_context(&selection));
+        let text = self.merged_draft(&text, fresh).unwrap_or(text);
         // The landing strip promises the remembered model, and the engine only
         // knows its own default: a brand-new Session carries no pin, so without
         // this the first prompt ran the engine's default route while the strip
@@ -6621,6 +6684,150 @@ mod tests {
         app.handle(AppEvent::EditorFinished(Ok(Some("rewritten".into()))));
         assert_eq!(app.shell.composer.editor.text(), "rewritten");
         assert!(app.shell.composer.notice.is_none());
+    }
+
+    fn zed_selection(line: u64) -> zed::Selection {
+        zed::Selection {
+            file_path: "/work/src/parser.rs".into(),
+            ranges: vec![zed::Range {
+                text: "let token = peek();".into(),
+                start_line: line,
+                start_character: 1,
+                end_line: line,
+                end_character: 20,
+            }],
+        }
+    }
+
+    fn zed_fixture_probe(_: &Path) -> Option<zed::Selection> {
+        Some(zed_selection(12))
+    }
+
+    fn no_zed_probe(_: &Path) -> Option<zed::Selection> {
+        None
+    }
+
+    fn first_prompt(
+        requests: &mut tokio::sync::mpsc::UnboundedReceiver<engine::Request>,
+    ) -> String {
+        for request in std::iter::from_fn(|| requests.try_recv().ok()) {
+            if let engine::Request::Prompt { text, .. } = request {
+                return text;
+            }
+        }
+        panic!("no prompt was admitted");
+    }
+
+    fn zed_session_app(
+        probe: fn(&Path) -> Option<zed::Selection>,
+    ) -> (App, tokio::sync::mpsc::UnboundedReceiver<engine::Request>) {
+        let mut app = app();
+        app.zed_probe = probe;
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_zed", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        let (handle, requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        (app, requests)
+    }
+
+    #[test]
+    fn the_zed_selection_sits_in_the_composer_before_it_is_sent() {
+        let (mut app, mut requests) = zed_session_app(zed_fixture_probe);
+        app.shell.composer.editor.set_text("why does it loop");
+        // What a keystroke's probe does when Zed holds a fresh selection: the
+        // context lands in the draft where the operator can read it.
+        app.poll_zed_context();
+        let draft = app.shell.composer.editor.text().to_string();
+        assert!(draft.contains("<system-reminder>"), "{draft}");
+        assert!(draft.contains("#12"), "{draft}");
+        assert!(draft.contains("why does it loop"), "{draft}");
+        // Submitting carries the draft as it stands and adds nothing.
+        app.submit(draft.clone(), Vec::new());
+        let prompt = first_prompt(&mut requests);
+        assert_eq!(prompt, draft);
+        assert_eq!(prompt.matches("<system-reminder>").count(), 1);
+    }
+
+    #[test]
+    fn deleting_the_context_keeps_it_deleted_when_the_same_selection_is_probed_again() {
+        let (mut app, mut requests) = zed_session_app(no_zed_probe);
+        app.shell.composer.editor.set_text("why does it loop");
+        app.attach_zed_context(Some(zed_selection(12)));
+        assert!(app
+            .shell
+            .composer
+            .editor
+            .text()
+            .contains("<system-reminder>"));
+        // The operator removes the reminder and submits what is left: the
+        // same selection must not be re-attached behind their back.
+        app.shell.composer.editor.set_text("why does it loop");
+        app.attach_zed_context(Some(zed_selection(12)));
+        assert_eq!(app.shell.composer.editor.text(), "why does it loop");
+        app.submit("why does it loop".into(), Vec::new());
+        let prompt = first_prompt(&mut requests);
+        assert!(!prompt.contains("<system-reminder>"), "{prompt}");
+        assert_eq!(prompt, "why does it loop");
+    }
+
+    #[test]
+    fn a_changed_selection_replaces_the_context_it_supersedes() {
+        let (mut app, _) = zed_session_app(no_zed_probe);
+        app.shell.composer.editor.set_text("why does it loop");
+        app.attach_zed_context(Some(zed_selection(12)));
+        app.attach_zed_context(Some(zed_selection(30)));
+        let draft = app.shell.composer.editor.text().to_string();
+        assert_eq!(draft.matches("<system-reminder>").count(), 1, "{draft}");
+        assert!(draft.contains("#30"), "{draft}");
+        assert!(draft.contains("why does it loop"), "{draft}");
+    }
+
+    #[test]
+    fn a_zed_failure_leaves_the_draft_alone_and_sends_it_unchanged() {
+        let (mut app, mut requests) = zed_session_app(no_zed_probe);
+        app.shell.composer.editor.set_text("ship the fix");
+        // No Zed terminal, no database, a missing sqlite3: the probe answers
+        // None, and the draft neither gains a reminder nor loses a byte.
+        app.poll_zed_context();
+        assert_eq!(app.shell.composer.editor.text(), "ship the fix");
+        app.submit("ship the fix".into(), Vec::new());
+        let prompt = first_prompt(&mut requests);
+        assert_eq!(prompt, "ship the fix");
+        assert!(!prompt.contains("<system-reminder>"), "{prompt}");
+    }
+
+    #[test]
+    fn a_slash_draft_does_not_carry_the_context() {
+        let (mut app, _) = zed_session_app(no_zed_probe);
+        app.shell.composer.editor.set_text("/model");
+        app.attach_zed_context(Some(zed_selection(12)));
+        assert_eq!(app.shell.composer.editor.text(), "/model");
+    }
+
+    #[test]
+    fn a_startup_prompt_still_carries_the_selection_context() {
+        let startup = Startup {
+            prompt: Some("ship it".into()),
+            ..Startup::default()
+        };
+        let mut app = app_with(startup);
+        app.zed_probe = zed_fixture_probe;
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        // The keyboard never saw this prompt; opening the Session continues it
+        // into submit, which attaches the selection once, the way a typed
+        // prompt would have shown it in the composer.
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_zed", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        let prompt = first_prompt(&mut requests);
+        assert_eq!(prompt.matches("<system-reminder>").count(), 1, "{prompt}");
+        assert!(prompt.contains("ship it"), "{prompt}");
     }
 
     #[test]
