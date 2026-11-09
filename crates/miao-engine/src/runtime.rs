@@ -2821,7 +2821,7 @@ fn provider_error_text(detail: &Value) -> Option<String> {
 
 fn state_selected(state: &Value) -> Result<Value, Error> {
     Ok(
-        json!({"status":"selected","todos_revision":state["todos"]["revision"],"goal_revision":state["goal"]["revision"],"fingerprint":crate::permission::digest(&serde_json::to_vec(state)?)}),
+        json!({"status":"selected","todos_revision":state["todos"]["revision"],"goal_revision":state["goal"]["revision"],"plan_revision":state["plan"]["revision"],"fingerprint":crate::permission::digest(&serde_json::to_vec(state)?)}),
     )
 }
 
@@ -3130,7 +3130,7 @@ async fn execute(
             crate::permission::Access::Read,
         ) == Decision::Allow;
         let state_selection = if state_allowed {
-            if state["todos"].is_null() && state["goal"].is_null() {
+            if state["todos"].is_null() && state["goal"].is_null() && state["plan"].is_null() {
                 state_selected(&state)?
             } else {
                 let ready = crate::state::runnable_state(&state)?;
@@ -4155,7 +4155,7 @@ command: None,
                                     read_peer_context(inner, session, &prepared).await
                                 }
                                 "knowledge"=>inner.tools.execute_knowledge(prepared,&policy,session,cancel.child_token()).await,
-                                "todowrite" | "goal" => match crate::state::Mutation::parse(
+                                "todowrite" | "goal" | "planwrite" => match crate::state::Mutation::parse(
                                     name,
                                     prepared.input().clone(),
                                 ) {

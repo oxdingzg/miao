@@ -35,6 +35,10 @@ pub struct Todo {
     pub content: String,
     pub status: TodoStatus,
     pub priority: Priority,
+    /// Verification is a receipt, not a claim: the todo surface never accepts
+    /// this field, so it stays false until a verification path fills it.
+    #[serde(default)]
+    pub verified: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -60,8 +64,43 @@ pub struct Goal {
     pub status: GoalStatus,
     #[serde(default)]
     pub evidence: Option<String>,
+    pub budget: Option<Budget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_when: Option<Vec<String>>,
     #[serde(default)]
-    pub budget: Option<String>,
+    pub expected_revision: Option<u64>,
+}
+/// A structured boundary the run loop can evaluate without parsing prose.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Budget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iterations: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wallclock_ms: Option<u64>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStatus {
+    Pending,
+    Approved,
+    Superseded,
+}
+/// The method awaiting approval, kept in its own durable row apart from the
+/// checklist and the goal: a displayed plan is never itself proof of
+/// implementation, so approval requires the steps to already live in the
+/// checklist. It feeds no loop; only the checklist does.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Plan {
+    pub summary: String,
+    #[serde(default)]
+    pub steps: Vec<String>,
+    pub status: PlanStatus,
+    #[serde(default)]
+    pub transcribed: bool,
     #[serde(default)]
     pub expected_revision: Option<u64>,
 }
@@ -196,7 +235,8 @@ impl Mutation {
                 if goal.objective.trim().is_empty()
                     || goal.objective.len() > 8192
                     || goal.evidence.as_ref().is_some_and(|text| text.len() > 8192)
-                    || goal.budget.as_ref().is_some_and(|text| text.len() > 2048)
+                    || !valid_budget(goal.budget.as_ref())
+                    || !valid_stop_when(goal.stop_when.as_ref())
                     || matches!(goal.status, GoalStatus::Done | GoalStatus::Blocked)
                         && goal
                             .evidence
@@ -205,7 +245,13 @@ impl Mutation {
                 {
                     return Err(ToolError::InvalidInput);
                 }
-                let mut value = json!({"objective":goal.objective,"status":goal.status,"evidence":goal.evidence,"budget":goal.budget});
+                let mut value = json!({"objective":goal.objective,"status":goal.status,"evidence":goal.evidence});
+                if let Some(budget) = goal.budget {
+                    value["budget"] = json!(budget);
+                }
+                if let Some(stop_when) = goal.stop_when {
+                    value["stop_when"] = json!(stop_when);
+                }
                 if let Some(autonomous) = goal.autonomous {
                     value["autonomous"] = json!(autonomous);
                 }
@@ -213,6 +259,26 @@ impl Mutation {
                     kind: "goal",
                     expected: goal.expected_revision,
                     value,
+                }
+            }
+            "planwrite" => {
+                let plan: Plan =
+                    serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
+                if plan.summary.trim().is_empty()
+                    || plan.summary.len() > 8192
+                    || plan.steps.len() > 64
+                    || plan
+                        .steps
+                        .iter()
+                        .any(|step| step.trim().is_empty() || step.len() > 2048)
+                    || matches!(plan.status, PlanStatus::Approved) && !plan.transcribed
+                {
+                    return Err(ToolError::InvalidInput);
+                }
+                Self {
+                    kind: "plan",
+                    expected: plan.expected_revision,
+                    value: json!({"summary":plan.summary,"steps":plan.steps,"status":plan.status,"transcribed":plan.transcribed}),
                 }
             }
             _ => return Err(ToolError::Unsupported),
@@ -229,6 +295,26 @@ impl Mutation {
         }
         Ok(mutation)
     }
+}
+/// At least one unit must be declared and no unit may be zero, so the boundary
+/// stays decidable later instead of degrading back to prose.
+fn valid_budget(budget: Option<&Budget>) -> bool {
+    let Some(budget) = budget else {
+        return true;
+    };
+    (budget.iterations.is_some() || budget.tokens.is_some() || budget.wallclock_ms.is_some())
+        && budget.iterations.is_none_or(|bound| bound > 0)
+        && budget.tokens.is_none_or(|bound| bound > 0)
+        && budget.wallclock_ms.is_none_or(|bound| bound > 0)
+}
+
+fn valid_stop_when(conditions: Option<&Vec<String>>) -> bool {
+    conditions.is_none_or(|conditions| {
+        conditions.len() <= 16
+            && conditions
+                .iter()
+                .all(|condition| !condition.trim().is_empty() && condition.len() <= 512)
+    })
 }
 impl Store {
     pub async fn state(&self, session: &str) -> Result<Value, Error> {
@@ -266,8 +352,8 @@ impl Store {
     }
 }
 pub(crate) fn projection(conn: &Connection, session: &str, through: u64) -> Result<Value, Error> {
-    let mut state = json!({"todos":null,"goal":null});
-    for kind in ["todos", "goal"] {
+    let mut state = json!({"todos":null,"goal":null,"plan":null});
+    for kind in ["todos", "goal", "plan"] {
         let row:Option<(u64,String)>=conn.query_row("SELECT seq,data FROM engine_event WHERE session_id=?1 AND seq<=?2 AND kind='session.state.updated' AND json_extract(data,'$.kind')=?3 ORDER BY seq DESC LIMIT 1",params![session,through,kind],|row|Ok((row.get(0)?,row.get(1)?))).optional()?;
         if let Some((revision, data)) = row {
             let data: Value = serde_json::from_str(&data)?;
@@ -328,5 +414,66 @@ mod tests {
         // Nothing session-specific rides it: a list that changed every turn
         // would churn the context epoch the system prompt is keyed by.
         assert!(!protocol.contains("Runnable tasks"), "{protocol}");
+    }
+
+    /// A completed todo must not be presentable as verified success: the
+    /// write surface rejects the field outright, and the durable value
+    /// records the default until a verification receipt lands.
+    #[test]
+    fn a_todo_cannot_claim_verification_through_the_write_surface() {
+        let rejected = super::Mutation::parse(
+            "todowrite",
+            json!({"todos":[{"content":"wire it","status":"completed","priority":"high","verified":true}]}),
+        );
+        assert!(rejected.is_err());
+        let mutation = super::Mutation::parse(
+            "todowrite",
+            json!({"todos":[{"content":"wire it","status":"completed","priority":"high"}]}),
+        )
+        .unwrap();
+        assert_eq!(mutation.value["todos"][0]["verified"], false);
+    }
+
+    #[test]
+    fn goal_budget_is_a_structured_boundary_not_prose() {
+        let parse = |value: Value| super::Mutation::parse("goal", value);
+        assert!(parse(json!({"objective":"go","status":"active","budget":"two hours"})).is_err());
+        assert!(parse(json!({"objective":"go","status":"active","budget":{}})).is_err());
+        assert!(
+            parse(json!({"objective":"go","status":"active","budget":{"iterations":0}})).is_err()
+        );
+        assert!(parse(
+            json!({"objective":"go","status":"active","budget":{"tokens":0,"iterations":3}})
+        )
+        .is_err());
+        assert!(
+            parse(json!({"objective":"go","status":"active","stop_when":["pass", "  "]})).is_err()
+        );
+        let mutation = parse(json!({"objective":"go","status":"active","budget":{"iterations":25,"wallclock_ms":600000},"stop_when":["cargo test green"]})).unwrap();
+        assert_eq!(mutation.value["budget"]["iterations"], 25);
+        assert_eq!(mutation.value["budget"]["wallclock_ms"], 600000);
+        assert!(mutation.value["budget"]["tokens"].is_null());
+        assert_eq!(mutation.value["stop_when"][0], "cargo test green");
+        let bare = parse(json!({"objective":"go","status":"active"})).unwrap();
+        assert!(bare.value["budget"].is_null());
+    }
+
+    /// Approving a plan asserts its steps already live in the checklist; a
+    /// displayed plan is never itself proof of implementation. Superseded
+    /// retires a plan without faking that approval.
+    #[test]
+    fn an_approved_plan_must_already_live_in_the_checklist() {
+        let parse = |value: Value| super::Mutation::parse("planwrite", value);
+        assert!(
+            parse(json!({"summary":"decode first","status":"approved","transcribed":false}))
+                .is_err()
+        );
+        assert!(parse(json!({"summary":" ","status":"pending"})).is_err());
+        assert!(parse(json!({"summary":"decode first","steps":[" "],"status":"pending"})).is_err());
+        let mutation = parse(json!({"summary":"decode first","steps":["decode the fixture"],"status":"approved","transcribed":true})).unwrap();
+        assert_eq!(mutation.kind, "plan");
+        assert_eq!(mutation.value["status"], "approved");
+        assert_eq!(mutation.value["transcribed"], true);
+        assert!(parse(json!({"summary":"decode first","status":"superseded"})).is_ok());
     }
 }

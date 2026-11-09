@@ -2119,7 +2119,7 @@ impl Store {
                 append(&tx,&target,"session.account.selected",json!({"account":account,"inherited":true}))?;
             }
             let inherited=crate::state::projection(&tx,&parent,source_watermark)?;
-            for kind in ["todos","goal"] {
+            for kind in ["todos","goal","plan"] {
                 if !inherited[kind].is_null(){append(&tx,&target,"session.state.updated",json!({"operation_id":format!("fork:{target}:{kind}"),"kind":kind,"value":inherited[kind]["value"],"expected_revision":null,"parent_revision":inherited[kind]["revision"]}))?;}
             }
             let checkpoint:Option<(u64,String)>=tx.query_row("SELECT through_seq,summary FROM engine_compaction WHERE session_id=?1 AND created_seq<=?2 AND through_seq<=?3 ORDER BY created_seq DESC LIMIT 1",params![parent,source_watermark,seq],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;

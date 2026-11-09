@@ -600,3 +600,190 @@ async fn a_session_without_a_list_is_still_told_how_to_keep_one() {
         request.system
     );
 }
+#[tokio::test]
+async fn todos_goal_and_plan_live_in_separate_durable_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = setup(&dir.path().join("engine.db")).await;
+    store
+        .update_state("s", "t1", todos("wire it", 0))
+        .await
+        .unwrap();
+    store
+        .update_state(
+            "s",
+            "g1",
+            Mutation::parse("goal", json!({"objective":"ship","status":"active"})).unwrap(),
+        )
+        .await
+        .unwrap();
+    store
+        .update_state(
+            "s",
+            "p1",
+            Mutation::parse(
+                "planwrite",
+                json!({"summary":"decode first","steps":["decode the fixture"],"status":"pending"}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let state = store.state("s").await.unwrap();
+    assert_eq!(state["todos"]["value"]["todos"][0]["content"], "wire it");
+    assert_eq!(state["goal"]["value"]["objective"], "ship");
+    assert_eq!(state["plan"]["value"]["summary"], "decode first");
+    let todo_revision = state["todos"]["revision"].as_u64().unwrap();
+    let plan_revision = state["plan"]["revision"].as_u64().unwrap();
+    store
+        .update_state(
+            "s",
+            "g2",
+            Mutation::parse(
+                "goal",
+                json!({"objective":"ship faster","status":"active","expected_revision":state["goal"]["revision"].as_u64().unwrap()}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let state = store.state("s").await.unwrap();
+    assert_eq!(state["todos"]["revision"].as_u64().unwrap(), todo_revision);
+    assert_eq!(state["plan"]["revision"].as_u64().unwrap(), plan_revision);
+    assert_eq!(state["goal"]["value"]["objective"], "ship faster");
+}
+#[tokio::test]
+async fn goal_lifecycle_moves_through_create_edit_pause_resume_and_terminate() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = setup(&dir.path().join("engine.db")).await;
+    let first = store
+        .update_state(
+            "s",
+            "g1",
+            Mutation::parse(
+                "goal",
+                json!({"objective":"ship the boundary","status":"active"}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first["value"]["status"], "active");
+    let revision = first["revision"].as_u64().unwrap();
+    let edited = store
+        .update_state(
+            "s",
+            "g2",
+            Mutation::parse(
+                "goal",
+                json!({"objective":"ship the boundary","status":"active","budget":{"iterations":25},"stop_when":["cargo test green"],"expected_revision":revision}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(edited["value"]["budget"]["iterations"], 25);
+    assert_eq!(edited["value"]["stop_when"][0], "cargo test green");
+    let paused = store
+        .update_state(
+            "s",
+            "g3",
+            Mutation::parse(
+                "goal",
+                json!({"objective":"ship the boundary","status":"paused","budget":{"iterations":25},"expected_revision":edited["revision"].as_u64().unwrap()}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(paused["value"]["status"], "paused");
+    let resumed = store
+        .update_state(
+            "s",
+            "g4",
+            Mutation::parse(
+                "goal",
+                json!({"objective":"ship the boundary","status":"active","expected_revision":paused["revision"].as_u64().unwrap()}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resumed["value"]["status"], "active");
+    let terminated = store
+        .update_state(
+            "s",
+            "g5",
+            Mutation::parse(
+                "goal",
+                json!({"objective":"ship the boundary","status":"done","evidence":"cargo test green on xx02","expected_revision":resumed["revision"].as_u64().unwrap()}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(terminated["value"]["status"], "done");
+    assert_eq!(
+        store.state("s").await.unwrap()["goal"]["value"]["evidence"],
+        "cargo test green on xx02"
+    );
+}
+#[tokio::test]
+async fn a_plan_persists_across_restart_and_is_copied_by_fork() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("engine.db");
+    let store = setup(&path).await;
+    store
+        .update_state(
+            "s",
+            "p1",
+            Mutation::parse(
+                "planwrite",
+                json!({"summary":"decode first","steps":["decode the fixture","transcribe the steps"],"status":"pending"}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    store
+        .update_state(
+            "s",
+            "p2",
+            Mutation::parse(
+                "planwrite",
+                json!({"summary":"decode first","steps":["decode the fixture","transcribe the steps"],"status":"approved","transcribed":true,"expected_revision":1}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    drop(store);
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let store = Store::open(&path).await.unwrap();
+    let state = store.state("s").await.unwrap();
+    assert_eq!(state["plan"]["value"]["status"], "approved");
+    assert_eq!(state["plan"]["value"]["transcribed"], true);
+    store.fork("s", "forked", None).await.unwrap();
+    let forked = store.state("forked").await.unwrap();
+    assert_eq!(forked["plan"]["value"]["status"], "approved");
+    assert_eq!(forked["plan"]["value"]["steps"][0], "decode the fixture");
+}
+#[tokio::test]
+async fn a_completed_todo_lands_unverified_until_a_receipt_fills_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = setup(&dir.path().join("engine.db")).await;
+    store
+        .update_state(
+            "s",
+            "t1",
+            Mutation::parse(
+                "todowrite",
+                json!({"todos":[{"id":"done-1","content":"wire it","status":"completed","priority":"high"}]}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let todo = store.state("s").await.unwrap()["todos"]["value"]["todos"][0].clone();
+    assert_eq!(todo["status"], "completed");
+    assert_eq!(todo["verified"], false);
+}

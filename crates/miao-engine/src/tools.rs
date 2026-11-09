@@ -1352,7 +1352,7 @@ impl Tools {
                     serde_json::from_value(input.clone()).map_err(|_| ToolError::InvalidInput)?;
                 ".".into()
             }
-            "todowrite" | "goal" => {
+            "todowrite" | "goal" | "planwrite" => {
                 crate::state::Mutation::parse(name, input.clone())?;
                 ".".into()
             }
@@ -1521,7 +1521,11 @@ impl Tools {
             )
         } else if name == "question" {
             "@session/question".into()
-        } else if name == "session_state" || name == "todowrite" || name == "goal" {
+        } else if name == "session_state"
+            || name == "todowrite"
+            || name == "goal"
+            || name == "planwrite"
+        {
             format!("@session/state/{name}")
         } else if name == "recall" {
             "@session/history".into()
@@ -1564,7 +1568,13 @@ impl Tools {
             Access::Schedule
         } else if matches!(
             name,
-            "cancel_wakeup" | "todowrite" | "goal" | "cron_delete" | "task_list" | "task_result"
+            "cancel_wakeup"
+                | "todowrite"
+                | "goal"
+                | "planwrite"
+                | "cron_delete"
+                | "task_list"
+                | "task_result"
         ) || self.is_product(name)
         {
             Access::SessionState
@@ -2171,9 +2181,10 @@ impl Tools {
         });
         definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Pass tool_use_id instead of query to restore the elided middle of one tool output that context pruning replaced. Both search and archived-output scans may return empty pages; pass next_before_message_seq as before_message_seq to continue until exhausted. Once an output is found, use next_offset to page its contents.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","maxLength":512},"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"additionalProperties":false})});
         definitions.extend([
-            ToolDefinition{name:"session_state".into(),description:"Read this Session's durable todo list and goal with optimistic revisions, including after compaction/restart.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
+            ToolDefinition{name:"session_state".into(),description:"Read this Session's durable todo list, pending plan, and goal with optimistic revisions, including after compaction/restart.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
             ToolDefinition{name:"todowrite".into(),description:"Create and maintain a structured task list for the current coding session: track progress during multi-step work and keep statuses current, marking work in_progress when starting and completed right after verifying it. Replaces the whole list each write (max 128). Give related tasks stable ids and depends_on links; waiting jobs block only their dependents, not independent work. Optional expected_revision=0 for a first write, or the revision from session_state, prevents stale updates.".into(),input_schema:json!({"type":"object","properties":{"todos":{"type":"array","maxItems":128,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1},"depends_on":{"type":"array","items":{"type":"string"}},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","waiting","blocked","completed","cancelled"]},"priority":{"type":"string","enum":["high","medium","low"]}},"required":["content","status","priority"],"additionalProperties":false}},"expected_revision":{"type":"integer","minimum":0}},"required":["todos"],"additionalProperties":false})},
-            ToolDefinition{name:"goal".into(),description:"Record this Session's durable objective/status/evidence/budget. budget is an advisory note for the operator; the harness enforces limits itself, so a recorded budget is never a reason to stop or to declare a round exhausted. done and blocked require evidence. Optional expected_revision protects against stale writes; evidence is recorded, not independently verified. autonomous records explicit user authorization and grants no additional permissions.".into(),input_schema:json!({"type":"object","properties":{"autonomous":{"type":"boolean"},"objective":{"type":"string"},"status":{"type":"string","enum":["active","paused","blocked","done"]},"evidence":{"type":"string"},"budget":{"type":"string"},"expected_revision":{"type":"integer","minimum":0}},"required":["objective","status"],"additionalProperties":false})},
+            ToolDefinition{name:"goal".into(),description:"Record this Session's durable objective/status/evidence/budget. budget is a structured boundary (iterations, tokens, wallclock_ms; at least one) plus optional stop_when conditions, so it can be evaluated without parsing prose; it stays advisory for the operator, the harness enforces limits itself, and a recorded budget is never a reason to stop or to declare a round exhausted. done and blocked require evidence. Optional expected_revision protects against stale writes; evidence is recorded, not independently verified. autonomous records explicit user authorization and grants no additional permissions.".into(),input_schema:json!({"type":"object","properties":{"autonomous":{"type":"boolean"},"objective":{"type":"string"},"status":{"type":"string","enum":["active","paused","blocked","done"]},"evidence":{"type":"string"},"budget":{"type":"object","properties":{"iterations":{"type":"integer","minimum":1},"tokens":{"type":"integer","minimum":1},"wallclock_ms":{"type":"integer","minimum":1}},"additionalProperties":false},"stop_when":{"type":"array","maxItems":16,"items":{"type":"string","minLength":1,"maxLength":512}},"expected_revision":{"type":"integer","minimum":0}},"required":["objective","status"],"additionalProperties":false})},
+            ToolDefinition{name:"planwrite".into(),description:"Draft or retire this Session's pending plan in its own durable row, apart from the todo checklist and the goal. steps live in the todowrite checklist; status approved asserts those steps already exist there and requires transcribed=true. A displayed plan is never itself proof of implementation and feeds no loop; only the checklist does. superseded retires a plan without faking approval. Optional expected_revision protects against stale writes.".into(),input_schema:json!({"type":"object","properties":{"summary":{"type":"string","minLength":1},"steps":{"type":"array","maxItems":64,"items":{"type":"string","minLength":1,"maxLength":2048}},"status":{"type":"string","enum":["pending","approved","superseded"]},"transcribed":{"type":"boolean"},"expected_revision":{"type":"integer","minimum":0}},"required":["summary","status"],"additionalProperties":false})},
         ]);
         definitions.push(ToolDefinition{name:"question".into(),description:"Ask 1..4 bounded choice questions. Answers arrive through the authenticated local controller. Waiting is interruptible; no automatic replay after crash. multiSelect permits multiple labels; custom permits a typed answer.".into(),input_schema:json!({"type":"object","properties":{"questions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{"question":{"type":"string"},"header":{"type":"string","maxLength":12},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"label":{"type":"string"},"description":{"type":"string"}},"required":["label"],"additionalProperties":false}},"multiSelect":{"type":"boolean","default":false},"custom":{"type":"boolean","default":true}},"required":["question","options"],"additionalProperties":false}},"timeout_ms":{"type":"integer","minimum":1,"maximum":600000,"default":60000}},"required":["questions"],"additionalProperties":false})});
         if self.wakeup_enabled() {
