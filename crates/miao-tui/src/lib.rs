@@ -106,6 +106,7 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
     let preferences = terminal::Preferences {
         mouse: config.mouse,
         cursor: config.cursor,
+        focus_reporting: config.focus_reporting,
     };
     // Multi-thread, not current_thread: the UI loop parks on the render
     // thread, and engine tasks (configure, catalog, streaming pumps) must not

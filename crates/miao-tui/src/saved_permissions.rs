@@ -204,6 +204,25 @@ impl Dialog {
         Action::None
     }
 
+    /// Move the open surface by wheel notches: the review pane's rows when a
+    /// rule is open, the filtered list's selection otherwise, matching the
+    /// arrow keys.
+    pub(crate) fn scroll(&mut self, rows: i32) {
+        if self.review.is_some() {
+            self.scroll = if rows < 0 {
+                self.scroll.saturating_sub((-rows) as u16)
+            } else {
+                self.scroll.saturating_add(rows as u16)
+            };
+            return;
+        }
+        if self.visible().is_empty() {
+            return;
+        }
+        let max = self.visible().len() as i32 - 1;
+        self.selected = (self.selected as i32 + rows).clamp(0, max) as usize;
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let palette = theme.palette;
         let footer = Rect {

@@ -38,6 +38,12 @@ pub struct Config {
     /// Capture mouse input for wheel scrolling. Defaults to on, like the
     /// TypeScript host.
     pub mouse: bool,
+    /// Ask the terminal to report focus changes. Defaults to on. Turning it
+    /// off keeps the focus escapes out of terminals that turn them into
+    /// garbage input behind multiplexers or SSH hops; notifications gated on
+    /// focus then stay silent (focus is never known), while sounds keep
+    /// playing.
+    pub focus_reporting: bool,
     /// Rows one wheel notch moves the transcript. The TypeScript host calls this
     /// `scroll_speed` and defaults it to 3.
     pub scroll_speed: f64,
@@ -96,6 +102,7 @@ impl Default for Config {
         Self {
             attention: AttentionConfig::default(),
             mouse: true,
+            focus_reporting: true,
             scroll_speed: 3.0,
             scroll_acceleration: false,
             leader_timeout_ms: 2000,
@@ -231,6 +238,15 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     if let Some(cursor) = field("cursor") {
         merge_cursor(cursor, path, config, warnings);
     }
+    if let Some(focus) = field("focus_reporting") {
+        match focus.as_bool() {
+            Some(focus) => config.focus_reporting = focus,
+            None => warnings.push(format!(
+                "tui config {}: focus_reporting must be a boolean, ignoring",
+                path.display()
+            )),
+        }
+    }
     if let Some(speed) = field("scroll_speed") {
         match speed.as_f64() {
             Some(speed) if speed.is_finite() && speed > 0.0 => config.scroll_speed = speed,
@@ -336,6 +352,7 @@ pub(crate) const KNOWN_FIELDS: &[&str] = &[
     "cursor",
     "mouse",
     "animations",
+    "focus_reporting",
 ];
 
 /// Names every top-level field neither loader reads, pointing at the known
@@ -674,6 +691,22 @@ mod tests {
             config.cursor.map(|cursor| cursor.shape()),
             Some(CursorShape::Block)
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UX-02: focus behaviour belongs to the same `tui.json` the other
+    /// terminal settings read, so one file describes the whole terminal.
+    #[test]
+    fn focus_reporting_comes_from_the_same_files() {
+        assert!(Config::default().focus_reporting);
+        let dir = temp_dir("focus");
+        let (config, warnings) = merge_at(r#"{"focus_reporting": false}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!config.focus_reporting);
+
+        let (config, warnings) = merge_at(r#"{"focus_reporting": "nope"}"#, &dir);
+        assert!(config.focus_reporting, "a bad value keeps the default");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

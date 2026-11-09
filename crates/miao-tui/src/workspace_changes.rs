@@ -233,6 +233,21 @@ impl Dialog {
         Action::None
     }
 
+    /// Move the open surface by wheel notches: the diff rows when a diff is
+    /// open, the file selection otherwise, matching the arrow keys.
+    pub(crate) fn scroll(&mut self, rows: i32) {
+        if let Some(panel) = &mut self.diff {
+            panel.scroll = panel.scroll.saturating_add_signed(rows as isize);
+            return;
+        }
+        if let Some(state) = &self.state {
+            if !state.files.is_empty() {
+                let max = state.files.len() as i32 - 1;
+                self.selected = (self.selected as i32 + rows).clamp(0, max) as usize;
+            }
+        }
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         if let Some(panel) = &self.diff {
             self.render_diff(panel, frame, area, theme);
