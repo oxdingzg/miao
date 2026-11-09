@@ -1,7 +1,8 @@
 # Push delivery
 
-`PushProvider.create` implements the APNs HTTP/2 transport for generic session
-attention and completion alerts. It signs ES256 provider tokens with a private
+`PushProvider.create` implements the APNs HTTP/2 transport and, with
+`kind: "fcm"`, the Firebase Cloud Messaging HTTP v1 transport for the same
+generic session attention and completion alerts. It signs ES256 provider tokens with a private
 Apple push signing key, reuses each token for at most 50 minutes, and sends to
 the selected Apple sandbox or production endpoint. The topic is the native
 application's bundle identifier. Keep signing keys and identifiers in private
@@ -32,6 +33,18 @@ certificate alone does not configure a push provider.
 
 Protocol references: [Apple APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)
 and [token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns).
+
+An FCM provider is configured in the same private account-mode section with
+`{ kind: "fcm", projectID, clientEmail, privateKey, environment }`, where
+`privateKey` is the PKCS#8 key of a service account allowed to send to that
+project. It exchanges a signed assertion for an access token (cached under the
+50-minute reuse bound), sends only the fixed alert plus `{signalID, kind}`
+data, and maps a missing or `UNREGISTERED` token to `unregistered`, `429`/`5xx`
+to `retryable`, and other refusals to `rejected`. `environment` keeps selecting
+which registration row a delivery targets; Android registrations reuse the same
+two values. An Android client must obtain its token from a Firebase project
+(the app ships no push credentials), and the dispatcher's grant and scope
+checks are unchanged.
 
 ## Device registration storage
 

@@ -18,10 +18,13 @@ const Account = Schema.Struct({
   pushRegistrations: Schema.optional(Schema.Boolean),
   pushProvider: Schema.optional(
     Schema.Struct({
-      teamID: Schema.String,
-      keyID: Schema.String,
+      kind: Schema.optional(Schema.Literals(["apns", "fcm"])),
+      teamID: Schema.optional(Schema.String),
+      keyID: Schema.optional(Schema.String),
+      topic: Schema.optional(Schema.String),
+      projectID: Schema.optional(Schema.String),
+      clientEmail: Schema.optional(Schema.String),
       privateKey: Schema.String,
-      topic: Schema.String,
       environment: Schema.Literals(["sandbox", "production"]),
     }),
   ),
