@@ -90,7 +90,8 @@ Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
   - `packages/miao`: CLI shell and server routes.
   - `packages/tui`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
   - `packages/app`: The shared web UI components, written in SolidJS
-  - `packages/desktop`: The native desktop app, built with Electron (wraps `packages/app`)
+  - `apps/desktop`: The desktop app, a Tauri shell around `packages/app` (see `specs/desktop-app.md`)
+  - `packages/desktop`: The previous Electron shell, kept as a feature reference until the Tauri port reaches parity
   - `packages/plugin`: Source for `@miao/plugin`
 
 ### Understanding bun dev vs miao
@@ -140,20 +141,26 @@ This starts a local dev server at http://localhost:5173 (or similar port shown i
 
 ### Running the Desktop App
 
-The desktop app is an Electron application that wraps the web UI.
+The desktop app is a Tauri shell (`apps/desktop`) around the shared web UI: it starts
+`miao` as a loopback sidecar and renders `packages/app` in the system webview.
 
-To run the desktop app in development:
-
-```bash
-bun run --cwd packages/desktop dev
-```
-
-To create a production build and package the app:
+To run it in development, first build the sidecar binary the shell bundles, then start
+Tauri (which serves the renderer on port 1420):
 
 ```bash
-bun run --cwd packages/desktop build
-bun run --cwd packages/desktop package
+cargo build --manifest-path crates/miao-cli/Cargo.toml
+bun run --cwd apps/desktop tauri dev
 ```
+
+`apps/desktop/scripts/prepare-sidecar.ts` (run by `predev`) copies that binary into
+`apps/desktop/src-tauri/sidecars/`. To package the app:
+
+```bash
+bun run --cwd apps/desktop tauri build
+```
+
+The previous Electron shell still lives in `packages/desktop` for feature comparison; it
+is not the shipping desktop app.
 
 > [!NOTE]
 > If you make changes to the API or SDK (e.g. `packages/miao/src/server/server.ts`), run `./script/generate.ts` to regenerate the SDK and related files.
