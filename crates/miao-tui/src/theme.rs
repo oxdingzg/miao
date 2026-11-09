@@ -433,7 +433,7 @@ fn parse_theme(text: &str, mode: ThemeMode, warnings: &mut Vec<String>) -> Resul
         .and_then(serde_json::Value::as_object)
         .ok_or("missing \"theme\" object")?;
     let defs = value.get("defs").and_then(serde_json::Value::as_object);
-    let color = |key: &str| {
+    let mut color = |key: &str| {
         let raw = theme
             .get(key)
             .ok_or_else(|| format!("missing theme.{key}"))?;
