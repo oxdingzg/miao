@@ -377,9 +377,14 @@ impl Shell {
 
     /// A double click: the word under the cell on the transcript. The draft
     /// keeps its drag-only selection, and a press outside the transcript stays
-    /// the ordinary press it already was.
+    /// the ordinary press it already was. The claimed surface owns the
+    /// release, the way [`Self::begin_selection`] hands the drag over.
     pub fn select_word(&mut self, position: Position) -> bool {
-        self.transcript.select_word_at(position)
+        let selected = self.transcript.select_word_at(position);
+        if selected {
+            self.drag = Some(DragTarget::Transcript);
+        }
+        selected
     }
 
     /// The first transcript cell that starts a word, for a test aiming a
