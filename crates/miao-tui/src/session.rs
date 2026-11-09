@@ -1496,6 +1496,44 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_only_boundary_names_the_side_effects_a_revert_leaves_alone() {
+        // HIS-03: a boundary that only ran shell commands has no file record,
+        // so the undo prompt has to say the session's side effects stay.
+        let plan = RevertPlan::from_value(&json!({
+            "available": false,
+            "reason": "no-file-snapshot"
+        }));
+        let summary = plan.summary();
+        assert!(
+            summary.contains("Shell commands and other side effects cannot be undone."),
+            "got {summary}"
+        );
+        assert!(
+            !summary.contains("Restore"),
+            "a boundary with no file record must not claim file work: {summary}"
+        );
+    }
+
+    #[test]
+    fn a_file_boundary_reports_files_and_still_disclaims_side_effects() {
+        let plan = RevertPlan::from_value(&json!({
+            "available": true,
+            "boundary_seq": 8,
+            "restore": ["a.txt"],
+            "remove": []
+        }));
+        let summary = plan.summary();
+        assert!(
+            summary.contains("Shell commands and other side effects cannot be undone."),
+            "got {summary}"
+        );
+        assert!(
+            !summary.contains("no file changes"),
+            "a file boundary must not claim the workspace stays as it is: {summary}"
+        );
+    }
+
+    #[test]
     fn the_snapshot_reverted_count_says_whether_a_redo_is_possible() {
         assert_eq!(
             SessionState::from_snapshot(&json!({ "reverted_count": 3 })).reverted,
