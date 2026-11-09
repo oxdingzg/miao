@@ -157,6 +157,61 @@ async fn fake_server_counted(stream: DuplexStream, initializations: Initializati
     }
 }
 
+/// A language server whose call-hierarchy answers overflow exactly one of the
+/// three bounds, selected by the queried line: 0 answers more than the 64 KiB
+/// result budget split across two roots so no single reply crosses the 64 KiB
+/// wire limit, 1 more than the 256-call result limit, 2 more than the 16-root
+/// item limit.
+async fn budget_server(stream: DuplexStream) {
+    let (read, mut write) = tokio::io::split(stream);
+    let mut read = BufReader::new(read);
+    while let Some(message) = read_frame(&mut read).await {
+        if let (Some(id), Some(method)) = (message.get("id"), message.get("method")) {
+            let result = match method.as_str().unwrap_or_default() {
+                "initialize" => json!({"capabilities":{}}),
+                "textDocument/prepareCallHierarchy" => {
+                    if message["params"]["position"]["line"].as_u64() == Some(2) {
+                        json!((0..17)
+                            .map(|_| json!({"name":"root","kind":12}))
+                            .collect::<Vec<_>>())
+                    } else {
+                        let line = message["params"]["position"]["line"].as_u64();
+                        let surface = if line == Some(1) { "count" } else { "budget" };
+                        let roots = if line == Some(0) { 2 } else { 1 };
+                        json!((0..roots)
+                            .map(|_| json!({
+                                "name":"main","kind":12,"uri":"file:///file.rs",
+                                "data":{"surface":surface}
+                            }))
+                            .collect::<Vec<_>>())
+                    }
+                }
+                "callHierarchy/incomingCalls" | "callHierarchy/outgoingCalls" => {
+                    if message["params"]["item"]["data"]["surface"] == "count" {
+                        json!((0..300)
+                            .map(|index| json!({"peer":index}))
+                            .collect::<Vec<_>>())
+                    } else {
+                        let name = "a".repeat(280);
+                        json!((0..125)
+                            .map(|_| json!({
+                                "from":{"name":name,"kind":12,"uri":"file:///file.rs"},
+                                "fromRanges":[]
+                            }))
+                            .collect::<Vec<_>>())
+                    }
+                }
+                _ => Value::Null,
+            };
+            write_frame(
+                &mut write,
+                &json!({"jsonrpc":"2.0","id":id,"result":result}),
+            )
+            .await;
+        }
+    }
+}
+
 async fn run(root: &Path, registry: Arc<Registry>, name: &'static str, input: Value) -> Value {
     run_with(root, registry, name, input, true).await
 }
@@ -324,6 +379,57 @@ fn lsp_query_rejects_missing_positions_and_foreign_parameters() {
         json!({"path":"file.rs","query":"main"})
     )
     .is_ok());
+}
+
+/// The call-hierarchy surfaces keep their three bounds: a serialized result
+/// above the 64 KiB budget, more than 256 accumulated calls, and more than 16
+/// prepared roots are each rejected instead of reaching the model.
+#[tokio::test]
+async fn the_call_hierarchy_bounds_reject_oversized_and_runaway_results() {
+    use miao_engine::lsp::Query;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    let (client, server) = tokio::io::duplex(1 << 20);
+    let (client_read, client_write) = tokio::io::split(client);
+    tokio::spawn(budget_server(server));
+    let registry = Arc::new(
+        Registry::connect_io("rust".into(), vec!["rs".into()], client_read, client_write)
+            .await
+            .unwrap(),
+    );
+
+    for (name, line, expected) in [
+        (
+            "lsp_incoming_calls",
+            0u64,
+            "external tool: LSP call hierarchy exceeds result budget",
+        ),
+        (
+            "lsp_outgoing_calls",
+            0,
+            "external tool: LSP call hierarchy exceeds result budget",
+        ),
+        (
+            "lsp_incoming_calls",
+            1,
+            "external tool: LSP call hierarchy exceeds result limit",
+        ),
+        (
+            "lsp_incoming_calls",
+            2,
+            "external tool: LSP call hierarchy exceeds item limit",
+        ),
+    ] {
+        let query = Query::parse(
+            name,
+            json!({"path":path.to_string_lossy(),"line":line,"character":3}),
+        )
+        .unwrap();
+        let error = registry.query(name, &path, query).await.unwrap_err();
+        assert_eq!(error.to_string(), expected, "{name} at line {line}");
+    }
+    registry.shutdown().await;
 }
 
 #[tokio::test]
