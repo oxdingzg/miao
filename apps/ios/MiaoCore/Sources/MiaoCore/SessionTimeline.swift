@@ -6,7 +6,30 @@ public struct SessionTimeline: Codable, Sendable, Equatable {
     public private(set) var cursor: Int64 = 0
     public private(set) var title: String = ""
     public private(set) var revert: JSONValue?
+    // The append guard runs once per replayed event; a linear membership scan
+    // over up to 10k messages per event was measurable during backlog replay.
+    private var knownIDs: Set<String> = []
+
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case messages, cursor, title, revert }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        messages = try container.decode([JSONValue].self, forKey: .messages)
+        cursor = try container.decode(Int64.self, forKey: .cursor)
+        title = try container.decode(String.self, forKey: .title)
+        revert = try container.decodeIfPresent(JSONValue.self, forKey: .revert)
+        knownIDs = Set(messages.compactMap { $0["id"]?.string })
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(messages, forKey: .messages)
+        try container.encode(cursor, forKey: .cursor)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(revert, forKey: .revert)
+    }
 
     public mutating func apply(_ page: JSONValue, sessionID: String) throws {
         guard let events = page["data"]?.array, events.count <= 100,
@@ -45,7 +68,12 @@ public struct SessionTimeline: Codable, Sendable, Equatable {
         case "session.next.revert.cleared": revert = nil
         case "session.next.revert.committed":
             let id = try required("messageID")
-            if let index = messages.firstIndex(where: { $0["id"]?.string == id }) { messages.removeSubrange(index...) }
+            if let index = messages.firstIndex(where: { $0["id"]?.string == id }) {
+                for message in messages[index...] {
+                    if let removed = message["id"]?.string { knownIDs.remove(removed) }
+                }
+                messages.removeSubrange(index...)
+            }
             revert = nil
         case "session.next.prompted":
             var value = base(try required("messageID"), "user")
@@ -163,7 +191,9 @@ public struct SessionTimeline: Codable, Sendable, Equatable {
     }
 
     private mutating func append(_ value: [String: JSONValue]) throws {
-        guard !messages.contains(where: { $0["id"] == value["id"] }) else { throw RemoteConnectionError.protocolIncompatible }
+        guard let id = value["id"]?.string, knownIDs.insert(id).inserted else {
+            throw RemoteConnectionError.protocolIncompatible
+        }
         messages.append(.object(value))
     }
     private mutating func assistant(_ id: String, _ update: (inout [String: JSONValue]) -> Void) {
