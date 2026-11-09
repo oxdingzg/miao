@@ -9,7 +9,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::backend::CrosstermBackend;
+use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::Terminal;
 use std::io::Write;
 
@@ -37,7 +37,7 @@ where
     let drawn = terminal.draw(render);
     let result = drawn.map(|_frame| ());
     terminal.backend_mut().write_all(b"\x1b[?2026l")?;
-    terminal.backend_mut().flush()?;
+    Write::flush(terminal.backend_mut())?;
     result
 }
 
@@ -105,8 +105,10 @@ pub fn resume(terminal: &mut Tui, preferences: Preferences) -> io::Result<()> {
 
 /// Fullscreen repaint without a cursor-position query. `Terminal::clear`
 /// snapshots the cursor through stdin, which races the dedicated input reader.
-/// Resizing the fullscreen viewport also resets its backing buffers.
-pub fn redraw(terminal: &mut Tui) -> io::Result<()> {
+/// Resizing the fullscreen viewport also resets its backing buffers. Generic
+/// over the backend so tests can drive the same path against a captured
+/// writer or ratatui's `TestBackend`.
+pub fn redraw<B: Backend>(terminal: &mut Terminal<B>) -> Result<(), B::Error> {
     let size = terminal.size()?;
     terminal.resize(ratatui::layout::Rect::new(0, 0, size.width, size.height))
 }
