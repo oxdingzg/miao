@@ -181,5 +181,14 @@
     ".github/scripts/ci-gate.py",
     ".github/scripts/test_ci_gate.py",
     ".github/actions/**"
+  ],
+  "android": [
+    "apps/android/**",
+    ".github/workflows/android.yml",
+    ".github/workflows/ci.yml",
+    ".github/ci-checks.json",
+    ".github/scripts/ci-gate.py",
+    ".github/scripts/test_ci_gate.py",
+    ".github/actions/**"
   ]
 }
