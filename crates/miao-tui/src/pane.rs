@@ -375,6 +375,20 @@ impl Shell {
         }
     }
 
+    /// A double click: the word under the cell on the transcript. The draft
+    /// keeps its drag-only selection, and a press outside the transcript stays
+    /// the ordinary press it already was.
+    pub fn select_word(&mut self, position: Position) -> bool {
+        self.transcript.select_word_at(position)
+    }
+
+    /// The first transcript cell that starts a word, for a test aiming a
+    /// double click at painted text.
+    #[cfg(test)]
+    pub fn transcript_word_cell(&self) -> Option<Position> {
+        self.transcript.first_word_cell()
+    }
+
     pub fn scroll_transcript(&mut self, delta: i32) {
         // Scrolling up detaches from the bottom; new content then lands above
         // the viewport instead of pulling it along. Scrolling back down to the
@@ -1300,6 +1314,53 @@ impl TranscriptPane {
         }
         let text = selection_text(&self.rendered, self.area, a, b);
         (!text.is_empty()).then_some(text)
+    }
+
+    /// Select the word run under a cell, the double-click gesture. The run is
+    /// what [`joins_word`] keeps whole, so `crates/tui` and `--flag` come out
+    /// in one piece. A cell that starts no word — whitespace, most
+    /// punctuation, a wide glyph — selects nothing and returns false, so the
+    /// caller can treat the press as the ordinary click it is.
+    pub fn select_word_at(&mut self, position: Position) -> bool {
+        if !self.area.contains(position) || self.rendered.is_empty() {
+            return false;
+        }
+        let Some(row) = self.rendered.get((position.y - self.area.y) as usize) else {
+            return false;
+        };
+        let column = (position.x - self.area.x) as usize;
+        let is_word = |index: usize| {
+            row.get(index)
+                .and_then(|symbol| symbol.chars().next())
+                .is_some_and(joins_word)
+        };
+        if !is_word(column) {
+            return false;
+        }
+        let start = (0..column).rev().find(|index| !is_word(*index));
+        let end = (column..row.len()).find(|index| !is_word(*index));
+        let start = start.map_or(0, |index| index + 1);
+        let end = end.map_or(row.len() - 1, |index| index - 1);
+        self.selection = Some((
+            Position::new(self.area.x + start as u16, position.y),
+            Position::new(self.area.x + end as u16, position.y),
+        ));
+        true
+    }
+
+    /// The first painted cell that starts a word, so a test can aim a double
+    /// click at real text instead of guessing a coordinate.
+    #[cfg(test)]
+    pub fn first_word_cell(&self) -> Option<Position> {
+        self.rendered.iter().enumerate().find_map(|(y, row)| {
+            row.iter().enumerate().find_map(|(x, symbol)| {
+                symbol
+                    .chars()
+                    .next()
+                    .filter(|character| joins_word(*character))
+                    .map(|_| Position::new(self.area.x + x as u16, self.area.y + y as u16))
+            })
+        })
     }
 }
 
@@ -6633,6 +6694,41 @@ mod tests {
         pane.begin_selection(Position { x: 0, y: 0 });
         pane.update_selection(Position { x: 2, y: 0 });
         assert_eq!(pane.take_selection().as_deref(), Some("abc"));
+    }
+
+    /// A double click selects the run `joins_word` keeps whole: the letters,
+    /// and the punctuation inside paths and flags.
+    #[test]
+    fn a_double_click_selects_the_word_under_the_cell() {
+        let mut pane = TranscriptPane::new(home_theme());
+        pane.rendered = "run crates/tui next"
+            .chars()
+            .map(|character| vec![character.to_string()])
+            .collect::<Vec<_>>();
+        pane.area = Rect::new(0, 0, 19, 1);
+        assert!(pane.select_word_at(Position { x: 5, y: 0 }));
+        assert_eq!(pane.take_selection().as_deref(), Some("crates/tui"));
+    }
+
+    /// A cell that starts no word stays a click: a double click on a gap must
+    /// not copy whatever happens to sit next to it.
+    #[test]
+    fn a_double_click_on_a_gap_selects_nothing() {
+        let mut pane = TranscriptPane::new(home_theme());
+        pane.rendered = "a b"
+            .chars()
+            .map(|character| vec![character.to_string()])
+            .collect::<Vec<_>>();
+        pane.area = Rect::new(0, 0, 3, 1);
+        assert!(!pane.select_word_at(Position { x: 1, y: 0 }));
+        assert_eq!(pane.take_selection(), None);
+    }
+
+    /// A double click outside the painted pane is no gesture at all.
+    #[test]
+    fn a_double_click_outside_the_pane_selects_nothing() {
+        let mut pane = pane_with_text();
+        assert!(!pane.select_word_at(Position { x: 0, y: 5 }));
     }
 
     /// The selection is consumed either way, so a click followed by a drag
