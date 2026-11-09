@@ -387,7 +387,11 @@ mod tests {
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.into(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).unwrap(),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .unwrap(),
         };
         terminal
             .draw(|frame| dialog.render(frame, frame.area(), &theme))

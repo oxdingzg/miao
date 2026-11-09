@@ -1751,7 +1751,7 @@ mod tests {
     fn theme() -> Theme {
         Theme {
             name: "test".to_string(),
-            palette: theme::builtin("miao").expect("builtin theme"),
+            palette: theme::builtin("miao", crate::theme::ThemeMode::Dark).expect("builtin theme"),
         }
     }
 
@@ -1762,7 +1762,11 @@ mod tests {
     fn an_unreturned_call_reads_as_settled_not_running() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut call = tool("apply_patch", serde_json::json!({}), None, false);
         call.unreturned = true;

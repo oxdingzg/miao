@@ -392,7 +392,11 @@ mod tests {
         // path all have to survive there.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let value = serde_json::json!({
             "repository": true,
@@ -532,7 +536,11 @@ mod tests {
     fn the_diff_view_paints_the_patch_the_facts_and_the_hints() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let paint = |dialog: &Dialog| {
             let mut terminal =

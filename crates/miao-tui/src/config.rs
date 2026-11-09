@@ -210,6 +210,7 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     let Some(object) = value.as_object() else {
         return;
     };
+    warn_unknown_fields(object, path, warnings);
     // The TypeScript host flattens a nested `tui` object; a top-level field
     // takes precedence over the same name nested under it.
     let nested = object.get("tui").and_then(serde_json::Value::as_object);
@@ -314,6 +315,77 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
             )),
         }
     }
+}
+
+/// Top-level `tui.json` fields the TypeScript host understands. The ones this
+/// loader does not read belong to another loader or are not mirrored yet, but
+/// none of them is an unknown field.
+pub(crate) const KNOWN_FIELDS: &[&str] = &[
+    "$schema",
+    "theme",
+    "tui",
+    "keybinds",
+    "plugin",
+    "plugin_enabled",
+    "leader_timeout",
+    "attention",
+    "prompt",
+    "scroll_speed",
+    "scroll_acceleration",
+    "diff_style",
+    "cursor",
+    "mouse",
+    "animations",
+];
+
+/// Names every top-level field neither loader reads, pointing at the known
+/// field the name probably meant, so a typo surfaces instead of the setting
+/// silently doing nothing.
+pub(crate) fn warn_unknown_fields(
+    object: &serde_json::Map<String, serde_json::Value>,
+    path: &Path,
+    warnings: &mut Vec<String>,
+) {
+    for key in object.keys() {
+        if KNOWN_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+        let closest = KNOWN_FIELDS
+            .iter()
+            .copied()
+            .min_by_key(|known| edit_distance(key, known))
+            .filter(|known| edit_distance(key, known) <= 2);
+        if let Some(known) = closest {
+            warnings.push(format!(
+                "tui config {}: ignoring unsupported field \"{key}\", did you mean \"{known}\"?",
+                path.display()
+            ));
+            continue;
+        }
+        warnings.push(format!(
+            "tui config {}: ignoring unsupported field \"{key}\"",
+            path.display()
+        ));
+    }
+}
+
+/// Smallest number of single-character edits between two keys.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut current = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            current.push(
+                (previous[j] + usize::from(ca != cb))
+                    .min(current[j] + 1)
+                    .min(previous[j + 1] + 1),
+            );
+        }
+        previous = current;
+    }
+    previous[b.len()]
 }
 
 /// `scroll_acceleration` is `{ "enabled": bool }` in the TypeScript schema; a
@@ -870,6 +942,7 @@ mod tests {
 
     #[test]
     fn project_files_apply_root_first_and_closer_files_win() {
+        let _env = crate::state::env_lock();
         let dir = temp_dir("chain");
         let nested = dir.join("a").join("b");
         std::fs::create_dir_all(dir.join(".miao")).unwrap();
@@ -891,6 +964,27 @@ mod tests {
         assert!(config.attention.enabled);
         assert_eq!(config.attention.volume, 0.9);
         std::env::remove_var("MIAO_CONFIG_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unknown_field_names_the_closest_known_key() {
+        let dir = temp_dir("unknown-field");
+        let (_, warnings) = merge_at(r#"{"them": "nord"}"#, &dir);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].contains("did you mean \"theme\""),
+            "{warnings:?}"
+        );
+
+        // `animations` belongs to this loader's known set, so it stays silent.
+        let (_, warnings) = merge_at(r#"{"animations": true}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        // A name far from every known key keeps the plain warning.
+        let (_, warnings) = merge_at(r#"{"zzzzzzzzz": 1}"#, &dir);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(!warnings[0].contains("did you mean"), "{warnings:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

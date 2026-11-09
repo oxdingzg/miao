@@ -385,7 +385,7 @@ mod tests {
     fn theme() -> Theme {
         Theme {
             name: "test".to_string(),
-            palette: theme::builtin("miao").expect("builtin theme"),
+            palette: theme::builtin("miao", crate::theme::ThemeMode::Dark).expect("builtin theme"),
         }
     }
 
