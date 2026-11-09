@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -193,17 +193,30 @@ impl EngineClient {
             // the turn ended — the transcript would arrive as one block rather
             // than streaming. This task does nothing but drain.
             let (notices, mut notice_rx) = mpsc::unbounded_channel::<Value>();
+            // How many frames the relay has handed over and this loop has not
+            // taken yet. `notice_rx` itself cannot be asked inside the select
+            // below — its recv future holds it for the whole select — so the
+            // relay counts what it hands over and the loop counts what it
+            // takes. When that depth piles up, a dispatch is holding the only
+            // consumer: the in-process egress is behind, the same fact the
+            // engine's own fan-out reports on the stdio wire.
+            let backlog = Arc::new(AtomicUsize::new(0));
             {
                 let notices = notices.clone();
+                let relay_backlog = backlog.clone();
                 tokio::spawn(async move {
                     while let Some(notice) = progress.recv().await {
                         if notices.send(notice).is_err() {
                             return;
                         }
+                        relay_backlog.fetch_add(1, Ordering::Relaxed);
                     }
                 });
             }
             let mut host = Host::new(runtime);
+            // Whether the backlog has been reported and not yet cleared, so a
+            // report is one rising and one falling edge instead of per frame.
+            let mut notice_lagged = false;
             loop {
                 tokio::select! {
                     frame = inbound.recv() => {
@@ -239,6 +252,28 @@ impl EngineClient {
                     }
                     notice = notice_rx.recv() => match notice {
                         Some(notice) => {
+                            let taken = backlog
+                                .fetch_sub(1, Ordering::Relaxed)
+                                .saturating_sub(1);
+                            // Name the backlog on the same wire the engine
+                            // uses, before the branches below move the notice,
+                            // so the status strip can say why nothing moves.
+                            if let Some(lagged) =
+                                miao_engine::progress::backpressure_edge(notice_lagged, taken)
+                            {
+                                notice_lagged = lagged;
+                                let frame = json!({
+                                    "method": "progress",
+                                    "params": miao_engine::progress::backpressure_frame(
+                                        &notice,
+                                        taken,
+                                        !lagged,
+                                    ),
+                                });
+                                if let Ok(line) = serde_json::to_string(&frame) {
+                                    reap.dispatch(&line);
+                                }
+                            }
                             // A resync carries no session; every subscriber
                             // needs it, so it is forwarded unconditionally.
                             let gated = notice.get("method").is_none()
