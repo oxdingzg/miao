@@ -2138,10 +2138,12 @@ impl App {
                     "mode:light" => self.set_mode_lock(Some("light")),
                     "mode:unlock" => self.set_mode_lock(None),
                     _ => {
-                        let name =
-                            row.id.parse::<usize>().ok().and_then(|index| {
-                                self.themes.names().get(index).map(str::to_string)
-                            });
+                        let name = row.id.parse::<usize>().ok().and_then(|index| {
+                            self.themes
+                                .names()
+                                .get(index)
+                                .map(|name| (*name).to_string())
+                        });
                         if let Some(name) = name {
                             self.apply_theme(&name);
                         }
