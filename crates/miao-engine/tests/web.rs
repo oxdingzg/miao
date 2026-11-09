@@ -662,3 +662,281 @@ async fn tools_hand_a_late_catalogue_to_the_web_client_that_already_exists() {
     registry.shutdown().await;
     task.await.unwrap();
 }
+
+// The host owns backend selection: environment configuration decides which
+// backend answers `websearch`, an unusable selection fails closed instead of
+// falling over to a backend the host did not choose, and an `mcp` selection
+// never dials a REST endpoint even with ambient provider credentials set.
+#[tokio::test]
+async fn host_configuration_selects_the_answering_backend() {
+    fn clear() {
+        for name in [
+            "MIAO_WEB_SEARCH_PROVIDER",
+            "MIAO_WEB_SEARCH_MCP_TOOL",
+            "MIAO_WEB_SEARCH_ENDPOINT",
+            "EXA_API_KEY",
+            "PARALLEL_API_KEY",
+        ] {
+            std::env::remove_var(name);
+        }
+    }
+
+    // Nothing configured: the tool is absent, not misdirected.
+    clear();
+    assert!(SearchConfig::from_env().unwrap().is_none());
+    assert!(Client::new(None)
+        .unwrap()
+        .definitions()
+        .iter()
+        .all(|definition| definition.name != "websearch"));
+
+    // Incomplete or unknown selections fail closed.
+    for provider in ["exa", "mcp", "ask-jeeves"] {
+        std::env::set_var("MIAO_WEB_SEARCH_PROVIDER", provider);
+        assert!(matches!(
+            SearchConfig::from_env(),
+            Err(ToolError::InvalidInput)
+        ));
+    }
+    clear();
+
+    // Each explicit provider answers with its own native wire contract.
+    let (address, mut seen, task) = server(vec![(
+        "/search",
+        page(
+            "application/json",
+            r#"{"results":[{"title":"A","url":"https://example.org/a","text":"alpha"}]}"#,
+        ),
+    )])
+    .await;
+    std::env::set_var("MIAO_WEB_SEARCH_ENDPOINT", format!("{address}/search"));
+    std::env::set_var("MIAO_WEB_SEARCH_PROVIDER", "exa");
+    std::env::set_var("EXA_API_KEY", "fixture-key");
+    let client = Client::new(Some(SearchConfig::from_env().unwrap().unwrap())).unwrap();
+    let answer = client
+        .execute(
+            "websearch",
+            json!({"query":"q","numResults":2}),
+            &allow(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(answer["provider"], "exa");
+    let wire = seen.recv().await.unwrap();
+    assert_eq!(wire["body"]["query"], "q");
+    assert_eq!(wire["body"]["numResults"], 2);
+    assert_eq!(wire["key"], "fixture-key");
+
+    std::env::set_var("MIAO_WEB_SEARCH_PROVIDER", "parallel");
+    std::env::remove_var("EXA_API_KEY");
+    std::env::set_var("PARALLEL_API_KEY", "fixture-key");
+    let client = Client::new(Some(SearchConfig::from_env().unwrap().unwrap())).unwrap();
+    let answer = client
+        .execute(
+            "websearch",
+            json!({"query":"q"}),
+            &allow(),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(answer["provider"], "parallel");
+    let wire = seen.recv().await.unwrap();
+    assert_eq!(wire["body"]["objective"], "q");
+    assert_eq!(wire["body"]["mode"], "basic");
+    task.abort();
+    clear();
+
+    // An `mcp` selection answers through its own tool even with ambient REST
+    // credentials present. The configured REST endpoint points at a closed
+    // port here: a fallback to Exa with the ambient key would fail the call
+    // instead of returning the MCP answer, and the advertised schema is the
+    // server's own, not the REST contract.
+    let (registry, calls, task) = search_peer("mcp answer".into()).await;
+    let alias = registry.definitions()[0].name.clone();
+    std::env::set_var("MIAO_WEB_SEARCH_PROVIDER", "mcp");
+    std::env::set_var("MIAO_WEB_SEARCH_MCP_TOOL", &alias);
+    std::env::set_var("MIAO_WEB_SEARCH_ENDPOINT", "http://127.0.0.1:1/search");
+    std::env::set_var("EXA_API_KEY", "ambient-fixture-key");
+    let client = Client::new(Some(SearchConfig::from_env().unwrap().unwrap()))
+        .unwrap()
+        .with_mcp(registry.clone());
+    let definition = client
+        .definitions()
+        .into_iter()
+        .find(|definition| definition.name == "websearch")
+        .unwrap();
+    let schema = definition.input_schema.to_string();
+    assert!(schema.contains("max_results"));
+    assert!(!schema.contains("numResults"));
+    let mcp_policy = policy(vec![Rule {
+        tool: "*".into(),
+        path: "@mcp/**".into(),
+        decision: Decision::Allow,
+    }]);
+    let answer = client
+        .execute(
+            "websearch",
+            json!({"query":"q","max_results":2}),
+            &mcp_policy,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(answer["backend"], "mcp");
+    assert_eq!(calls.lock().await.len(), 1);
+    assert!(!answer.to_string().contains("ambient-fixture-key"));
+    clear();
+    registry.shutdown().await;
+    task.await.unwrap();
+}
+
+// An offline cost and quality harness: a fixed query set runs against each
+// backend's wire fixture, and the harness records per-backend turn and
+// payload cost against asserted upper bounds. Quality evidence stays in each
+// backend's own format — citation URLs where the format carries them, a
+// labelled server answer where it does not — so the engine never reshapes one
+// format into another's vocabulary or sums unlike recall into one number.
+#[tokio::test]
+async fn harness_records_payload_and_turn_costs_per_backend_without_equating_formats() {
+    const REQUEST_BOUND: usize = 4096;
+    const ANSWER_BOUND: usize = 65536;
+    const QUERIES: [&str; 3] = [
+        "rust async runtimes",
+        "tokio cancellation",
+        "effect systems",
+    ];
+    let mut report = Vec::new();
+
+    // The same two documents sit behind every REST provider, each in its
+    // native shape.
+    let exa_body = json!({"results":[
+        {"title":"Doc A","url":"https://docs.example.org/a","text":"alpha body"},
+        {"title":"Doc B","url":"https://docs.example.org/b","text":"beta body"}
+    ]})
+    .to_string();
+    let parallel_body = json!({"results":[
+        {"title":"Doc A","url":"https://docs.example.org/a","excerpts":["alpha","body"]},
+        {"title":"Doc B","url":"https://docs.example.org/b","excerpts":["beta","body"]}
+    ]})
+    .to_string();
+    let mut citation_sets = Vec::new();
+    let mut first_texts = Vec::new();
+
+    for (provider, body) in [
+        (SearchProvider::Exa, exa_body.as_str()),
+        (SearchProvider::Parallel, parallel_body.as_str()),
+    ] {
+        let name = match provider {
+            SearchProvider::Exa => "exa",
+            SearchProvider::Parallel => "parallel",
+        };
+        let (address, mut seen, task) =
+            server(vec![("/search", page("application/json", body))]).await;
+        let client = Client::new(Some(
+            SearchConfig::new(provider, Some(&format!("{address}/search")), "fixture-key").unwrap(),
+        ))
+        .unwrap();
+        let mut request_bytes = 0;
+        let mut answer_bytes = 0;
+        let mut citations = 0;
+        for query in QUERIES {
+            let answer = client
+                .execute(
+                    "websearch",
+                    json!({"query":query,"numResults":5,"contextMaxCharacters":2000}),
+                    &allow(),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            let wire = seen.recv().await.unwrap();
+            let payload = serde_json::to_string(&wire["body"]).unwrap();
+            request_bytes += payload.len();
+            assert!(payload.len() <= REQUEST_BOUND, "{name} request {payload}");
+            let serialized = serde_json::to_string(&answer).unwrap();
+            answer_bytes += serialized.len();
+            // The context budget bounds the answer, not just the fixture:
+            // 2000 characters per row times four bytes each, plus the envelope.
+            assert!(
+                serialized.len() <= 2000 * 4 + 1024,
+                "{name} answer {serialized}"
+            );
+            assert!(serialized.len() <= ANSWER_BOUND);
+            assert_eq!(answer["provider"], name);
+            assert!(answer.get("backend").is_none());
+            let rows = answer["results"].as_array().unwrap();
+            citations += rows.len();
+            for row in rows {
+                assert!(row["url"].as_str().unwrap().starts_with("https://"));
+            }
+            if query == QUERIES[0] {
+                citation_sets.push(
+                    rows.iter()
+                        .map(|row| row["url"].as_str().unwrap().to_owned())
+                        .collect::<Vec<_>>(),
+                );
+                first_texts.push(rows[0]["text"].as_str().unwrap().to_owned());
+            }
+        }
+        assert!(seen.try_recv().is_err());
+        assert_eq!(citations, QUERIES.len() * 2);
+        report.push(format!(
+            "{name} queries=3 turns=3 request_bytes={request_bytes} answer_bytes={answer_bytes} citations={citations}"
+        ));
+        task.abort();
+    }
+
+    // Same documents behind both providers: their citation URL sets agree,
+    // while each body field stays in its own native shape rather than being
+    // flattened into the other's.
+    assert_eq!(citation_sets[0], citation_sets[1]);
+    assert_eq!(first_texts[0], "alpha body");
+    assert_eq!(first_texts[1], "alpha\n\nbody");
+
+    // The MCP backend answers the same query set through the server's own
+    // tool: one call per query, and the server's answer stays a labelled
+    // blob — the engine counts no REST rows in it.
+    let (registry, calls, task) = search_peer("alpha body\nbeta body".into()).await;
+    let alias = registry.definitions()[0].name.clone();
+    let client = Client::new(Some(SearchConfig::mcp(&alias).unwrap()))
+        .unwrap()
+        .with_mcp(registry.clone());
+    let mcp_policy = policy(vec![Rule {
+        tool: "*".into(),
+        path: "@mcp/**".into(),
+        decision: Decision::Allow,
+    }]);
+    let mut request_bytes = 0;
+    let mut answer_bytes = 0;
+    for query in QUERIES {
+        let answer = client
+            .execute(
+                "websearch",
+                json!({"query":query,"max_results":5}),
+                &mcp_policy,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let arguments = calls.lock().await.last().unwrap()["arguments"].clone();
+        let payload = serde_json::to_string(&arguments).unwrap();
+        request_bytes += payload.len();
+        assert!(payload.len() <= REQUEST_BOUND, "mcp request {payload}");
+        let serialized = serde_json::to_string(&answer).unwrap();
+        answer_bytes += serialized.len();
+        assert!(serialized.len() <= ANSWER_BOUND, "mcp answer {serialized}");
+        assert_eq!(answer["backend"], "mcp");
+        assert!(answer.get("results").is_none());
+    }
+    assert_eq!(calls.lock().await.len(), QUERIES.len());
+    report.push(format!(
+        "mcp queries=3 turns=3 request_bytes={request_bytes} answer_bytes={answer_bytes} citations=server-owned-format"
+    ));
+    for line in report {
+        println!("{line}");
+    }
+    registry.shutdown().await;
+    task.await.unwrap();
+}
