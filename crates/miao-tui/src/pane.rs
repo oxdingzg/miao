@@ -4312,6 +4312,134 @@ mod tests {
     use super::*;
     use crate::session::{Choice, QuestionItem};
 
+    /// TUI-04's reading surfaces in one narrow frame: the markdown block
+    /// stays structured, an image result names the media instead of its
+    /// bytes, and long tool output folds behind the chord that reopens it.
+    /// A row lost here is a result the operator cannot read, on exactly the
+    /// widths a transcript actually runs at.
+    #[test]
+    fn a_narrow_transcript_keeps_markdown_media_and_folded_output_readable() {
+        let mut shell = Shell::new(Path::new("/tmp/pane-test"), home_theme());
+        shell.set_toggle_chord(Some("ctrl+x u".into()));
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User {
+                    text: "check the render".into(),
+                    seq: 1,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![
+                        Part::Text(
+                            [
+                                "## Findings",
+                                "",
+                                "| name | count |",
+                                "| --- | --- |",
+                                "| rows | 3 |",
+                                "",
+                                "- one",
+                                "see [the guide](https://example.com/x) now",
+                                "",
+                                "```",
+                                "let x = 1;",
+                                "```",
+                            ]
+                            .join("\n"),
+                        ),
+                        Part::Tool(crate::session::ToolPart {
+                            id: "call_img".into(),
+                            name: "read_image".into(),
+                            input: serde_json::json!({"filePath": "assets/logo.png"}),
+                            output: Some(
+                                serde_json::json!({"text": "iVBORw0KGgoAAAANSUhEUg=="}).to_string(),
+                            ),
+                            failed: false,
+                            unreturned: false,
+                        }),
+                        Part::Tool(crate::session::ToolPart {
+                            id: "call_seq".into(),
+                            name: "run_command".into(),
+                            input: serde_json::json!({"argv": ["seq", "12"]}),
+                            output: Some(
+                                serde_json::json!({
+                                    "stdout": (1..=12)
+                                        .map(|n| format!("line {n}"))
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                    "exit_code": 0
+                                })
+                                .to_string(),
+                            ),
+                            failed: false,
+                            unreturned: false,
+                        }),
+                    ],
+                },
+            ],
+            ..Transcript::default()
+        };
+        shell.set_transcript(&transcript);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        let paint =
+            |shell: &mut Shell, terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>| {
+                terminal
+                    .draw(|frame| shell.transcript.render(frame, frame.area()))
+                    .expect("draw");
+                (0..40)
+                    .map(|y| {
+                        (0..60)
+                            .map(|x| {
+                                terminal
+                                    .backend()
+                                    .buffer()
+                                    .cell(ratatui::prelude::Position::new(x, y))
+                                    .map(|cell| cell.symbol().to_string())
+                                    .unwrap_or_default()
+                            })
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+            };
+        let painted = paint(&mut shell, &mut terminal).join("\n");
+        // The markdown structure survives the narrow frame, and a link keeps
+        // its label while the URL it points at stays out of the transcript.
+        for needle in [
+            "Findings",
+            "name",
+            "rows",
+            "• one",
+            "the guide",
+            "│ let x = 1;",
+        ] {
+            assert!(painted.contains(needle), "missing {needle:?}: {painted}");
+        }
+        assert!(!painted.contains("example.com"), "{painted}");
+        // The image result is a placeholder naming the media; its bytes never
+        // reach the buffer.
+        assert!(painted.contains("Read image"), "{painted}");
+        assert!(!painted.contains("iVBOR"), "{painted}");
+        // Long output folds to its budget and names the chord that reopens it.
+        assert!(painted.contains("line 1"), "{painted}");
+        assert!(
+            painted.contains("more lines") && painted.contains("ctrl+x u expand"),
+            "{painted}"
+        );
+        assert!(
+            !painted.contains("line 12"),
+            "folded output stays hidden: {painted}"
+        );
+        shell.toggle_tool_expansion();
+        let painted = paint(&mut shell, &mut terminal).join("\n");
+        assert!(
+            painted.contains("line 12"),
+            "expansion shows the tail: {painted}"
+        );
+        assert!(!painted.contains("more lines"), "{painted}");
+    }
+
     #[test]
     fn the_goal_has_its_own_section_above_the_todo_list() {
         // AGT-04: a displayed plan is not an implemented one, and a checklist is

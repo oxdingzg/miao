@@ -543,4 +543,22 @@ mod tests {
         assert!(rendered.contains(&"  │ still writing".to_string()));
         assert_eq!(rendered.last().map(String::as_str), Some("  ╰"));
     }
+
+    /// The renderer is deliberately not a CommonMark parser, so the fallback
+    /// path is the contract: an HTML block, a template expression, an
+    /// autolink and a tabbed line must each survive character for character.
+    #[test]
+    fn unknown_content_passes_through_without_loss() {
+        let document = "<details open>\n{{template.render(x)}}\n<https://example.com/auto>\n宽字符与\t制表符保留";
+        let painted: Vec<String> = lines(document, &theme()).iter().map(text).collect();
+        assert_eq!(
+            painted,
+            vec![
+                "<details open>".to_string(),
+                "{{template.render(x)}}".to_string(),
+                "<https://example.com/auto>".to_string(),
+                "宽字符与\t制表符保留".to_string(),
+            ]
+        );
+    }
 }
