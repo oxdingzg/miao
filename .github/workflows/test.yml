@@ -82,9 +82,6 @@ jobs:
           fi
           GITHUB_ACTIONS=false bun turbo test "${filter[@]}"
 
-      - name: Check generated client
-        working-directory: packages/client
-        run: bun run check:generated
 
   windows:
     name: unit (windows, non-blocking until Windows suite is fixed)

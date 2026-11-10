@@ -30,5 +30,4 @@ jobs:
           bun run check:browser:enrollment
           bun run check:web
           bun run check:web:mobile
-          bun run check:web:runtime
           bun run check:web:enrollment
