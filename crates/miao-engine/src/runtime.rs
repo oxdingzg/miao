@@ -3016,6 +3016,12 @@ async fn execute(
         if let (None, Some(turns)) = (allowance, delegated_turns) {
             allowance = Some(turns);
         }
+        // The delegation's recorded boundary is the child's own grant: an
+        // explicit budget caps whatever the policy left, so a child can
+        // never hold more turns than its delegator granted it.
+        if let Some(turns) = boundary.as_ref().and_then(|boundary| boundary.max_turns) {
+            allowance = Some(turns.min(allowance.unwrap_or(u32::MAX)));
+        }
         reset_allowance = false;
         // The soft budget is advisory: at the wrap-up share the model is asked
         // to close the turn, and once spent the request goes text-only so the
@@ -6560,7 +6566,7 @@ async fn delegate(
     // The boundary is the child's durable contract: what bounded it, and who
     // granted it. Recording it before the first wake means every delegated
     // run reads its own grant, not whatever the environment happens to say.
-    let boundary = delegation_boundary(inner, parent, &task, context).await?;
+    let boundary = delegation_boundary(inner, parent, &task, &context).await?;
     inner
         .store
         .record(
@@ -6662,7 +6668,7 @@ async fn delegation_boundary(
     inner: &Arc<Inner>,
     parent: &str,
     task: &crate::subagent::Input,
-    context: Delegation<'_>,
+    context: &Delegation<'_>,
 ) -> Result<ResolvedBoundary, ToolError> {
     let stated_turns = task.budget.as_ref().and_then(|budget| budget.max_turns);
     let goal_turns = if stated_turns.is_none() {
