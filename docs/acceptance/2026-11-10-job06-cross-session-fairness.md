@@ -51,17 +51,29 @@ keep rejecting with a message that names the limit.
 
 ## Criterion 3 — Record queue latency, starvation metrics, RSS memory usage, and file descriptor curves under stress tests
 
-**Not accepted yet.** `crates/miao-engine/tests/fairness_measurement.rs` is the
-harness — `cargo test --release --test fairness_measurement -- --ignored
---nocapture` drives a hog Session plus four worker Sessions into the shared
-job pool, samples `resources()` queue accounting, RSS, and the fd count every
-200 ms, and asserts every worker job completes — but no recorded run of it
-exists yet, so there are no numbers to cite. Staying open until a run lands
-here.
+| command | observed |
+| --- | --- |
+| `cargo test --release --test fairness_measurement -- --ignored --nocapture` | ok. 1 passed; 0 failed (build-host run on `xx02`, Linux, tree `23b8def648` — the merged harness plus this record; the harness content is identical to `b298679b84`) |
+
+The harness drives a hog Session whose two jobs hold the Session's whole
+share for the length of the run, plus four worker Sessions each admitting
+three jobs into the shared four-slot pool, and samples `resources()` queue
+accounting, RSS, and the fd count every 200 ms. Observed over 72 samples,
+14.4 s wall:
+
+- queue latency: `queue_wait_max_ms` 10180; peak queued depth 10 (the worker
+  waves queue behind the hog's share while two fleet slots stay reserved for
+  the next Session).
+- starvation: none — the run asserts all twelve worker jobs complete while
+  the hog holds its share, and the final snapshot reads exactly the hog's
+  share (`active` 2, `queued` 0).
+- RSS: 17216–20816 kB across the run.
+- file descriptors: 16–34 across the run.
 
 ## Criterion 4 — Link implementation PR, records, and applicable versions
 
 Implementation: pull request #2805 on the tree above, with the design decision
 in `crates/miao-engine/docs/adr/0021-cross-session-fair-pools.md`. This record
-is the acceptance evidence for that tree. A release stamp
+is the acceptance evidence for that tree, and the criterion-3 run above is
+the acceptance evidence for the stress harness. A release stamp
 (`roadmap: CODE done in vX.Y.Z`) waits for the release that ships the tree.
