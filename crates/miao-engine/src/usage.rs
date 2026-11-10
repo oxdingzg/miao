@@ -148,7 +148,7 @@ pub(crate) fn median_gap_minutes(gaps: &mut [u64]) -> Option<f64> {
     }
     gaps.sort_unstable();
     let middle = gaps.len() / 2;
-    let milliseconds = if gaps.len() % 2 == 0 {
+    let milliseconds = if gaps.len().is_multiple_of(2) {
         (gaps[middle - 1] + gaps[middle]) / 2
     } else {
         gaps[middle]
