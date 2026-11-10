@@ -232,7 +232,7 @@ fn command_name(pid: u32) -> String {
         return "unknown".to_string();
     };
     let args = String::from_utf8_lossy(&output.stdout);
-    let mut fields = args.trim().split_whitespace();
+    let mut fields = args.split_whitespace();
     let name = fields
         .next()
         .unwrap_or("unknown")
