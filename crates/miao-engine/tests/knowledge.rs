@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use miao_engine::{
-    permission::{Config, Decision, Mode, Policy, Rule},
+    permission::{digest, Config, Decision, Mode, Policy, Rule},
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
@@ -257,4 +257,105 @@ async fn readonly_and_source_denials_are_preserved_by_knowledge_operations() {
     assert_eq!(result["source_state"], "restricted");
     assert!(!result.to_string().contains("private_marker"));
     reader.shutdown().await;
+}
+#[tokio::test]
+async fn disabled_entries_stay_reviewable_but_never_authoritative() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store) = setup(dir.path(), writable()).await;
+    let created=run(&runtime,&store,json!({"op":"put","id":"muted","expected_revision":0,"title":"Muted","kind":"preference","body":"Keep notifications terse"})).await;
+    assert_eq!(created["applied"], true);
+    let get = run(&runtime, &store, json!({"op":"get","id":"muted"})).await;
+    assert_eq!(get["origin_class"], "user_instruction");
+    assert_eq!(get["disabled"], false);
+    assert_eq!(get["source_state"], "unverified");
+    assert!(get["body"].is_null());
+    let off=run(&runtime,&store,json!({"op":"toggle","id":"muted","expected_revision":1,"expected_store_sha256":created["store_sha256"]})).await;
+    assert_eq!(off["applied"], true);
+    assert_eq!(off["disabled"], true);
+    let muted = run(&runtime, &store, json!({"op":"get","id":"muted"})).await;
+    assert_eq!(muted["source_state"], "disabled");
+    assert_eq!(muted["disabled"], true);
+    assert!(muted["body"].is_null());
+    let listed = run(&runtime, &store, json!({"op":"list"})).await;
+    assert_eq!(listed["notes"][0]["id"], "muted");
+    assert_eq!(listed["notes"][0]["source_state"], "disabled");
+    let review = run(
+        &runtime,
+        &store,
+        json!({"op":"get","id":"muted","include_stale":true}),
+    )
+    .await;
+    assert_eq!(review["body"], "Keep notifications terse");
+    let ghost=run(&runtime,&store,json!({"op":"toggle","id":"ghost","expected_revision":1,"expected_store_sha256":off["store_sha256"]})).await;
+    assert_eq!(ghost["applied"], false);
+    let edited=run(&runtime,&store,json!({"op":"put","id":"muted","expected_revision":2,"expected_store_sha256":off["store_sha256"],"title":"Muted","kind":"preference","body":"Keep notifications terse and short"})).await;
+    assert_eq!(edited["applied"], true);
+    assert_eq!(edited["disabled"], true);
+    let still = run(&runtime, &store, json!({"op":"get","id":"muted"})).await;
+    assert_eq!(still["source_state"], "disabled");
+    let on=run(&runtime,&store,json!({"op":"toggle","id":"muted","expected_revision":3,"expected_store_sha256":edited["store_sha256"]})).await;
+    assert_eq!(on["disabled"], false);
+    let reopened = run(&runtime, &store, json!({"op":"get","id":"muted"})).await;
+    assert_eq!(reopened["source_state"], "unverified");
+    assert!(reopened["body"].is_null());
+    runtime.shutdown().await;
+}
+#[tokio::test]
+async fn toggling_never_resurrects_expired_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store) = setup(dir.path(), writable()).await;
+    let created=run(&runtime,&store,json!({"op":"put","id":"stale","expected_revision":0,"title":"Stale","kind":"preference","body":"Old guidance","ttl_seconds":1})).await;
+    assert_eq!(created["applied"], true);
+    let path = dir.path().join("workspace/.miao/knowledge.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    document["notes"]["stale"]["expires_at_ms"] = json!(1000);
+    std::fs::write(&path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+    let expired = run(&runtime, &store, json!({"op":"get","id":"stale"})).await;
+    assert_eq!(expired["source_state"], "expired");
+    assert!(expired["body"].is_null());
+    let stale_hash=run(&runtime,&store,json!({"op":"toggle","id":"stale","expected_revision":1,"expected_store_sha256":created["store_sha256"]})).await;
+    assert_eq!(stale_hash["applied"], false);
+    assert!(stale_hash["current_store_sha256"].is_string());
+    let off=run(&runtime,&store,json!({"op":"toggle","id":"stale","expected_revision":1,"expected_store_sha256":stale_hash["current_store_sha256"]})).await;
+    assert_eq!(off["disabled"], true);
+    let back=run(&runtime,&store,json!({"op":"toggle","id":"stale","expected_revision":2,"expected_store_sha256":off["store_sha256"]})).await;
+    assert_eq!(back["disabled"], false);
+    let reopened = run(&runtime, &store, json!({"op":"get","id":"stale"})).await;
+    assert_eq!(reopened["source_state"], "expired");
+    assert_eq!(reopened["disabled"], false);
+    assert!(reopened["body"].is_null());
+    runtime.shutdown().await;
+}
+#[tokio::test]
+async fn origin_classes_distinguish_instructions_knowledge_and_observations() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store) = setup(dir.path(), writable()).await;
+    let bytes = b"pub fn alpha() {}\nstruct Beta;\n";
+    std::fs::write(dir.path().join("workspace/module.rs"), bytes).unwrap();
+    let instruction=run(&runtime,&store,json!({"op":"put","id":"style","expected_revision":0,"title":"Style","kind":"preference","body":"Prefer concise answers"})).await;
+    assert_eq!(instruction["applied"], true);
+    let fact=run(&runtime,&store,json!({"op":"put","id":"fact","expected_revision":0,"expected_store_sha256":instruction["store_sha256"],"title":"Fact","kind":"repo_fact","body":"module.rs declares alpha and Beta","derivation":"Read from the exact committed bytes","sources":[{"path":"module.rs","sha256":digest(bytes)}]})).await;
+    assert_eq!(fact["applied"], true);
+    let observed=run(&runtime,&store,json!({"op":"index_file","id":"module","path":"module.rs","expected_revision":0,"expected_store_sha256":fact["store_sha256"]})).await;
+    assert_eq!(observed["applied"], true);
+    let listed = run(&runtime, &store, json!({"op":"list"})).await;
+    let classes: Vec<&str> = listed["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|note| note["origin_class"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        classes,
+        vec![
+            "project_knowledge",
+            "automated_observation",
+            "user_instruction"
+        ]
+    );
+    let knowledge = run(&runtime, &store, json!({"op":"get","id":"fact"})).await;
+    assert_eq!(knowledge["origin_class"], "project_knowledge");
+    assert_eq!(knowledge["source_state"], "current");
+    assert_eq!(knowledge["body"], "module.rs declares alpha and Beta");
+    runtime.shutdown().await;
 }
