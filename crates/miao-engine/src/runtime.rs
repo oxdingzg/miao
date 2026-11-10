@@ -246,6 +246,18 @@ fn request_budget(window: u64, headroom: u64) -> u64 {
 /// deterministic shrink — the newest work plus the operator's prompt — is the
 /// only protection left. Below the threshold nothing is claimed: a Session that
 /// merely has a broken summarizer keeps its history whole.
+/// Whether a request may be bounded before an endpoint refuses it, because this
+/// process already knows the history does not fit.
+///
+/// Only a window an endpoint itself stated when it refused is that evidence. A
+/// window the shipped catalog declares is a budget to plan against, so treating
+/// it as a refusal capped every request of such a Session at `window - headroom`
+/// — below the compaction trigger's own threshold — and automatic compaction
+/// could never fire for it: the history was silently trimmed instead.
+fn refusal_evidence(operator_window: bool, declared: Option<u64>, refused: Option<u64>) -> bool {
+    !operator_window && declared.is_none() && refused.is_some()
+}
+
 fn bound_budget(
     window: u64,
     headroom: u64,
@@ -276,12 +288,21 @@ impl Inner {
         *entry = (*entry).min(window);
     }
 
-    /// The learned window for a model, falling back to the model-agnostic entry.
-    async fn learned_window_for(&self, model: Option<&str>) -> Option<u64> {
+    /// The window an endpoint itself stated when it refused a request, falling
+    /// back to the model-agnostic entry. Only this is evidence that a history
+    /// does not fit; the shipped catalog's declaration is a budget to plan
+    /// against, and the two must stay distinguishable.
+    async fn refused_window_for(&self, model: Option<&str>) -> Option<u64> {
         let learned = self.learned_window.lock().await;
         model
             .and_then(|name| learned.get(name).copied())
             .or_else(|| learned.get("*").copied())
+    }
+
+    /// The learned window for a model, falling back to the model-agnostic entry.
+    async fn learned_window_for(&self, model: Option<&str>) -> Option<u64> {
+        self.refused_window_for(model)
+            .await
             // No refusal has named a window yet: the shipped catalog declares
             // one for known models, which arms the compaction trigger on
             // first use instead of never.
@@ -3322,9 +3343,11 @@ async fn execute(
             .await
             .clone()
             .filter(|limits| limits.window > 0);
-        // A window the endpoint stated, or one the shipped catalog declares, is a
-        // cap this process may impose on its own; nothing else is.
-        let refused_before = configured.is_none() && declared.is_none();
+        let refused_before = refusal_evidence(
+            configured.is_some(),
+            declared,
+            inner.refused_window_for(model.as_deref()).await,
+        );
         let learned = inner.learned_limits(model.as_deref()).await;
         let mut pressure = None;
         let bound = match resolve_limits(configured, declared, learned) {
@@ -8151,6 +8174,21 @@ mod window_tests {
             bound_budget(1_000_000, 20_000, false, None, false, 900_000),
             None
         );
+    }
+
+    #[test]
+    fn only_a_refusal_lets_a_request_be_bounded_before_it_is_sent() {
+        // A window the shipped catalog declares is a budget to plan against; it
+        // is not evidence that the history does not fit, and treating it as a
+        // refusal capped requests below the trigger's own threshold, where
+        // compaction could never fire.
+        assert!(!refusal_evidence(false, None, None));
+        // The endpoint stated a window when it refused this history.
+        assert!(refusal_evidence(false, None, Some(128_000)));
+        // An operator override and a host declaration each describe what to plan
+        // against, and neither was a refusal.
+        assert!(!refusal_evidence(true, None, Some(128_000)));
+        assert!(!refusal_evidence(false, Some(128_000), Some(128_000)));
     }
 
     #[test]
