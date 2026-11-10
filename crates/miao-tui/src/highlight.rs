@@ -17,15 +17,46 @@ use std::sync::OnceLock;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use syntect::highlighting::ScopeSelectors;
-use syntect::parsing::{ParseState, Scope, ScopeStack, SyntaxReference, SyntaxSet};
+use syntect::parsing::{
+    ParseState, Scope, ScopeStack, SyntaxDefinition, SyntaxReference, SyntaxSet, SyntaxSetBuilder,
+};
 
 use crate::theme::Palette;
 
-/// Every bundled grammar, loaded once on the first fenced block or diff row: a
-/// session that shows no code never pays for the tables.
+/// The grammars `two-face` bundles, loaded once on the first fenced block or
+/// diff row: a session that shows no code never pays for the tables.
 fn syntaxes() -> &'static SyntaxSet {
     static SET: OnceLock<SyntaxSet> = OnceLock::new();
     SET.get_or_init(two_face::syntax::extra_no_newlines)
+}
+
+/// The grammars the bundled set has no definition for, carried in
+/// `src/syntaxes` and compiled into the binary. `two-face` follows bat, whose
+/// PowerShell grammar is a link to another repository and so never reached the
+/// dump, and the community grammars are written in Sublime's `begin`/`end`
+/// dialect that this loader does not read; the file next to this module is
+/// therefore authored in the dialect the loader does read.
+fn extras() -> &'static SyntaxSet {
+    static SET: OnceLock<SyntaxSet> = OnceLock::new();
+    SET.get_or_init(|| {
+        let definition = SyntaxDefinition::load_from_str(
+            include_str!("syntaxes/PowerShell.sublime-syntax"),
+            false,
+            Some("PowerShell"),
+        )
+        .expect("built-in PowerShell syntax parses");
+        let mut builder = SyntaxSetBuilder::new();
+        builder.add(definition);
+        builder.build()
+    })
+}
+
+/// A grammar and the set that owns it: `ParseState` has to be parsed against
+/// the set its syntax came from.
+#[derive(Clone, Copy)]
+struct Found {
+    syntax: &'static SyntaxReference,
+    set: &'static SyntaxSet,
 }
 
 /// The grammar an info string names, or `None` when nothing claims it.
@@ -33,7 +64,7 @@ fn syntaxes() -> &'static SyntaxSet {
 /// `find_syntax_by_token` takes a file extension or a case-insensitive name,
 /// which covers both a fence (`rust`, `cpp`) and a diff row's file path
 /// (`main.rs`, `Main.java`).
-fn find(info: &str) -> Option<&'static SyntaxReference> {
+fn find(info: &str) -> Option<Found> {
     // A fence can carry attributes after the language (`rust,no_run`), so only
     // the leading word names the language.
     let language = info
@@ -42,21 +73,30 @@ fn find(info: &str) -> Option<&'static SyntaxReference> {
     if language.is_empty() {
         return None;
     }
-    let set = syntaxes();
-    set.find_syntax_by_token(language)
-        .or_else(|| alias(language).and_then(|name| set.find_syntax_by_name(name)))
+    for set in [syntaxes(), extras()] {
+        let syntax = set
+            .find_syntax_by_token(language)
+            .or_else(|| alias(language).and_then(|name| set.find_syntax_by_name(name)));
+        if let Some(syntax) = syntax {
+            return Some(Found { syntax, set });
+        }
+    }
+    None
 }
 
 /// A fence token whose grammar the bundled set names differently, or that reads
 /// as a variant of one it has: `jsx` is JavaScript to a TextMate grammar, and
-/// JSON5 is JSON. Nothing here invents a grammar the set does not carry —
-/// PowerShell, for one, has none and renders plain.
+/// JSON5 is JSON. Nothing here invents a grammar the sets do not carry, so an
+/// unknown fence renders plain rather than borrowing a neighbour's keywords.
 fn alias(language: &str) -> Option<&'static str> {
     let language = language.to_ascii_lowercase();
     Some(match language.as_str() {
         "jsx" | "mjs" | "cjs" => "JavaScript",
         "jsonc" | "json5" | "jsonl" => "JSON",
         "mts" | "cts" => "TypeScript",
+        // Astro is HTML with a frontmatter block, and the HTML grammar reads
+        // its body the way a reader does.
+        "astro" => "HTML",
         _ => return None,
     })
 }
@@ -163,7 +203,7 @@ impl Rules {
 /// Colors one fenced block or diff body, carrying the grammar's state (an open
 /// block comment, a multi-line string) across its lines.
 pub struct Highlighter {
-    parse: Option<ParseState>,
+    parse: Option<(ParseState, &'static SyntaxSet)>,
     scopes: ScopeStack,
     palette: Palette,
 }
@@ -171,7 +211,7 @@ pub struct Highlighter {
 impl Highlighter {
     pub fn new(info: &str, palette: Palette) -> Self {
         Self {
-            parse: find(info).map(ParseState::new),
+            parse: find(info).map(|found| (ParseState::new(found.syntax), found.set)),
             scopes: ScopeStack::new(),
             palette,
         }
@@ -180,10 +220,10 @@ impl Highlighter {
     /// Split one body line into styled spans. Concatenating the spans always
     /// reproduces the input line, so nothing a grammar misreads is lost.
     pub fn line(&mut self, text: &str) -> Vec<Span<'static>> {
-        let Some(parse) = self.parse.as_mut() else {
+        let Some((parse, set)) = self.parse.as_mut() else {
             return vec![Span::styled(text.to_string(), self.plain())];
         };
-        let Ok(ops) = parse.parse_line(text, syntaxes()) else {
+        let Ok(ops) = parse.parse_line(text, set) else {
             return vec![Span::styled(text.to_string(), self.plain())];
         };
         let mut spans = Vec::new();
@@ -340,12 +380,41 @@ mod tests {
             "nim",
             "jl",
             "tex",
+            "ps1",
+            "psm1",
+            "psd1",
+            "astro",
         ] {
             assert!(find(language).is_some(), "no grammar for {language}");
         }
-        // A language the bundled set carries no grammar for stays plain rather
-        // than borrowing a neighbour's keywords.
-        assert!(find("ps1").is_none());
+        // A token no grammar and no alias names stays plain rather than
+        // borrowing a neighbour's keywords.
+        assert!(find("miao-not-a-language").is_none());
+    }
+
+    #[test]
+    fn powershell_colors_its_own_variables_and_comments() {
+        // The bundled set has no PowerShell definition, so this one is embedded
+        // from `src/syntaxes`: a `.ps1` fence or diff row reads as PowerShell,
+        // not as plain text and not as bash.
+        let mut highlighter = Highlighter::new("ps1", palette());
+        let line = "$name = Get-ChildItem -Path . # note";
+        let spans = highlighter.line(line);
+        assert_eq!(text(&spans), line);
+        assert_eq!(
+            colored_comment(&spans, palette().syntax.comment),
+            vec!["# note"]
+        );
+        let painted = |needle: &str| {
+            spans
+                .iter()
+                .any(|span| span.content.contains(needle) && span.style.fg != Some(palette().text))
+        };
+        assert!(painted("$name"), "the variable is painted: {spans:?}");
+        assert!(
+            painted("Get-ChildItem"),
+            "the command is painted: {spans:?}"
+        );
     }
 
     #[test]
