@@ -1,61 +1,40 @@
 {
-  "sourceCommit": "0cef56d6a7c2d86650c393aa502d343b67d3184e",
+  "sourceCommit": "2e2d428e8e5417a1d67c5b15e19ddc7e2c5df7d0",
   "method": "TypeScript AST: literal import/export declarations and literal dynamic imports in tracked packages/**/*.ts and tsx; @miao/core/* and relative module resolution. Self-namespace exports excluded. Source/verification classify by /src/ path. This is an import boundary inventory, not call-graph reachability or proof of runtime activation. Computed imports, require(), DI lookup and generated/third-party consumers require separate review.",
   "categories": {
     "runner": {
-      "sourceEdges": 11,
-      "verificationEdges": 15
+      "sourceEdges": 0,
+      "verificationEdges": 0
     },
     "execution": {
-      "sourceEdges": 9,
-      "verificationEdges": 29
+      "sourceEdges": 6,
+      "verificationEdges": 22
     },
     "scheduling": {
-      "sourceEdges": 12,
-      "verificationEdges": 10
+      "sourceEdges": 7,
+      "verificationEdges": 6
     },
     "inbox": {
-      "sourceEdges": 16,
-      "verificationEdges": 16
+      "sourceEdges": 13,
+      "verificationEdges": 14
     },
     "permission": {
-      "sourceEdges": 48,
-      "verificationEdges": 52
+      "sourceEdges": 47,
+      "verificationEdges": 50
     },
     "placement": {
-      "sourceEdges": 14,
-      "verificationEdges": 8
+      "sourceEdges": 12,
+      "verificationEdges": 7
     }
   },
-  "runnerFiles": [
-    "packages/core/src/session/runner/first-byte-guard.ts",
-    "packages/core/src/session/runner/index.ts",
-    "packages/core/src/session/runner/llm.ts",
-    "packages/core/src/session/runner/max-steps.ts",
-    "packages/core/src/session/runner/metrics.ts",
-    "packages/core/src/session/runner/model-io.ts",
-    "packages/core/src/session/runner/output-guard.ts",
-    "packages/core/src/session/runner/provider-retry.ts",
-    "packages/core/src/session/runner/publish-llm-event.ts",
-    "packages/core/src/session/runner/tool-input-guard.ts"
-  ],
+  "runnerFiles": [],
   "edges": [
     {
       "category": "execution",
       "file": "packages/core/src/location-services.ts",
-      "line": 38,
+      "line": 37,
       "target": "packages/core/src/session/execution.ts",
       "specifier": "./session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/src/location-services.ts",
-      "line": 39,
-      "target": "packages/core/src/session/execution/local.ts",
-      "specifier": "./session/execution/local",
       "kind": "import",
       "typeOnly": false,
       "scope": "source"
@@ -72,30 +51,10 @@
     },
     {
       "category": "execution",
-      "file": "packages/core/src/session/execution/local.ts",
-      "line": 10,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "../execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "execution",
       "file": "packages/core/src/session/peer-tools.ts",
       "line": 15,
       "target": "packages/core/src/session/execution.ts",
       "specifier": "./execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 17,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "../execution",
       "kind": "import",
       "typeOnly": false,
       "scope": "source"
@@ -132,26 +91,6 @@
     },
     {
       "category": "execution",
-      "file": "packages/core/test/location-services.test.ts",
-      "line": 5,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/test/location-services.test.ts",
-      "line": 6,
-      "target": "packages/core/src/session/execution/local.ts",
-      "specifier": "@miao/core/session/execution/local",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
       "file": "packages/core/test/session-background-jobs.test.ts",
       "line": 15,
       "target": "packages/core/src/session/execution.ts",
@@ -176,26 +115,6 @@
       "line": 12,
       "target": "packages/core/src/session/execution.ts",
       "specifier": "../src/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/test/session-execution-local.test.ts",
-      "line": 15,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/test/session-execution-local.test.ts",
-      "line": 16,
-      "target": "packages/core/src/session/execution/local.ts",
-      "specifier": "@miao/core/session/execution/local",
       "kind": "import",
       "typeOnly": false,
       "scope": "verification"
@@ -262,16 +181,6 @@
     },
     {
       "category": "execution",
-      "file": "packages/core/test/session-ownership.test.ts",
-      "line": 11,
-      "target": "packages/core/src/session/execution/local.ts",
-      "specifier": "../src/session/execution/local",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
       "file": "packages/core/test/session-pin.test.ts",
       "line": 12,
       "target": "packages/core/src/session/execution.ts",
@@ -316,26 +225,6 @@
       "line": 17,
       "target": "packages/core/src/session/execution.ts",
       "specifier": "../src/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/test/session-runner-recorded.test.ts",
-      "line": 21,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "execution",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 51,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
       "kind": "import",
       "typeOnly": false,
       "scope": "verification"
@@ -492,16 +381,6 @@
     },
     {
       "category": "inbox",
-      "file": "packages/core/src/session/execution/local.ts",
-      "line": 13,
-      "target": "packages/core/src/session/admission.ts",
-      "specifier": "../admission",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "inbox",
       "file": "packages/core/src/session/heal.ts",
       "line": 12,
       "target": "packages/core/src/session/admission.ts",
@@ -558,26 +437,6 @@
       "specifier": "./admission",
       "kind": "import",
       "typeOnly": true,
-      "scope": "source"
-    },
-    {
-      "category": "inbox",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 74,
-      "target": "packages/core/src/session/input.ts",
-      "specifier": "../input",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "inbox",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 75,
-      "target": "packages/core/src/session/admission.ts",
-      "specifier": "../admission",
-      "kind": "import",
-      "typeOnly": false,
       "scope": "source"
     },
     {
@@ -696,26 +555,6 @@
       "line": 14,
       "target": "packages/core/src/session/input.ts",
       "specifier": "../src/session/input",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "inbox",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 31,
-      "target": "packages/core/src/session/admission.ts",
-      "specifier": "@miao/core/session/admission",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "inbox",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 47,
-      "target": "packages/core/src/session/input.ts",
-      "specifier": "@miao/core/session/input",
       "kind": "import",
       "typeOnly": false,
       "scope": "verification"
@@ -968,16 +807,6 @@
       "specifier": "../permission",
       "kind": "import",
       "typeOnly": true,
-      "scope": "source"
-    },
-    {
-      "category": "permission",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 30,
-      "target": "packages/core/src/permission.ts",
-      "specifier": "../../permission",
-      "kind": "import",
-      "typeOnly": false,
       "scope": "source"
     },
     {
@@ -1492,26 +1321,6 @@
     },
     {
       "category": "permission",
-      "file": "packages/core/test/session-runner-recorded.test.ts",
-      "line": 11,
-      "target": "packages/core/src/permission.ts",
-      "specifier": "@miao/core/permission",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "permission",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 32,
-      "target": "packages/core/src/permission.ts",
-      "specifier": "@miao/core/permission",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "permission",
       "file": "packages/core/test/shared-schema.test.ts",
       "line": 65,
       "target": "packages/core/src/permission.ts",
@@ -1762,16 +1571,6 @@
     },
     {
       "category": "placement",
-      "file": "packages/core/src/session/execution/local.ts",
-      "line": 15,
-      "target": "packages/core/src/session/engine-placement.ts",
-      "specifier": "../engine-placement",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "placement",
       "file": "packages/core/src/session/input.ts",
       "line": 9,
       "target": "packages/core/src/session/engine-placement.ts",
@@ -1862,16 +1661,6 @@
     },
     {
       "category": "placement",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 18,
-      "target": "packages/core/src/session/engine-placement.ts",
-      "specifier": "../engine-placement",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "placement",
       "file": "packages/core/src/session/transfer-bundle.ts",
       "line": 12,
       "target": "packages/core/src/session/engine-placement.ts",
@@ -1886,16 +1675,6 @@
       "line": 14,
       "target": "packages/core/src/session/engine-placement.ts",
       "specifier": "../src/session/engine-placement",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "placement",
-      "file": "packages/core/test/session-execution-local.test.ts",
-      "line": 17,
-      "target": "packages/core/src/session/engine-placement.ts",
-      "specifier": "@miao/core/session/engine-placement",
       "kind": "import",
       "typeOnly": false,
       "scope": "verification"
@@ -1961,269 +1740,9 @@
       "scope": "verification"
     },
     {
-      "category": "runner",
-      "file": "packages/core/src/location-services.ts",
-      "line": 36,
-      "target": "packages/core/src/session/runner/llm.ts",
-      "specifier": "./session/runner/llm",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/execution/local.ts",
-      "line": 7,
-      "target": "packages/core/src/session/runner/index.ts",
-      "specifier": "../runner",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 89,
-      "target": "packages/core/src/session/runner/index.ts",
-      "specifier": "./index",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 92,
-      "target": "packages/core/src/session/runner/provider-retry.ts",
-      "specifier": "./provider-retry",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 93,
-      "target": "packages/core/src/session/runner/output-guard.ts",
-      "specifier": "./output-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 94,
-      "target": "packages/core/src/session/runner/tool-input-guard.ts",
-      "specifier": "./tool-input-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 95,
-      "target": "packages/core/src/session/runner/first-byte-guard.ts",
-      "specifier": "./first-byte-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 96,
-      "target": "packages/core/src/session/runner/publish-llm-event.ts",
-      "specifier": "./publish-llm-event",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 100,
-      "target": "packages/core/src/session/runner/max-steps.ts",
-      "specifier": "./max-steps",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 102,
-      "target": "packages/core/src/session/runner/metrics.ts",
-      "specifier": "./metrics",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 103,
-      "target": "packages/core/src/session/runner/model-io.ts",
-      "specifier": "./model-io",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-execution-local.test.ts",
-      "line": 8,
-      "target": "packages/core/src/session/runner/index.ts",
-      "specifier": "@miao/core/session/runner",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-execution-local.test.ts",
-      "line": 9,
-      "target": "packages/core/src/session/runner/llm.ts",
-      "specifier": "@miao/core/session/runner/llm",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-first-byte-guard.test.ts",
-      "line": 6,
-      "target": "packages/core/src/session/runner/first-byte-guard.ts",
-      "specifier": "@miao/core/session/runner/first-byte-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-output-guard.test.ts",
-      "line": 4,
-      "target": "packages/core/src/session/runner/output-guard.ts",
-      "specifier": "@miao/core/session/runner/output-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-provider-retry.test.ts",
-      "line": 17,
-      "target": "packages/core/src/session/runner/provider-retry.ts",
-      "specifier": "@miao/core/session/runner/provider-retry",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner-metrics.test.ts",
-      "line": 2,
-      "target": "packages/core/src/session/runner/metrics.ts",
-      "specifier": "@miao/core/session/runner/metrics",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner-model-io.test.ts",
-      "line": 6,
-      "target": "packages/core/src/session/runner/model-io.ts",
-      "specifier": "@miao/core/session/runner/model-io",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner-recorded.test.ts",
-      "line": 23,
-      "target": "packages/core/src/session/runner/index.ts",
-      "specifier": "@miao/core/session/runner",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner-recorded.test.ts",
-      "line": 24,
-      "target": "packages/core/src/session/runner/llm.ts",
-      "specifier": "@miao/core/session/runner/llm",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner-tool-events.test.ts",
-      "line": 10,
-      "target": "packages/core/src/session/runner/publish-llm-event.ts",
-      "specifier": "@miao/core/session/runner/publish-llm-event",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 53,
-      "target": "packages/core/src/session/runner/index.ts",
-      "specifier": "@miao/core/session/runner",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 57,
-      "target": "packages/core/src/session/runner/llm.ts",
-      "specifier": "@miao/core/session/runner/llm",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 64,
-      "target": "packages/core/src/session/runner/output-guard.ts",
-      "specifier": "@miao/core/session/runner/output-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-tool-input-guard.test.ts",
-      "line": 4,
-      "target": "packages/core/src/session/runner/tool-input-guard.ts",
-      "specifier": "@miao/core/session/runner/tool-input-guard",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "runner",
-      "file": "packages/core/test/session-tool-progress.test.ts",
-      "line": 18,
-      "target": "packages/core/src/session/runner/publish-llm-event.ts",
-      "specifier": "../src/session/runner/publish-llm-event",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
       "category": "scheduling",
       "file": "packages/core/src/location-services.ts",
-      "line": 40,
+      "line": 38,
       "target": "packages/core/src/session/schedule.ts",
       "specifier": "./session/schedule",
       "kind": "import",
@@ -2252,60 +1771,10 @@
     },
     {
       "category": "scheduling",
-      "file": "packages/core/src/session/execution/local.ts",
-      "line": 6,
-      "target": "packages/core/src/session/run-coordinator.ts",
-      "specifier": "../run-coordinator",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/src/session/execution/local.ts",
-      "line": 14,
-      "target": "packages/core/src/session/delegation.ts",
-      "specifier": "../delegation",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "scheduling",
       "file": "packages/core/src/session/projector.ts",
       "line": 16,
       "target": "packages/core/src/session/delegation-store.ts",
       "specifier": "./delegation-store",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/src/session/runner/index.ts",
-      "line": 7,
-      "target": "packages/core/src/session/delegation.ts",
-      "specifier": "../delegation",
-      "kind": "import",
-      "typeOnly": true,
-      "scope": "source"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 69,
-      "target": "packages/core/src/session/delegation.ts",
-      "specifier": "../delegation",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/src/session/runner/llm.ts",
-      "line": 70,
-      "target": "packages/core/src/session/delegation-store.ts",
-      "specifier": "../delegation-store",
       "kind": "import",
       "typeOnly": false,
       "scope": "source"
@@ -2366,46 +1835,6 @@
       "line": 3,
       "target": "packages/core/src/session/run-coordinator.ts",
       "specifier": "@miao/core/session/run-coordinator",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/test/session-runner-recorded.test.ts",
-      "line": 22,
-      "target": "packages/core/src/session/run-coordinator.ts",
-      "specifier": "@miao/core/session/run-coordinator",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 52,
-      "target": "packages/core/src/session/run-coordinator.ts",
-      "specifier": "@miao/core/session/run-coordinator",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 86,
-      "target": "packages/core/src/session/delegation.ts",
-      "specifier": "@miao/core/session/delegation",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/core/test/session-runner.test.ts",
-      "line": 87,
-      "target": "packages/core/src/session/delegation-store.ts",
-      "specifier": "@miao/core/session/delegation-store",
       "kind": "import",
       "typeOnly": false,
       "scope": "verification"

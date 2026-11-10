@@ -1,6 +1,6 @@
 # RUS-02：TS runner 退役边界与调用方清点
 
-状态：**清点已产出，执行路径尚未退役**。冻结源码为 `bfb0c944e58aedc9d06ed32ef44df73d7e8c7221`（2026-11-10 复算；上一版冻结于 `8caccb414`，2026-11-04）。本清单不把 S2/S3/S4 已合入等同于旧数据、真实客户端和回滚窗口已验收。
+状态：**退役完成（2026-11-11，RUS-02 第 3 步执行）**。清单冻结源码为 `2e2d428e8e5417a1d67c5b15e19ddc7e2c5df7d0`：runner 边界 0/0（源码/验证），总边界 240 → 184，`session/runner/` 与 `execution/local.ts` 已删除；`location-services` 将 SessionExecution 绑定到 no-op 执行器。历史基线：296（10-28）→ 319（11-04）→ 312（11-10）→ 240（第 2 步后）→ 184（第 3 步后）。
 
 ## 1. 可复核清单
 
@@ -37,6 +37,11 @@
 | `tool-input-guard.ts`  |                   0 |                   1 |
 
 唯一的两个生产引用是 `packages/core/src/location-services.ts:36 → runner/llm.ts` 和
+
+**已完成（2026-11-11，RUS-02 第 2、3 步）**：上表与两条生产边已随删除 PR 全部
+消失——`runner/` 十个文件、`execution/local.ts` 不复存在，静态清单 runner 边界
+0/0；存储层单活 run 语义由 `single_active_run` 测试钉死
+（`docs/acceptance/2026-11-10-g1-single-execution-authority.md`）。
 `packages/core/src/session/execution/local.ts:7 → runner/index.ts`。其余 8 个文件只被
 `llm.ts` 内部使用或被测试引用。
 

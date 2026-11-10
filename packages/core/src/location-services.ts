@@ -33,10 +33,8 @@ import { Pty } from "./pty"
 import { QuestionV2 } from "./question"
 import { Reference } from "./reference"
 import { ReferenceGuidance } from "./reference/guidance"
-import * as SessionRunnerLLM from "./session/runner/llm"
 import { SessionModel } from "./session/model"
 import { SessionExecution } from "./session/execution"
-import { SessionExecutionLocal } from "./session/execution/local"
 import { SessionSchedule } from "./session/schedule"
 import { SessionTodo } from "./session/todo"
 import { SkillV2 } from "./skill"
@@ -101,7 +99,6 @@ export const locationServices = LayerNode.group([
   CustomTools.node,
   SessionModel.node,
   Snapshot.node,
-  SessionRunnerLLM.node,
 ])
 
 export type LocationServices = LayerNode.Output<typeof locationServices>
@@ -156,15 +153,17 @@ export function buildLocationServiceMap(
     LayerMap.make(
       (ref: Location.Ref) => {
         const allReplacements: LayerNode.Replacements = [
-          // The map itself, so a replacement subtree (e.g. the local session
-          // execution below, which wakes locations) may depend on it. The
-          // per-ref build runs after the map service exists and the memoMap
-          // dedupes the self reference, so this is not a construction cycle.
+          // The map itself, so a replacement subtree (e.g. the schedule's fire
+          // path, which wakes locations) may depend on it. The per-ref build
+          // runs after the map service exists and the memoMap dedupes the self
+          // reference, so this is not a construction cycle.
           [LocationServiceMap.node, layer],
           ...replacements,
           // Default execution binding for hoisted subtrees that wake sessions
-          // (the schedule's fire path). Caller replacements above override it.
-          [SessionExecution.node, SessionExecutionLocal.node],
+          // (the schedule's fire path): the retired local drain is replaced by
+          // the no-op execution, which never claims a Session. Caller
+          // replacements above override it.
+          [SessionExecution.node, SessionExecution.noopLayer],
           [Location.node, Location.boundNode(ref)],
         ]
         // Apply replacements during hoist, not afterward: replacements can
