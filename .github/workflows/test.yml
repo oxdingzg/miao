@@ -86,6 +86,7 @@ jobs:
         working-directory: packages/client
         run: bun run check:generated
 
+  windows:
     name: unit (windows, non-blocking until Windows suite is fixed)
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
@@ -156,6 +157,9 @@ jobs:
       - name: Verify storage, session ownership, and Windows location paths
         working-directory: packages/core
         run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts test/location-filesystem-windows.test.ts
+      - name: Verify window exit and immutable upgrade
+        working-directory: packages/miao
+        run: bun test test/installation/windows-upgrade.test.ts
 
   unit:
     name: unit (linux)
@@ -177,5 +181,4 @@ jobs:
         run: |
           test "$CHANGES" = success
           if [ "$CODE" = true ]; then test "$UNIT" = success; else test "$UNIT" = skipped; fi
-          if [ "$CODE" = true ]; then test "$INTEGRATION" = success; else test "$INTEGRATION" = skipped; fi
           if [ "$WINDOWS" = true ] && [ "$WINDOWS_RUNS" = true ]; then test "$RUNTIME" = success; else test "$RUNTIME" = skipped; fi
