@@ -538,6 +538,8 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             "--mode",
             "--auto-approve",
             "--edit-recovery",
+            "--short-anchors",
+            "--batch-edit",
             "--verify-command",
             "--prompt-cache",
             "--responses-cache-contract",
@@ -941,6 +943,16 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             None | Some("on") => true,
             Some("off") => false,
             Some(_) => return Err("--edit-recovery must be on or off".into()),
+        })
+        .with_short_anchors(match options.get("--short-anchors").map(String::as_str) {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(_) => return Err("--short-anchors must be on or off".into()),
+        })
+        .with_batch_edit(match options.get("--batch-edit").map(String::as_str) {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(_) => return Err("--batch-edit must be on or off".into()),
         })
         .with_lsp_diagnostics(match options.get("--lsp-diagnostics").map(String::as_str) {
             None | Some("on") => true,
