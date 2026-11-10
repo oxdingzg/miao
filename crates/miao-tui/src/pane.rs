@@ -2812,6 +2812,15 @@ fn fit(text: &str, width: usize) -> String {
 /// Push one sidebar row whose clipped text a hover tip can complete: the row
 /// shows `fit(...)`'s cut, the tip carries the whole string. Sidebar rows never
 /// wrap, so a row wider than the column is where information otherwise dies.
+/// The plural suffix for a billed-usage count, so "1 attempt" and "2 attempts"
+/// both read as English.
+fn plural(count: u64) -> &'static str {
+    match count {
+        1 => "",
+        _ => "s",
+    }
+}
+
 fn hoverable_line(
     hover_rows: &mut Vec<HoverRow>,
     inner: ratatui::layout::Rect,
@@ -3193,10 +3202,9 @@ impl Pane for SidebarPane {
             ],
         };
         if self.session.is_some() {
-            // The billed-usage section opens with its only header, the
-            // workspace-wide Last 24h strip: a "Context" banner above it read
-            // as two stacked headers for one block of numbers, and the strip
-            // already says what the rows below explain.
+            // The workspace strip opens the billed-usage section: a "Context"
+            // banner above it read as two stacked headers for one block of
+            // numbers, and the strip already says what the rows below explain.
             lines.push(Line::default());
             let (hourly, hourly_hover) =
                 hourly_lines(self.usage_hourly.as_ref(), text_width, &palette);
@@ -3209,7 +3217,15 @@ impl Pane for SidebarPane {
                     text,
                 });
             }
+            // The rows below are a different scope from the workspace strip
+            // above: they are what this Session was billed, not what the
+            // workspace spent, so they carry their own "WHAT · scope" header
+            // instead of reading as the tail of the Last 24h group.
             lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                "▾ Usage · session",
+                Style::new().fg(palette.text_muted),
+            )));
             match &self.usage {
                 None => lines.push(Line::from(Span::styled(
                     "no usage yet",
@@ -3262,7 +3278,7 @@ impl Pane for SidebarPane {
                         inner,
                         &mut lines,
                         format!(
-                            "in {}  ·  out {}",
+                            "in {} · out {}",
                             crate::status::compact_tokens(usage.input_tokens),
                             crate::status::compact_tokens(usage.output_tokens)
                         ),
@@ -3274,7 +3290,7 @@ impl Pane for SidebarPane {
                         inner,
                         &mut lines,
                         format!(
-                            "cache {}  ·  turns {}",
+                            "cache {} · turns {}",
                             crate::status::compact_tokens(usage.cache_read_tokens),
                             usage.turns
                         ),
@@ -3282,11 +3298,9 @@ impl Pane for SidebarPane {
                         text_width,
                     );
                     // A retry is billed work: saying "1 turn" while three
-                    // attempts were made hides where the money went.
-                    // A subagent bills on its own Session, so a parent screen
+                    // attempts were made hides where the money went. A
+                    // subagent bills on its own Session, so a parent screen
                     // that only shows its own tokens understates the cost.
-                    // The per-role and supervision lines below read as one
-                    // labeled group instead of six anonymous rows.
                     let detailed = usage.subagent_sessions > 0
                         || usage.hook_calls > 0
                         || usage.approvals + usage.answers + usage.rejections + usage.cancels > 0
@@ -3296,116 +3310,179 @@ impl Pane for SidebarPane {
                         || usage.replayed_turns > 0
                         || usage.failed_attempts > 0;
                     if detailed {
+                        // Every other header in the column opens after a blank
+                        // row; this one sat glued to the figures above and read
+                        // as one more data line.
+                        lines.push(Line::default());
                         lines.push(Line::from(Span::styled(
-                            "▾ activity",
+                            "▾ Activity",
                             Style::new().fg(palette.text_muted),
                         )));
                     }
-                    if usage.subagent_sessions > 0 {
-                        // A child's retries are its own billed attempts. When it
-                        // took more than its settled turns, say so rather than
-                        // reporting the child at the price of one turn.
-                        let retried = if usage.subagent_replayed_turns > 0 {
+                    // The rows read abnormal-first: what went wrong (retries,
+                    // rework) before what it cost in supervision and spend,
+                    // time last. Order carries that priority when colour
+                    // cannot, so a monochrome terminal loses no hierarchy. A
+                    // row lists only the parts that carry a count: a zero says
+                    // nothing the absence of the part does not.
+                    if usage.replayed_turns > 0 || usage.failed_attempts > 0 {
+                        let mut parts = Vec::new();
+                        if usage.replayed_turns > 0 {
+                            parts.push(format!("retried {}", usage.replayed_turns));
+                        }
+                        if usage.failed_attempts > 0 {
+                            parts.push(format!(
+                                "{} failed attempt{}",
+                                usage.failed_attempts,
+                                plural(usage.failed_attempts)
+                            ));
+                        }
+                        parts.push(format!(
+                            "{} attempt{}",
+                            usage.attempts,
+                            plural(usage.attempts)
+                        ));
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
+                            parts.join(" · "),
+                            Style::new().fg(palette.warning),
+                            text_width,
+                        );
+                    }
+                    if usage.tool_input_errors > 0 {
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
                             format!(
-                                "  ·  {} attempt{}",
+                                "rework {} · tool-input error{}",
+                                usage.tool_input_errors,
+                                plural(usage.tool_input_errors)
+                            ),
+                            Style::new().fg(palette.warning),
+                            text_width,
+                        );
+                    }
+                    // What a person had to decide, including the drafts they
+                    // rewrote: the headline count, then only the kinds that
+                    // happened. The gate admits the row for edits alone, so an
+                    // edits-only Session reads "needs you 2 edits" instead of a
+                    // row of zeroes.
+                    let decisions =
+                        usage.approvals + usage.answers + usage.rejections + usage.cancels;
+                    if decisions > 0 || usage.input_edits > 0 {
+                        let mut parts = Vec::new();
+                        if usage.approvals > 0 {
+                            parts.push(usage.approvals.to_string());
+                        }
+                        if usage.answers > 0 {
+                            parts.push(format!(
+                                "{} answer{}",
+                                usage.answers,
+                                plural(usage.answers)
+                            ));
+                        }
+                        if usage.rejections > 0 {
+                            parts.push(format!(
+                                "{} rejection{}",
+                                usage.rejections,
+                                plural(usage.rejections)
+                            ));
+                        }
+                        if usage.cancels > 0 {
+                            parts.push(format!(
+                                "{} cancel{}",
+                                usage.cancels,
+                                plural(usage.cancels)
+                            ));
+                        }
+                        if usage.input_edits > 0 {
+                            parts.push(format!(
+                                "{} edit{}",
+                                usage.input_edits,
+                                plural(usage.input_edits)
+                            ));
+                        }
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
+                            format!("needs you {}", parts.join(" · ")),
+                            Style::new().fg(palette.text_muted),
+                            text_width,
+                        );
+                    }
+                    if usage.subagent_sessions > 0 {
+                        // A child's retries are its own billed attempts. When
+                        // they outnumber its settled turns, say so rather than
+                        // reporting the child at the price of one turn; when
+                        // they match, the suffix would repeat the turn count in
+                        // other words.
+                        let retried = if usage.subagent_attempts > usage.subagent_turns {
+                            format!(
+                                " · {} attempt{}",
                                 usage.subagent_attempts,
-                                if usage.subagent_attempts == 1 {
-                                    ""
-                                } else {
-                                    "s"
-                                }
+                                plural(usage.subagent_attempts)
                             )
                         } else {
                             String::new()
                         };
-                        lines.push(Line::from(Span::styled(
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
                             format!(
-                                "subagents {}  ·  {} turn{}  ·  in {}{}",
+                                "subagents {} · {} turn{} · in {}{}",
                                 usage.subagent_sessions,
                                 usage.subagent_turns,
-                                if usage.subagent_turns == 1 { "" } else { "s" },
+                                plural(usage.subagent_turns),
                                 crate::status::compact_tokens(usage.subagent_input_tokens),
                                 retried,
                             ),
                             Style::new().fg(palette.text_muted),
-                        )));
+                            text_width,
+                        );
+                    }
+                    // Compaction runs as an auxiliary role, so its spend is
+                    // real and absent from every main-model line above.
+                    if usage.auxiliary_calls > 0 {
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
+                            format!(
+                                "auxiliary {} call{} · in {} · out {}",
+                                usage.auxiliary_calls,
+                                plural(usage.auxiliary_calls),
+                                crate::status::compact_tokens(usage.auxiliary_input_tokens),
+                                crate::status::compact_tokens(usage.auxiliary_output_tokens),
+                            ),
+                            Style::new().fg(palette.text_muted),
+                            text_width,
+                        );
                     }
                     // A hook is a process the Session waited on before a tool
                     // could run: its time is cost too, and a failure is not a
                     // quiet detail.
                     if usage.hook_calls > 0 {
                         let failed = if usage.hook_failed > 0 {
-                            format!("  ·  {} failed", usage.hook_failed)
+                            format!(" · {} failed", usage.hook_failed)
                         } else {
                             String::new()
                         };
-                        lines.push(Line::from(Span::styled(
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
                             format!(
-                                "hooks {}  ·  {} ms{}",
+                                "hooks {} · {} ms{}",
                                 usage.hook_calls, usage.hook_ms, failed
                             ),
                             Style::new().fg(palette.text_muted),
-                        )));
-                    }
-                    // What a person had to decide, and what the model had to
-                    // redo: supervision cost and rework, in one glance.
-                    let decisions =
-                        usage.approvals + usage.answers + usage.rejections + usage.cancels;
-                    if decisions > 0 || usage.input_edits > 0 {
-                        lines.push(Line::from(Span::styled(
-                            format!(
-                                "needs you {}  ·  {} answer{}  ·  {} reject{}  ·  {} cancel{}",
-                                usage.approvals,
-                                usage.answers,
-                                if usage.answers == 1 { "" } else { "s" },
-                                usage.rejections,
-                                if usage.rejections == 1 { "" } else { "s" },
-                                usage.cancels,
-                                if usage.cancels == 1 { "" } else { "s" },
-                            ),
-                            Style::new().fg(palette.text_muted),
-                        )));
-                    }
-                    // Compaction runs as an auxiliary role, so its spend is
-                    // real and absent from every main-model line above.
-                    if usage.auxiliary_calls > 0 {
-                        lines.push(Line::from(Span::styled(
-                            format!(
-                                "auxiliary {} call{}  ·  in {}  ·  out {}",
-                                usage.auxiliary_calls,
-                                if usage.auxiliary_calls == 1 { "" } else { "s" },
-                                crate::status::compact_tokens(usage.auxiliary_input_tokens),
-                                crate::status::compact_tokens(usage.auxiliary_output_tokens),
-                            ),
-                            Style::new().fg(palette.text_muted),
-                        )));
-                    }
-                    if usage.tool_input_errors > 0 {
-                        lines.push(Line::from(Span::styled(
-                            format!(
-                                "rework {}  ·  tool-input error{}",
-                                usage.tool_input_errors,
-                                if usage.tool_input_errors == 1 {
-                                    ""
-                                } else {
-                                    "s"
-                                },
-                            ),
-                            Style::new().fg(palette.warning),
-                        )));
-                    }
-                    if usage.replayed_turns > 0 || usage.failed_attempts > 0 {
-                        lines.push(Line::from(Span::styled(
-                            format!(
-                                "retried {}  ·  {} failed attempt{}  ·  {} attempt{}",
-                                usage.replayed_turns,
-                                usage.failed_attempts,
-                                if usage.failed_attempts == 1 { "" } else { "s" },
-                                usage.attempts,
-                                if usage.attempts == 1 { "" } else { "s" },
-                            ),
-                            Style::new().fg(palette.warning),
-                        )));
+                            text_width,
+                        );
                     }
                 }
             }
@@ -7713,6 +7790,77 @@ mod tests {
             !rows(&mut terminal).iter().any(|row| row.contains("ctx ")),
             "no reported window is not an empty one"
         );
+    }
+
+    /// #2737: the billed-usage column is two scopes, and the rows inside the
+    /// session scope read abnormal-first. Both facts have to survive at the
+    /// sidebar's own width without colour, so the test reads the painted rows
+    /// rather than the model behind them.
+    #[test]
+    fn the_usage_scopes_are_ordered_and_abnormal_rows_come_first() {
+        fn rows(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(60)
+                .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect()
+        }
+        let usage = crate::status::UsageSummary::from_value(&serde_json::json!({
+            "turns": 4,
+            "retries": {"attempts": 5, "failedAttempts": 1, "replayedTurns": 2},
+            "interventions": {"approvals": 1},
+            "rework": {"toolInputErrors": 3},
+            "subagents": {"sessions": 2, "turns": 3, "attempts": 3, "tokens": {"input": 1200}},
+        }));
+        let mut pane = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_u", "usage", None)),
+            usage: Some(usage),
+            usage_hourly: None,
+            goal: None,
+            todos: Vec::new(),
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        terminal
+            .draw(|frame| pane.render(frame, frame.area()))
+            .expect("draw");
+        let painted = rows(&mut terminal);
+        let at = |needle: &str| {
+            painted
+                .iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle} missing: {painted:#?}"))
+        };
+        // The workspace strip answers a different question from the rows below
+        // it, so it opens first and the session block gets its own header.
+        assert!(at("Last 24h") < at("▾ Usage · session"), "{painted:#?}");
+        // What went wrong leads; supervision and delegation follow, because a
+        // monochrome terminal can only carry priority through order.
+        assert!(at("retried") < at("needs you"), "{painted:#?}");
+        assert!(at("needs you") < at("subagents"), "{painted:#?}");
+        // Only the parts that happened: an approval and no answers must not
+        // paint "0 answers".
+        let needs_you = &painted[at("needs you")];
+        assert!(needs_you.contains("needs you 1"), "{needs_you:?}");
+        assert!(!needs_you.contains("0 answer"), "{needs_you:?}");
+        assert!(!needs_you.contains("0 reject"), "{needs_you:?}");
+        // Two retries and one failed attempt inside five attempts stay on the
+        // one rework row that already says how many attempts were billed.
+        let rework = &painted[at("retried")];
+        assert!(rework.contains("retried 2"), "{rework:?}");
+        assert!(rework.contains("1 failed attempt"), "{rework:?}");
+        assert!(rework.contains("5 attempts"), "{rework:?}");
+        // A child whose attempts match its settled turns needs no suffix.
+        let subagents = &painted[at("subagents")];
+        assert!(subagents.contains("2 · 3 turns"), "{subagents:?}");
+        assert!(!subagents.contains("attempt"), "{subagents:?}");
     }
 
     /// A long CJK title and a long CJK todo each stay on one row. Counting
