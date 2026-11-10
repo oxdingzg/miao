@@ -922,6 +922,83 @@ mod tests {
         server
     }
 
+    /// A language server that accepts the request and never answers used to be
+    /// the one slow tool with no bound of its own: the tool call held the
+    /// client mutex and the turn with it. The wait is bounded now, and this
+    /// pins it so a request cannot become an unbounded block again.
+    #[tokio::test]
+    async fn a_server_that_never_answers_times_out_instead_of_holding_the_tool_open() {
+        let (host, peer) = tokio::io::duplex(16 * 1024);
+        let (read, write) = tokio::io::split(host);
+        let mut client = Client::new(read, write);
+        let fixture = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(peer);
+            let mut server = handshake(Client::new(read, write)).await;
+            let frame = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(frame["method"], "textDocument/hover");
+            std::future::pending::<()>().await;
+        });
+        client
+            .initialize(&std::path::PathBuf::from("."), None)
+            .await
+            .unwrap();
+        let started = tokio::time::Instant::now();
+        let error = client
+            .request("textDocument/hover", json!({}), Duration::from_millis(120))
+            .await
+            .expect_err("a silent language server must not hold the tool open");
+        assert!(
+            matches!(&error, Error::Invalid(message) if message.contains("timed out")),
+            "{error}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the refused wait took {:?}",
+            started.elapsed()
+        );
+        fixture.abort();
+    }
+
+    /// Cancelling a pending LSP request must not wedge the connection: the
+    /// client is per-server and shared, so a request abandoned mid-flight
+    /// leaves the next tool call able to use it.
+    #[tokio::test]
+    async fn a_cancelled_request_leaves_the_connection_usable() {
+        let (host, peer) = tokio::io::duplex(16 * 1024);
+        let (read, write) = tokio::io::split(host);
+        let mut client = Client::new(read, write);
+        let fixture = tokio::spawn(async move {
+            let (read, write) = tokio::io::split(peer);
+            let mut server = handshake(Client::new(read, write)).await;
+            let abandoned = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(abandoned["method"], "textDocument/hover");
+            let second = server.read_frame().await.unwrap().unwrap();
+            assert_eq!(second["method"], "textDocument/hover");
+            server
+                .send(&json!({"jsonrpc":"2.0","id":second["id"],"result":{"ok":true}}))
+                .await
+                .unwrap();
+            std::future::pending::<()>().await;
+        });
+        client
+            .initialize(&std::path::PathBuf::from("."), None)
+            .await
+            .unwrap();
+        let abandoned = client.request("textDocument/hover", json!({}), Duration::from_secs(30));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), abandoned)
+                .await
+                .is_err(),
+            "the fixture answers nothing, so the call must still be pending here"
+        );
+        let second = client
+            .request("textDocument/hover", json!({}), Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(second, json!({"ok":true}));
+        fixture.abort();
+    }
+
     #[tokio::test]
     async fn diagnostics_wait_behind_a_clearing_push_for_the_real_results() {
         let (host, peer) = tokio::io::duplex(64 * 1024);
