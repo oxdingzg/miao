@@ -246,8 +246,7 @@ fn command_name(pid: u32) -> String {
     }
 }
 
-/// Sum of one measured window across every process in the tree, naming the
-/// members it held and waiting for `members` of them before sampling.
+/// Sum of one measured window across every process in the tree.
 fn measure_tree(
     harness: &Harness,
     label: &str,
@@ -465,4 +464,122 @@ fn the_tree_reaches_the_engine_s_helpers() {
         "the tree held {rss_kb} kB of memory"
     );
     assert!(fds > 0 && fds < 2048, "the tree held {fds} descriptors");
+}
+
+/// Consecutive windows over one settled run. The per-window triples are the
+/// curve the criterion asks to converge: a leak shows up as a slope across
+/// windows, not only as a level inside one.
+fn sample_windows(
+    harness: &Harness,
+    label: &str,
+    count: usize,
+    window: Duration,
+) -> Vec<(u128, u64, Option<usize>)> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !harness.ready() {
+        assert!(
+            Instant::now() < deadline,
+            "the fixture did not become ready; the measurement would describe a start-up, not a run"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    let (mut before, _) = sample(harness.pid);
+    let mut windows = Vec::new();
+    for index in 1..=count {
+        std::thread::sleep(window);
+        let (after, rss_kb) = sample(harness.pid);
+        let cpu_ms = after.saturating_sub(before);
+        before = after;
+        let fds = descriptors(harness.pid);
+        println!(
+            "PERF-04 {label} window {index}/{count}: cpu_ms={cpu_ms} over {}ms, rss_kb={rss_kb}, fds={}",
+            window.as_millis(),
+            fds.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
+        );
+        windows.push((cpu_ms, rss_kb, fds));
+    }
+    windows
+}
+
+#[test]
+fn an_idle_tui_s_windows_converge_instead_of_growing() {
+    let harness = Harness::spawn("idle-windows");
+    let windows = sample_windows(&harness, "idle", 3, Duration::from_secs(3));
+    let last = windows[2];
+    for (cpu_ms, rss_kb, fds) in &windows {
+        assert!(
+            *cpu_ms < 3_000,
+            "an idle TUI used {cpu_ms} ms of CPU in a three-second window, which is a busy loop rather than an idle wait"
+        );
+        assert!(
+            *rss_kb > 0 && *rss_kb < 512 * 1024,
+            "an idle TUI held {rss_kb} kB of memory"
+        );
+        if let Some(fds) = fds {
+            assert!(
+                *fds > 0 && *fds < 1024,
+                "an idle TUI held {fds} descriptors"
+            );
+        }
+    }
+    // Convergence is the trend, not the level: the third window must not cost
+    // more than the first, hold noticeably more memory, or hold more
+    // descriptors. The slack is what a shared runner's noise is allowed.
+    assert!(
+        last.0 <= windows[0].0 + 500,
+        "the idle curve escalated: window 1 used {} ms and window 3 used {} ms",
+        windows[0].0,
+        last.0
+    );
+    assert!(
+        last.1 <= windows[0].1 + 4 * 1024,
+        "the idle curve grew: window 1 held {} kB and window 3 held {} kB",
+        windows[0].1,
+        last.1
+    );
+    if let (Some(first), Some(third)) = (windows[0].2, last.2) {
+        assert!(
+            third <= first + 4,
+            "an idle TUI's descriptors grew across quiet windows: {first} -> {third}"
+        );
+    }
+}
+
+#[test]
+fn a_prolonged_stream_does_not_grow_the_process() {
+    // The criterion's streaming half: nine seconds across three windows while
+    // the fixture delivers a committed event every ten milliseconds, so the
+    // curve describes sustained painting rather than a first burst.
+    let harness = Harness::spawn_with("prolonged", &[("MIAO_TUI_FAKE_STREAM", "1")], Some("ses_a"));
+    let windows = sample_windows(&harness, "streaming", 3, Duration::from_secs(3));
+    let last = windows[2];
+    for (cpu_ms, rss_kb, fds) in &windows {
+        assert!(
+            *cpu_ms < 3_000,
+            "a streaming TUI used {cpu_ms} ms of CPU in a three-second window, which is a busy loop rather than a stream"
+        );
+        assert!(
+            *rss_kb > 0 && *rss_kb < 512 * 1024,
+            "a streaming TUI held {rss_kb} kB of memory"
+        );
+        if let Some(fds) = fds {
+            assert!(
+                *fds > 0 && *fds < 1024,
+                "a streaming TUI held {fds} descriptors"
+            );
+        }
+    }
+    assert!(
+        last.1 <= windows[0].1 + 8 * 1024,
+        "nine seconds of streaming grew the process: window 1 held {} kB and window 3 held {} kB",
+        windows[0].1,
+        last.1
+    );
+    if let (Some(first), Some(third)) = (windows[0].2, last.2) {
+        assert!(
+            third <= first + 4,
+            "a streaming TUI's descriptors grew across windows: {first} -> {third}"
+        );
+    }
 }
