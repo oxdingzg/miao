@@ -492,6 +492,7 @@ async fn runnable_todos_keep_draining_without_any_goal() {
 
 #[tokio::test]
 async fn stalled_todos_pause_the_loop_without_any_goal() {
+    std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     seed_work(&store, true, dir.path()).await;
@@ -525,6 +526,7 @@ async fn stalled_todos_pause_the_loop_without_any_goal() {
 /// 3524 continuations, instead of stopping after two idling replies.
 #[tokio::test]
 async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the_run() {
+    std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
