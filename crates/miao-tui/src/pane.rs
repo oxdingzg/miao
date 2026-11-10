@@ -869,10 +869,8 @@ impl Pane for TranscriptPane {
                     // the row's green or red all the way to the edge, not fade
                     // into the panel surface mid-block.
                     let ink = line.style.bg.unwrap_or(palette.surface);
-                    line.spans.push(Span::styled(
-                        " ".repeat(width - used),
-                        Style::new().bg(ink),
-                    ));
+                    line.spans
+                        .push(Span::styled(" ".repeat(width - used), Style::new().bg(ink)));
                 }
             }
         }
@@ -4395,6 +4393,7 @@ mod tests {
     }
     use super::*;
     use crate::session::{Choice, QuestionItem};
+    use std::collections::HashMap;
 
     /// TUI-04's reading surfaces in one narrow frame: the markdown block
     /// stays structured, an image result names the media instead of its
@@ -5529,6 +5528,81 @@ mod tests {
             "and leaves one before the next tool"
         );
         assert!(rendered[note + 2].contains("http://b"));
+    }
+
+    #[test]
+    fn a_changed_diff_row_paints_to_the_pane_edge() {
+        // The changed rows of one block are not padded to the block's longest
+        // line: a row keeps its own text and the pane fills the rest in the
+        // row's colour, so a short change and a long one are bands of the same
+        // width and the block's right edge is straight.
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
+        let theme = Theme {
+            name: crate::theme::DEFAULT_THEME.to_string(),
+            palette,
+        };
+        let mut displays = HashMap::new();
+        displays.insert(
+            "call_diff".to_string(),
+            vec![crate::session::DisplayFile {
+                path: "src/lib.rs".into(),
+                action: "update".into(),
+                patch: "@@ -1,2 +1,2 @@\n-short\n+short changed but longer\n kept\n".into(),
+                additions: 1,
+                deletions: 1,
+            }],
+        );
+        let transcript = Transcript {
+            entries: vec![Entry::Assistant {
+                agent: None,
+                model: None,
+                parts: vec![Part::Tool(crate::session::ToolPart {
+                    id: "call_diff".into(),
+                    name: "edit".into(),
+                    input: serde_json::json!({"path": "src/lib.rs"}),
+                    output: Some(serde_json::json!({"applied": true}).to_string()),
+                    failed: false,
+                    unreturned: false,
+                })],
+            }],
+            displays,
+            ..Transcript::default()
+        };
+        let mut shell = Shell::new(Path::new("."), theme);
+        shell.set_transcript(&transcript);
+        let width = 60u16;
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 16))
+            .expect("terminal");
+        terminal
+            .draw(|frame| shell.transcript.render(frame, frame.area()))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows = buffer.content.chunks(width as usize).collect::<Vec<_>>();
+        let find = |needle: &str| {
+            rows.iter()
+                .position(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains(needle)
+                })
+                .unwrap_or_else(|| panic!("no row holds {needle}"))
+        };
+        let last = width as usize - 1;
+        for (needle, tint) in [
+            ("+short changed but longer", palette.diff_block(true)),
+            ("-short", palette.diff_block(false)),
+        ] {
+            let row = rows[find(needle)];
+            for column in [0, last] {
+                assert_eq!(
+                    row[column].bg, tint,
+                    "{needle:?} paints column {column} as its own band"
+                );
+            }
+        }
     }
 
     #[test]

@@ -138,7 +138,7 @@
 | 行为 | 状态 | 备注 |
 |---|---|---|
 | assistant 文本按 markdown 渲染：标题、强调、行内代码、围栏、列表、引用、分隔线、表格 | 已对齐 | `markdown.rs`；围栏内不做行内解析，未闭合围栏保留正文 |
-| 语法高亮（代码块与 diff 的 tree-sitter 着色） | 有意偏离（依赖） | Rust 侧按主题色区分 `+`/`-`/`@@` 与代码块底纹，不引入 tree-sitter |
+| 语法高亮（代码块与 diff 的着色） | 已对齐（同源语法族） | `highlight.rs` 用 `syntect` + `two-face` 的 TextMate 语法（编辑器 shiki 管线的同一族），作用域映射到主题九类 `syntax*`；diff 行用主题 `diffAddedBg`/`diffRemovedBg` 铺满整行 |
 | 引擎工具名投影为产品词汇（`read_file`→`read` 等） | 已对齐 | `tool::product_name`；子集同 `bridge.ts:TOOL_IDS` |
 | 引擎输入字段投影（`path`→`filePath`、`text`→`content`、argv→command、task 描述） | 已对齐 | `tool::product_input` |
 | shell 结果投影：stdout+stderr+`[exit code N]`/超时/信号/未执行，拒绝原因只显示错误文本 | 已对齐 | `tool::shell_text`；ANSI 序列先剥离 |
