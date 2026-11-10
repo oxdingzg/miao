@@ -70,6 +70,35 @@ struct ReadInput {
 /// whole-file byte bound, so one window cannot flood the context.
 const MAX_READ_LINES: usize = 2000;
 
+/// What a delivered read looked like: the request form, normalized so
+/// `{"offset":2}` and `{"offset":2,"limit":2000}` are the same window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadForm {
+    Whole,
+    Window { offset: usize, limit: usize },
+}
+
+struct ReadDelivery {
+    form: ReadForm,
+    fingerprint: String,
+}
+
+/// Source tracking for reads (TOOL-01): what each path delivered, in which
+/// form, at which fingerprint. An exact re-request of unchanged content is a
+/// duplicate delivery and is answered with the fingerprint instead of paying
+/// the payload again; a different window, or changed content, always
+/// delivers -- that is the way back when an earlier read left the context.
+/// The totals are the measurement behind "no repeated full-file reads":
+/// reads, duplicates, and the bytes each side of that line cost.
+#[derive(Default)]
+struct ReadLedger {
+    deliveries: std::collections::HashMap<String, Vec<ReadDelivery>>,
+    reads: usize,
+    duplicate_reads: usize,
+    bytes_delivered: u64,
+    bytes_saved: u64,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SkillInput {
@@ -226,6 +255,7 @@ pub struct Tools {
     references: Arc<StdRwLock<Arc<ReferenceScope>>>,
     hooks: Arc<StdRwLock<Arc<Vec<crate::hooks::Hook>>>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
+    read_ledger: Arc<std::sync::Mutex<ReadLedger>>,
     edit_recovery: bool,
     lsp_diagnostics: bool,
     compact_disclosure: bool,
@@ -317,12 +347,35 @@ impl Tools {
             references: Arc::new(StdRwLock::new(Arc::new(ReferenceScope::default()))),
             hooks: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
+            read_ledger: Arc::new(std::sync::Mutex::new(ReadLedger::default())),
             edit_recovery: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
             mcp_disclosure: crate::mcp::Disclosure::default(),
             mcp_disclosure_allowlist: std::collections::BTreeSet::new(),
             product_tools: Arc::new(StdRwLock::new(Vec::new())),
+        })
+    }
+
+    /// The read ledger's totals: how many reads ran for this session, how
+    /// many were duplicates of unchanged content, and the payload bytes each
+    /// side of that line cost, plus the unique deliveries per path.
+    pub fn read_ledger(&self) -> Value {
+        let ledger = self
+            .read_ledger
+            .lock()
+            .unwrap_or_else(|held| held.into_inner());
+        let paths = ledger
+            .deliveries
+            .iter()
+            .map(|(path, deliveries)| (path.clone(), json!(deliveries.len())))
+            .collect::<serde_json::Map<String, Value>>();
+        json!({
+            "reads": ledger.reads,
+            "duplicate_reads": ledger.duplicate_reads,
+            "bytes_delivered": ledger.bytes_delivered,
+            "bytes_saved": ledger.bytes_saved,
+            "paths": paths,
         })
     }
 
@@ -2521,9 +2574,9 @@ impl Tools {
                             });
                         }
                     }
+                    let offset = input.offset.unwrap_or(1);
+                    let limit = input.limit.unwrap_or(MAX_READ_LINES).min(MAX_READ_LINES);
                     let (visible, window) = if ranged {
-                        let offset = input.offset.unwrap_or(1);
-                        let limit = input.limit.unwrap_or(MAX_READ_LINES).min(MAX_READ_LINES);
                         let total = text.lines().count();
                         let mut window = String::new();
                         let mut lines = 0usize;
@@ -2560,6 +2613,63 @@ impl Tools {
                         if let Ok(mut snapshots) = self.edit_snapshots.lock() {
                             snapshots.register(path.to_string_lossy().into_owned(), text.clone());
                         }
+                    }
+                    // Minimal necessary reads (TOOL-01): an exact re-request
+                    // of unchanged content is a duplicate delivery, so the
+                    // fingerprint answers instead of the payload. A different
+                    // window, or changed content, always delivers.
+                    let form = if ranged {
+                        ReadForm::Window { offset, limit }
+                    } else {
+                        ReadForm::Whole
+                    };
+                    let delivered = if ranged { visible.len() } else { text.len() };
+                    let earlier = {
+                        let mut ledger = self
+                            .read_ledger
+                            .lock()
+                            .unwrap_or_else(|held| held.into_inner());
+                        let history = ledger
+                            .deliveries
+                            .entry(path.to_string_lossy().into_owned())
+                            .or_default();
+                        let earlier = history
+                            .iter()
+                            .position(|delivery| {
+                                delivery.form == form && delivery.fingerprint == sha256
+                            })
+                            .map(|position| position + 1);
+                        match earlier {
+                            Some(read) => {
+                                ledger.reads += 1;
+                                ledger.duplicate_reads += 1;
+                                ledger.bytes_saved += delivered as u64;
+                                Some(read)
+                            }
+                            None => {
+                                ledger.reads += 1;
+                                ledger.bytes_delivered += delivered as u64;
+                                history.push(ReadDelivery {
+                                    form,
+                                    fingerprint: sha256.clone(),
+                                });
+                                None
+                            }
+                        }
+                    };
+                    if let Some(read) = earlier {
+                        let note = format!(
+                            "read {read} already delivered exactly these bytes for {} and the file has not changed since; use that result, or request a different offset/limit window if it left the context",
+                            input.path
+                        );
+                        return Ok(json!({
+                            "path": input.path,
+                            "sha256": sha256,
+                            "unchanged": true,
+                            "read": read,
+                            "bytes_saved": delivered,
+                            "note": note,
+                        }));
                     }
                     if ranged {
                         let mut result = json!({"text": visible, "sha256": sha256});
