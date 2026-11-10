@@ -1,6 +1,6 @@
 # RUS-02：TS runner 退役边界与调用方清点
 
-状态：**清点已产出，执行路径尚未退役**。冻结源码为 `8caccb41452f87afa0944e2a9e869745325fe5d6`（2026-11-04 复算；上一版冻结于 `4fbd5f0134`，2026-10-28）。本清单不把 S2/S3/S4 已合入等同于旧数据、真实客户端和回滚窗口已验收。
+状态：**清点已产出，执行路径尚未退役**。冻结源码为 `bfb0c944e58aedc9d06ed32ef44df73d7e8c7221`（2026-11-10 复算；上一版冻结于 `8caccb414`，2026-11-04）。本清单不把 S2/S3/S4 已合入等同于旧数据、真实客户端和回滚窗口已验收。
 
 ## 1. 可复核清单
 
@@ -11,17 +11,17 @@
 | 边界       | 源码依赖条数 | 验证依赖条数 | 定义范围                                                        |
 | ---------- | -----------: | -----------: | --------------------------------------------------------------- |
 | runner     |           11 |           15 | `session/runner/` 的 10 个文件                                  |
-| execution  |           22 |           30 | `session/execution.ts` 与 `session/execution/`                  |
-| scheduling |           17 |           10 | `run-coordinator`、`schedule`、`delegation`、`delegation-store` |
+| execution  |           19 |           29 | `session/execution.ts` 与 `session/execution/`                  |
+| scheduling |           16 |           10 | `run-coordinator`、`schedule`、`delegation`、`delegation-store` |
 | inbox      |           26 |           17 | `session/input`、`session/admission`                            |
 | permission |           64 |           66 | `permission.ts` 与 `permission/`，不包括 V1 permission          |
-| placement  |           25 |           16 | `session/routing.ts`、`engine-placement.ts`                     |
+| placement  |           23 |           16 | `session/routing.ts`、`engine-placement.ts`                     |
 
-合计 319 条导入边界（2026-11-04 复算；10-28 为 296 条）。`runner` 的入边减少最多（源码 25 → 11、验证 33 → 15），说明这个目录已经收缩成叶子；`permission` 的入边增长（44 → 64），是因为更多产品路径改从它就位而不是从 runner。数字变化本身不是退役，只是把「还连着谁」重新算对。一份文件可以落入多个边界，因此这些数字不是独立调用方数量。重新清点时在仓库根目录运行：
+合计 312 条导入边界（2026-11-10 复算；11-04 为 319 条）。`runner` 的入边减少最多（源码 25 → 11、验证 33 → 15），说明这个目录已经收缩成叶子；`permission` 的入边增长（44 → 64），是因为更多产品路径改从它就位而不是从 runner。数字变化本身不是退役，只是把「还连着谁」重新算对。一份文件可以落入多个边界，因此这些数字不是独立调用方数量。重新清点时在仓库根目录运行：
 
 ### 1.1 生产耦合只剩两处
 
-按目标文件统计 runner 目录的入边（同一份清单，2026-11-04）：
+按目标文件统计 runner 目录的入边（同一份清单，2026-11-10）：
 
 | runner 文件            | runner 外的源码引用 | runner 外的测试引用 |
 | ---------------------- | ------------------: | ------------------: |
