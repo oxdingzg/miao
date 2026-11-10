@@ -11,6 +11,17 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.61] - 2026-11-10
+
+### Added
+- **engine**: enforce minimal necessary reads with a session read ledger (TOOL-01) (#2832) (`23612e5a5b`)
+- **engine**: low-cost editing carriers and stale recovery (TOOL-03) (#2834) (`7923841637`)
+- **engine**: give delegated implementations a working step and time budget (#2831) (`dc84a9db31`)
+
+### Fixed
+- **engine**: the no-progress pause honours a minimum stall window (#2829) (`7eac2c9d2a`)
+- **engine**: record a turn interrupted before the model answered (#2844) (`e236e4325a`)
+
 ## [0.3.46] - 2026-11-07
 
 ### Fixed
