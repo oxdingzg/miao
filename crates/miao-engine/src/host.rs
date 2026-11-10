@@ -225,7 +225,7 @@ impl Host {
                 // An explicit operator compact also closes the automatic
                 // trigger's breaker, so a failing summarizer gets a fresh try.
                 if result.is_ok() {
-                    runtime.reset_compaction_breaker().await;
+                    runtime.reset_compaction_breaker(&session_id).await;
                 }
                 result
             }

@@ -155,3 +155,136 @@ async fn an_explicit_compact_restarts_the_tripped_breaker() {
         "the explicit compact restarted the trigger"
     );
 }
+
+/// Refuses the summarizer only for the Session named in the history, so one
+/// Session's failing summarizer can be told apart from another's.
+struct RefusesOneSession {
+    attempts: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for RefusesOneSession {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if request
+            .system
+            .starts_with("Summarize the conversation portion")
+        {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            let body = request
+                .messages
+                .iter()
+                .map(|message| message.content.to_string())
+                .collect::<String>();
+            if body.contains("SESSION:alpha") {
+                return Err(ProviderError::Transport(
+                    "the summarising provider is unreachable".into(),
+                ));
+            }
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"SUMMARY-OF-BETA"}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"the answer"}]),
+            usage: json!({"inputTokens": 990_000, "outputTokens": 1_000}),
+            needs_tools: false,
+        })
+    }
+}
+
+async fn drain_session(runtime: &Runtime, store: &Store, session: &str, id: &str, finished: usize) {
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: session.into(),
+                input_id: id.into(),
+                prompt: format!("SESSION:{session} work on the task"),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let done = store
+                .events(session, 0, 500)
+                .await
+                .unwrap()
+                .iter()
+                .filter(|event| event.kind == "run.finished")
+                .count();
+            if done >= finished {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("drain finishes");
+}
+
+// One engine serves every Session in a Location, so a breaker shared across the
+// process let one Session's refused summarizer switch automatic compaction off
+// for all the others.
+#[tokio::test]
+async fn a_tripped_breaker_stays_with_the_session_whose_summarizer_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(RefusesOneSession {
+        attempts: AtomicUsize::new(0),
+    });
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config::default()).unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .set_context_limits(Some(ContextLimits {
+            window: 1_000_000,
+            ratio: 0.5,
+            headroom: 100_000,
+            per_pass: 1000,
+            prune_chars: None,
+            prune_total_chars: None,
+            protect_turns: 2,
+        }))
+        .await;
+
+    for (index, id) in ["one", "two", "three"].iter().enumerate() {
+        let prefix = format!("alpha-{id}");
+        drain_session(&runtime, &store, "alpha", &prefix, index + 1).await;
+    }
+    assert_eq!(
+        provider.attempts.load(Ordering::SeqCst),
+        3,
+        "three refusals trip the alpha breaker"
+    );
+
+    drain_session(&runtime, &store, "beta", "beta-one", 1).await;
+    assert_eq!(
+        provider.attempts.load(Ordering::SeqCst),
+        4,
+        "the other session still attempts its own summary"
+    );
+    let beta = store.events("beta", 0, 500).await.unwrap();
+    assert!(
+        beta.iter().any(|event| event.kind == "history.compacted"),
+        "the other session still compacts: {:?}",
+        beta.iter()
+            .map(|event| event.kind.clone())
+            .collect::<Vec<_>>()
+    );
+}

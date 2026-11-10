@@ -658,7 +658,17 @@ pub struct Breaker {
     failures: u8,
     /// Context tokens that were being compacted when an attempt last failed.
     tripped_at: Option<u64>,
+    /// Settled boundaries a tripped breaker has waited through. Size alone stops
+    /// being a retry signal once the request is bounded deterministically: the
+    /// history no longer grows past the size that failed, so a summarizer the
+    /// provider repaired would never be tried again.
+    waited: u8,
 }
+
+/// How many settled boundaries a tripped breaker waits before opening one more
+/// attempt. Each attempt costs one summarizer call, so one per window cannot
+/// spin; a run that fails again still needs the full streak to trip it.
+const RETRY_AFTER_BOUNDARIES: u8 = 4;
 
 impl Breaker {
     pub fn new(threshold: u8) -> Self {
@@ -666,6 +676,7 @@ impl Breaker {
             threshold,
             failures: 0,
             tripped_at: None,
+            waited: 0,
         }
     }
 
@@ -673,6 +684,7 @@ impl Breaker {
     /// remembering how large the history was so a later, larger one can retry.
     pub fn rejected(&mut self, context: u64) {
         self.tripped_at = Some(context);
+        self.waited = 0;
         if self.failures < u8::MAX {
             self.failures = self.failures.saturating_add(1);
         }
@@ -683,6 +695,7 @@ impl Breaker {
     pub fn reset(&mut self) {
         self.failures = 0;
         self.tripped_at = None;
+        self.waited = 0;
     }
 
     /// Whether compaction may be attempted.
@@ -695,17 +708,36 @@ impl Breaker {
     /// tenth past the size that failed: the same request would fail again, but a
     /// materially larger one is a different attempt, and leaving it refused is
     /// how a Session reaches the endpoint's ceiling.
+    ///
+    /// A Session whose requests are bounded deterministically never grows that
+    /// way, so the same breaker also opens one attempt after
+    /// `RETRY_AFTER_BOUNDARIES` settled boundaries. Without it a repaired
+    /// summarizer would stay off for the life of that Session, which is the
+    /// silent half of the failure this gate is supposed to prevent.
     pub fn allows_at(&mut self, context: u64) -> bool {
         if self.allows() {
             return true;
         }
-        match self.tripped_at {
-            Some(tripped) if context.saturating_mul(10) >= tripped.saturating_mul(11) => {
+        if let Some(tripped) = self.tripped_at {
+            if context.saturating_mul(10) >= tripped.saturating_mul(11) {
                 self.failures = self.threshold.saturating_sub(1);
-                true
+                self.waited = 0;
+                return true;
             }
-            _ => false,
         }
+        self.waited = self.waited.saturating_add(1);
+        if self.waited < RETRY_AFTER_BOUNDARIES {
+            return false;
+        }
+        self.waited = 0;
+        self.failures = self.threshold.saturating_sub(1);
+        true
+    }
+
+    /// Nothing worth remembering: no failure streak and no tripped size, so a
+    /// Session whose summarizer is answering leaves no state behind.
+    pub fn idle(&self) -> bool {
+        self.failures == 0 && self.tripped_at.is_none()
     }
 }
 
@@ -1421,6 +1453,24 @@ mod tests {
         breaker.rejected(1_100_000);
         breaker.rejected(1_100_000);
         assert!(!breaker.allows_at(1_100_000));
+    }
+
+    // Once a Session's requests are bounded deterministically the history never
+    // grows past the size that failed, so size alone cannot bring a repaired
+    // summarizer back: the wait has to.
+    #[test]
+    fn a_tripped_breaker_retries_a_repaired_summarizer_after_the_wait() {
+        let mut breaker = Breaker::new(2);
+        breaker.rejected(1_000);
+        breaker.rejected(1_000);
+        assert!(!breaker.allows());
+        for _ in 0..3 {
+            assert!(!breaker.allows_at(1_000));
+        }
+        assert!(breaker.allows_at(1_000), "the wait opens one attempt");
+        breaker.rejected(1_000);
+        assert!(!breaker.allows());
+        assert!(!breaker.allows_at(1_000), "one open attempt per window");
     }
 
     #[test]

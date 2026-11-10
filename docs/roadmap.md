@@ -469,8 +469,14 @@ estimate.
       (`tests/context_prune.rs`).
 - [x] Trip a breaker after N refused summaries, reset by an explicit `compact` request. Three
       consecutive rejections trip it; an explicit `compact` that commits a checkpoint resets it
-      (`Runtime::reset_compaction_breaker`, called from the host's `compact` dispatch,
-      `tests/compaction_breaker.rs`).
+      (`Runtime::reset_compaction_breaker(session)`, called from the host's `compact` dispatch,
+      `tests/compaction_breaker.rs`). The streak is per Session: one engine serves every Session in a
+      Location, so a summarizer a provider keeps refusing for one of them must not switch automatic
+      compaction off for the rest, and the size a half-open attempt compares against has to be the
+      size that Session failed at. While a Session's breaker is tripped and its context has crossed
+      the trigger threshold, the request is bounded deterministically instead of waiting for the
+      endpoint to refuse a turn (`bound_budget`, unit-tested); below the threshold the history stays
+      whole.
 - [x] Publish progress between `pre_compact` and `post_compact` (slice i/n, characters covered) so a
       client can render it. Progress is ephemeral (segment i/n counts, not characters).
 - **Acceptance:** a 1M-window engine Session compacts in one provider call; no compaction crosses the
