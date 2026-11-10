@@ -834,6 +834,16 @@ pub(crate) fn pressure_note(window: u64, counted: u64, level: u8) -> String {
     )
 }
 
+/// Where request-only guidance goes in the newest message: ahead of the user's
+/// own text, so the turn never ends with a note where the task should be, but
+/// after tool results, whose order and delivery boundary a provider checks.
+pub(crate) fn guidance_slot(blocks: &[serde_json::Value]) -> usize {
+    if blocks.iter().any(|block| block["type"] == "tool_result") {
+        return blocks.len();
+    }
+    0
+}
+
 /// The label that already installed this content, if any. Instruction files
 /// repeat across worktrees and nested directories, and the same bytes in the
 /// prompt twice only spend budget and invite conflicting readings.
@@ -1008,6 +1018,17 @@ mod tests {
         assert_eq!(pressure_level(1_000, 2_000), 3);
         // A degenerate window stays defined instead of panicking on divide.
         assert_eq!(pressure_level(0, 5), 3);
+    }
+
+    #[test]
+    fn guidance_sits_ahead_of_the_user_text_and_after_tool_results() {
+        let asked = json!([{"type": "text", "text": "do the thing"}]);
+        assert_eq!(guidance_slot(asked.as_array().unwrap()), 0);
+        let answered = json!([
+            {"type": "tool_result", "tool_use_id": "call", "content": "out"},
+            {"type": "text", "text": "and also this"},
+        ]);
+        assert_eq!(guidance_slot(answered.as_array().unwrap()), 2);
     }
 
     #[test]

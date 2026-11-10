@@ -55,7 +55,17 @@ impl Provider for Fixture {
                 .map(|message| {
                     (
                         message.role.clone(),
-                        message.content[0]["text"].as_str().unwrap_or("").to_owned(),
+                        // Request-only guidance rides ahead of the prompt, so a
+                        // message's first block is not always the text it says
+                        // last; the closing user prompt is what this fixture reads.
+                        message
+                            .content
+                            .as_array()
+                            .and_then(|blocks| {
+                                blocks.iter().rev().find_map(|block| block["text"].as_str())
+                            })
+                            .unwrap_or("")
+                            .to_owned(),
                     )
                 })
                 .collect(),
