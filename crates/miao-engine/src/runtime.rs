@@ -222,6 +222,10 @@ struct FairPermit {
 impl Drop for FairPermit {
     fn drop(&mut self) {
         self.shared.release(&self.owner);
+        // The share comes back before the fleet slot: a woken waiter that
+        // loses the fast path re-queues and takes the slot when this
+        // explicitly taken permit drops.
+        drop(std::mem::take(&mut self.permit));
     }
 }
 
