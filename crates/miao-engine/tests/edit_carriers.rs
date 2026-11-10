@@ -202,7 +202,11 @@ async fn the_short_anchor_carrier_edits_and_costs_fewer_bytes() {
         "alpha\nBETA\n"
     );
     assert_eq!(last_result(&store).await["applied"], json!(true));
-    assert_eq!(*turns.lock().unwrap(), 2, "read + one carrier call");
+    assert_eq!(
+        *turns.lock().unwrap(),
+        3,
+        "read + carrier call + closing turn"
+    );
     runtime.shutdown().await;
 }
 
@@ -244,7 +248,11 @@ async fn ablating_short_anchors_rejects_the_carrier_and_the_full_form_still_edit
         "alpha\nBETA\n",
         "the ablated carrier must not block the full-form edit"
     );
-    assert_eq!(*turns.lock().unwrap(), 3);
+    assert_eq!(
+        *turns.lock().unwrap(),
+        4,
+        "carrier turn + full-form turn + closing"
+    );
     runtime.shutdown().await;
 }
 
@@ -329,7 +337,11 @@ async fn batch_edit_lands_three_files_in_one_call() {
         std::fs::read_to_string(root.join("c.txt")).unwrap(),
         "one\nTWO\nthree\n"
     );
-    assert_eq!(*turns.lock().unwrap(), 1, "one call instead of three");
+    assert_eq!(
+        *turns.lock().unwrap(),
+        2,
+        "one tool turn for three files, plus the closing turn"
+    );
     runtime.shutdown().await;
 }
 
@@ -369,8 +381,8 @@ async fn rebasing_saves_the_reread_and_retry_turns() {
     assert_eq!(result["rebased"], json!(true), "tool result: {result}");
     assert_eq!(
         *turns.lock().unwrap(),
-        2,
-        "recovery lands the edit in the read+edit turns alone"
+        3,
+        "recovery lands the edit in the read and edit turns plus the closing turn"
     );
     runtime.shutdown().await;
 }
@@ -419,7 +431,7 @@ async fn an_ablated_rebase_costs_a_reread_and_a_retry() {
     );
     assert_eq!(
         *turns.lock().unwrap(),
-        4,
+        5,
         "without recovery the drift costs a re-read and a retry edit"
     );
     runtime.shutdown().await;
@@ -483,8 +495,8 @@ async fn a_stale_failure_hands_back_the_fingerprint_for_a_readless_retry() {
     );
     assert_eq!(
         *turns.lock().unwrap(),
-        3,
-        "read + fail + corrected retry, no re-read"
+        4,
+        "read + fail + corrected retry + closing turn, no re-read"
     );
     runtime.shutdown().await;
 }
@@ -516,7 +528,8 @@ async fn a_unique_fuzzy_target_applies_and_explains_itself() {
     finished(&store).await;
     assert_eq!(
         std::fs::read_to_string(root.join("f.txt")).unwrap(),
-        "fn kept() {\n    work(1);\n}\n"
+        "fn kept() {\nwork(1);\n}\n",
+        "the whole region is replaced verbatim, indentation included in the match"
     );
     let result = last_result(&store).await;
     assert_eq!(result["fuzzy"], json!(true), "tool result: {result}");
@@ -525,8 +538,8 @@ async fn a_unique_fuzzy_target_applies_and_explains_itself() {
     assert!(note.contains("whitespace-insensitive"), "note: {note}");
     assert_eq!(
         *turns.lock().unwrap(),
-        2,
-        "no re-read for a recoverable target"
+        3,
+        "read + fuzzy edit + closing turn, no re-read"
     );
     runtime.shutdown().await;
 }
