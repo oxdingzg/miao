@@ -2959,6 +2959,38 @@ fn hourly_lines(
             Style::new().fg(palette.success),
         ),
     ]));
+    // The totals never name the model that earned them. One row per served
+    // model, busiest first as the engine ordered them, keeps "which model did
+    // the day's spend belong to" a glance instead of a guess. Six is the
+    // window a tall sidebar shows without crowding the histogram's meaning.
+    const MODEL_ROWS: usize = 6;
+    for (index, model) in usage.models.iter().enumerate() {
+        if index == MODEL_ROWS {
+            let more = usage.models.len() - MODEL_ROWS;
+            lines.push(Line::from(Span::styled(
+                format!("  … {} more", more),
+                muted,
+            )));
+            break;
+        }
+        let hit = model
+            .cache_hit()
+            .map(|hit| format!("{:.0}%", hit * 100.0))
+            .unwrap_or_else(|| "—".into());
+        lines.push(Line::from(Span::styled(
+            fit(
+                &format!(
+                    "  {} · in {} · out {} · {}",
+                    model.model,
+                    compact(model.input),
+                    compact(model.output),
+                    hit
+                ),
+                width,
+            ),
+            muted,
+        )));
+    }
     let mut money = Vec::new();
     if usage.cost_turns > 0 {
         // `~` marks turns that carried no figure at all, so a partial answer
@@ -3146,6 +3178,30 @@ impl Pane for SidebarPane {
                         lines.push(Line::from(Span::styled(
                             lineage.clone(),
                             Style::new().fg(palette.text),
+                        )));
+                    }
+                    // How full the live context is: the window the last turn
+                    // planned against and the occupancy it planned for. This
+                    // is a different read from the billed tokens below — those
+                    // are what was paid for, this is what still fits — so it
+                    // leads, and the rung where automatic compaction arms
+                    // (~80%) paints the warning colour.
+                    if let (Some(window), Some(tokens)) =
+                        (usage.context_window, usage.context_tokens)
+                    {
+                        let percent = tokens.saturating_mul(100) / window.max(1);
+                        lines.push(Line::from(Span::styled(
+                            format!(
+                                "ctx {} / {} · {}%",
+                                crate::status::compact_tokens(tokens),
+                                crate::status::compact_tokens(window),
+                                percent
+                            ),
+                            Style::new().fg(if percent >= 80 {
+                                palette.warning
+                            } else {
+                                palette.text_muted
+                            }),
                         )));
                     }
                     lines.push(Line::from(Span::styled(
@@ -6901,6 +6957,7 @@ mod tests {
             .collect::<Vec<_>>();
         let usage = crate::status::HourlyUsage {
             buckets,
+            models: Vec::new(),
             input: 300_000,
             output: 9_000,
             cache_read: 120_000,
@@ -7070,6 +7127,7 @@ mod tests {
             .collect::<Vec<_>>();
         let usage = crate::status::HourlyUsage {
             buckets,
+            models: Vec::new(),
             input: 123_000,
             output: 1_000,
             cache_read: 0,
@@ -7118,6 +7176,7 @@ mod tests {
             };
             crate::status::HourlyUsage {
                 buckets: (0..6).map(bucket).collect(),
+                models: Vec::new(),
                 input,
                 output: 1_000,
                 cache_read,
@@ -7159,6 +7218,226 @@ mod tests {
         assert!(
             !joined.contains("/compact"),
             "a small session is not worth a recommendation: {joined:?}"
+        );
+    }
+
+    /// The totals never name the model that earned them, so the strip repeats
+    /// them per served model, busiest first; a report without the array (an
+    /// older engine) renders no rows rather than an empty shell.
+    #[test]
+    fn the_strip_names_the_models_that_earned_the_totals() {
+        let theme = home_theme();
+        let model =
+            |name: &str, input: u64, output: u64, cache_read: u64| crate::status::HourlyModel {
+                model: name.to_string(),
+                input,
+                output,
+                cache_read,
+                turns: 1,
+                cost_usd: 0.0,
+            };
+        let usage = crate::status::HourlyUsage {
+            buckets: (0..24)
+                .map(|index| crate::status::HourlyBucket {
+                    start_ms: 1_760_000_000_000 + index * 3_600_000,
+                    tokens: if index == 23 { 2_100 } else { 0 },
+                    turns: 0,
+                    cost_usd: 0.0,
+                })
+                .collect::<Vec<_>>(),
+            models: vec![
+                model("glm-5", 1_200, 300, 900),
+                model("claude-opus", 500, 100, 0),
+            ],
+            input: 1_700,
+            output: 400,
+            cache_read: 900,
+            turns: 2,
+            tokens: 2_100,
+            cost_usd: 0.0,
+            cost_turns: 0,
+            peak: None,
+            truncated: false,
+            cache_hit_ratio: None,
+        };
+        let strip = hourly_lines(Some(&usage), 40, &theme.palette);
+        let joined = strip
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.to_string())
+            .collect::<String>();
+        assert!(
+            joined.contains("glm-5 · in 1.2k · out 300 · 75%"),
+            "the busiest model leads with its own share: {joined:?}"
+        );
+        assert!(
+            joined.contains("claude-opus · in 500 · out 100 · 0%"),
+            "the second model keeps its cold-cache row: {joined:?}"
+        );
+        let bare = hourly_lines(
+            Some(&crate::status::HourlyUsage {
+                models: Vec::new(),
+                ..usage
+            }),
+            40,
+            &theme.palette,
+        );
+        let joined = bare
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.to_string())
+            .collect::<String>();
+        assert!(
+            !joined.contains("glm-5"),
+            "no served names, no invented rows: {joined:?}"
+        );
+    }
+
+    /// A long tail of models must not crowd the histogram's meaning: six rows
+    /// render and the rest fold into one line that says how many.
+    #[test]
+    fn a_long_model_tail_folds_into_one_line() {
+        let theme = home_theme();
+        let models = (0..8)
+            .map(|index| crate::status::HourlyModel {
+                model: format!("model-{index}"),
+                input: 1_000 - index,
+                output: 0,
+                cache_read: 0,
+                turns: 1,
+                cost_usd: 0.0,
+            })
+            .collect::<Vec<_>>();
+        let usage = crate::status::HourlyUsage {
+            buckets: (0..24)
+                .map(|index| crate::status::HourlyBucket {
+                    start_ms: 1_760_000_000_000 + index * 3_600_000,
+                    tokens: if index == 23 { 8_000 } else { 0 },
+                    turns: 0,
+                    cost_usd: 0.0,
+                })
+                .collect::<Vec<_>>(),
+            models,
+            input: 8_000,
+            output: 0,
+            cache_read: 0,
+            turns: 8,
+            tokens: 8_000,
+            cost_usd: 0.0,
+            cost_turns: 0,
+            peak: None,
+            truncated: false,
+            cache_hit_ratio: None,
+        };
+        let strip = hourly_lines(Some(&usage), 40, &theme.palette);
+        let joined = strip
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.to_string())
+            .collect::<String>();
+        assert!(joined.contains("model-5"), "{joined:?}");
+        assert!(
+            !joined.contains("model-6"),
+            "rows past six fold away: {joined:?}"
+        );
+        assert!(joined.contains("… 2 more"), "{joined:?}");
+    }
+
+    /// How full the live context is reads differently from what was billed, so
+    /// the Context section leads with it: window and occupancy at the last
+    /// turn's granularity, warning-coloured once automatic compaction arms,
+    /// and absent when the engine never reported a window.
+    #[test]
+    fn the_context_section_shows_window_occupancy_and_warns_when_it_is_high() {
+        fn rows(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(60)
+                .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect()
+        }
+        fn sidebar(usage: crate::status::UsageSummary) -> SidebarPane {
+            SidebarPane {
+                hover_rows: Vec::new(),
+                changes: None,
+                mode: None,
+                theme: home_theme(),
+                session: Some(home_row("ses_c", "context", None)),
+                usage: Some(usage),
+                usage_hourly: None,
+                goal: None,
+                todos: Vec::new(),
+                chord: None,
+            }
+        }
+        let summary = |window: Option<u64>, tokens: Option<u64>| {
+            let context = window
+                .map(|window| serde_json::json!({"window": window, "tokens": tokens.unwrap_or(0)}));
+            crate::status::UsageSummary::from_value(&serde_json::json!({
+                "turns": 1,
+                "context": context,
+            }))
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        let mut pane = sidebar(summary(Some(1_048_576), Some(630_000)));
+        terminal
+            .draw(|frame| pane.render(frame, frame.area()))
+            .expect("draw");
+        let painted = rows(&mut terminal);
+        let line = painted
+            .iter()
+            .find(|row| row.contains("ctx "))
+            .expect("the occupancy line leads the Context section");
+        assert!(
+            line.contains("ctx 630.0k / 1.0m · 60%"),
+            "window and occupancy at the last turn: {line:?}"
+        );
+        let row = painted
+            .iter()
+            .position(|row| row.contains("ctx "))
+            .expect("row")
+            * 60;
+        let warned = terminal.backend().buffer().content[row..row + 60]
+            .iter()
+            .any(|cell| cell.style().fg == Some(home_theme().palette.warning));
+        assert!(
+            !warned,
+            "sixty percent is not the compaction rung: {line:?}"
+        );
+
+        let mut pane = sidebar(summary(Some(1_000_000), Some(900_000)));
+        terminal
+            .draw(|frame| pane.render(frame, frame.area()))
+            .expect("draw");
+        let painted = rows(&mut terminal);
+        let line = painted
+            .iter()
+            .find(|row| row.contains("ctx "))
+            .expect("line");
+        assert!(line.contains("ctx 900.0k / 1.0m · 90%"), "{line:?}");
+        let row = painted
+            .iter()
+            .position(|row| row.contains("ctx "))
+            .expect("row")
+            * 60;
+        let warned = terminal.backend().buffer().content[row..row + 60]
+            .iter()
+            .any(|cell| cell.style().fg == Some(home_theme().palette.warning));
+        assert!(
+            warned,
+            "the rung where compaction arms paints the warning: {line:?}"
+        );
+
+        let mut pane = sidebar(summary(None, None));
+        terminal
+            .draw(|frame| pane.render(frame, frame.area()))
+            .expect("draw");
+        assert!(
+            !rows(&mut terminal).iter().any(|row| row.contains("ctx ")),
+            "no reported window is not an empty one"
         );
     }
 
