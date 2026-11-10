@@ -160,6 +160,65 @@ mod cors_tests {
         }
     }
 
+    /// The unit tests above cover the decision; this one covers the wiring, so a
+    /// router that forgets `.layer(from_fn(cors))` fails here instead of leaving
+    /// every window with "Failed to fetch".
+    #[tokio::test]
+    async fn the_router_applies_the_permission_to_real_requests() {
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use axum::routing::post;
+        use axum::Router;
+        use tower::ServiceExt;
+
+        let app = Router::new()
+            .route("/rpc", post(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(super::cors));
+        let request = |method: &str, origin: &str| {
+            Request::builder()
+                .method(method)
+                .uri("/rpc")
+                .header("origin", origin)
+                .body(Body::empty())
+                .expect("request")
+        };
+
+        let preflight = app
+            .clone()
+            .oneshot(request("OPTIONS", "tauri://localhost"))
+            .await
+            .expect("preflight");
+        assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            preflight.headers().get("access-control-allow-origin"),
+            Some(&HeaderValue::from_static("tauri://localhost"))
+        );
+
+        let posted = app
+            .clone()
+            .oneshot(request("POST", "http://127.0.0.1:1420"))
+            .await
+            .expect("post");
+        assert_eq!(posted.status(), StatusCode::OK);
+        assert_eq!(
+            posted.headers().get("access-control-allow-origin"),
+            Some(&HeaderValue::from_static("http://127.0.0.1:1420"))
+        );
+        assert_eq!(
+            &to_bytes(posted.into_body(), 16).await.expect("body")[..],
+            b"ok"
+        );
+
+        let foreign = app
+            .oneshot(request("POST", "https://example.org"))
+            .await
+            .expect("foreign");
+        assert!(foreign
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none());
+    }
+
     #[test]
     fn writes_the_permission_only_for_an_admitted_origin() {
         let mut refused = StatusCode::NO_CONTENT.into_response();
