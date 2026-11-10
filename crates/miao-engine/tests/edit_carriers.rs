@@ -425,14 +425,16 @@ async fn an_ablated_rebase_costs_a_reread_and_a_retry() {
 async fn a_stale_failure_hands_back_the_fingerprint_for_a_readless_retry() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    std::fs::write(root.join("f.txt"), "alpha\nbeta\n").unwrap();
+    std::fs::write(root.join("f.txt"), "alpha\nbeta\ngamma\n").unwrap();
     let carried_fingerprint = Arc::new(Mutex::new(false));
     let read = read_call("r", "f.txt");
     let flag = carried_fingerprint.clone();
     let plan: Plan = Arc::new(move |turn, results| match turn {
         0 => read.clone(),
         1 => {
-            std::fs::write(root.join("f.txt"), "alpha\nrenamed\n").unwrap();
+            // The drift keeps old_string present, so the readless retry can
+            // genuinely land the edit against the current content.
+            std::fs::write(root.join("f.txt"), "alpha\nbeta\ngamma\nextra\n").unwrap();
             tool_use(
                 "e1",
                 "edit_file",
@@ -440,7 +442,7 @@ async fn a_stale_failure_hands_back_the_fingerprint_for_a_readless_retry() {
                     "path":"f.txt",
                     "old_string":"beta",
                     "new_string":"BETA",
-                    "expected_sha256": digest(b"alpha\nbeta\n"),
+                    "expected_sha256": digest(b"alpha\nbeta\ngamma\n"),
                 }),
             )
         }
@@ -468,6 +470,11 @@ async fn a_stale_failure_hands_back_the_fingerprint_for_a_readless_retry() {
     assert!(
         *carried_fingerprint.lock().unwrap(),
         "the failure carries an error reason"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("f.txt")).unwrap(),
+        "alpha\nBETA\ngamma\nextra\n",
+        "the readless retry must land the edit"
     );
     assert_eq!(
         *turns.lock().unwrap(),
