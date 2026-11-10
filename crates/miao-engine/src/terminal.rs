@@ -579,6 +579,11 @@ impl Registry {
         }
     }
 
+    /// How many terminals the registry holds, for the resource snapshot.
+    pub async fn count(&self) -> usize {
+        self.terminals.lock().await.len()
+    }
+
     /// Kill every terminal one Session owns. A removed Session must not leave a
     /// running PTY behind, so its removal reaps the trees instead of just
     /// dropping the registry entries.

@@ -1439,7 +1439,7 @@ impl Runtime {
     /// accounting a stress run reads.
     pub async fn resources(&self) -> Value {
         let inner = &self.inner;
-        let terminals = inner.terminals.lock().await;
+        let terminals = inner.terminals.count().await;
         json!({
             "drains": {
                 "limit": DRAIN_SLOTS,

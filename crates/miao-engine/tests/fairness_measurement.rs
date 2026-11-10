@@ -41,7 +41,9 @@ impl Provider for Submitter {
                 .as_str()
                 .unwrap_or_default();
             if let Some(count) = prompt.strip_prefix("jobs ") {
-                let seconds = if prompt.contains(" long ") { 600 } else { 2 };
+                let long = prompt.contains("long");
+                let count = count.split_whitespace().next().unwrap();
+                let seconds = if long { 600 } else { 2 };
                 let calls = (0..count.parse::<usize>().unwrap())
                     .map(|index| {
                         json!({"type":"tool_use","id":format!("call_{index}"),"name":"start_job","input":{
