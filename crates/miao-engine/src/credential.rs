@@ -397,9 +397,13 @@ pub fn default_database() -> Option<PathBuf> {
     Some(root.join("miao.db"))
 }
 
-/// Store one API-key credential and answer the metadata a listing shows. The
-/// same integration and label are replaced rather than piling rows up, which is
-/// what re-entering a key means.
+/// Store one API-key credential and answer the metadata a listing shows.
+///
+/// Re-entering a key for the same integration and label updates the row in
+/// place instead of replacing it. The id is what a route, a manifest and a
+/// Session's account pin name, so minting a new one for a changed secret would
+/// detach all three: the route would name a credential that no longer exists,
+/// and the operator's saved model would stop resolving after a plain key edit.
 pub fn store_key(
     path: &Path,
     integration: &str,
@@ -426,7 +430,6 @@ pub fn store_key(
         .filter(|name| !name.is_empty())
         .unwrap_or("default")
         .to_string();
-    let id = credential_id();
     let value = serde_json::json!({ "type": "key", "key": key }).to_string();
     let now = now_ms() as i64;
     let connection = Connection::open(path).map_err(|_| Error::Database)?;
@@ -438,18 +441,34 @@ pub fn store_key(
             [],
         )
         .map_err(|_| Error::Database)?;
-    connection
-        .execute(
-            "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
+    let existing: Option<String> = connection
+        .query_row(
+            "SELECT id FROM credential WHERE integration_id=?1 AND label=?2 LIMIT 1",
             rusqlite::params![integration, label],
+            |row| row.get(0),
         )
-        .map_err(|_| Error::Database)?;
-    connection
-        .execute(
-            "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,?3,?4,1,?5,?5)",
-            rusqlite::params![id, integration, label, value, now],
-        )
-        .map_err(|_| Error::Database)?;
+        .ok();
+    let id = match existing {
+        Some(id) => {
+            connection
+                .execute(
+                    "UPDATE credential SET value=?2, active=1, time_updated=?3 WHERE id=?1",
+                    rusqlite::params![id, value, now],
+                )
+                .map_err(|_| Error::Database)?;
+            id
+        }
+        None => {
+            let id = credential_id();
+            connection
+                .execute(
+                    "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,?3,?4,1,?5,?5)",
+                    rusqlite::params![id, integration, label, value, now],
+                )
+                .map_err(|_| Error::Database)?;
+            id
+        }
+    };
     Ok(Metadata {
         id,
         integration: integration.to_string(),
@@ -535,10 +554,20 @@ mod tests {
         let named = store_key(&path, "commandcode", "sk-two", Some("work")).expect("store");
         assert_eq!(named.label, "work");
         let replaced = store_key(&path, "commandcode", "sk-three", None).expect("store");
-        assert_ne!(
+        // Re-entering a key updates the row rather than minting a new identity:
+        // routes, the manifest and a Session's account pin all name the id, so
+        // a changed secret must not detach them.
+        assert_eq!(
             replaced.id, first.id,
-            "a re-entered key is a new credential"
+            "a re-entered key keeps its credential id"
         );
+        assert_eq!(replaced.label, "default");
+        let stored = list_database(&path).expect("list");
+        let default = stored
+            .iter()
+            .find(|entry| entry.label == "default")
+            .expect("the default row");
+        assert_eq!(default.id, first.id);
         let listed = list_database(&path).expect("list");
         assert_eq!(listed.len(), 2, "one default and one named account");
         assert_eq!(

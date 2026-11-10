@@ -52,13 +52,15 @@ pub fn routes(
         .map(|document| document.value.clone())
         .collect::<Vec<_>>();
     let merged = crate::config_scope::merge_values(&values);
-    let Some(providers) = merged
+    // A configuration that declares no provider still serves the providers its
+    // stored keys cover: the snapshot carries their transport and models, so a
+    // stored key is the operator saying "serve this one". Reading the section
+    // as empty instead of absent is what lets both halves share one derivation.
+    let empty = serde_json::Map::new();
+    let providers = merged
         .get("providers")
         .and_then(Value::as_object)
-        .filter(|providers| !providers.is_empty())
-    else {
-        return Ok(None);
-    };
+        .unwrap_or(&empty);
     let selected = merged.get("model").and_then(Value::as_str);
     // A missing or unreadable credential store leaves every provider without
     // a secret, which routes nothing — the same answer an empty store gives.
@@ -73,15 +75,18 @@ pub fn routes(
         if provider.get("disabled").and_then(Value::as_bool) == Some(true) {
             continue;
         }
-        let Some(accounts) = live.get(id.as_str()) else {
+        let accounts = live.get(id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
+        // A provider the store does not cover still serves turns when its key
+        // arrives in the environment, which is how a shell-configured key has
+        // always worked. The route is only written when the variable is
+        // actually set: the engine refuses a whole manifest that names a
+        // missing one, so an absent key has to route nothing rather than break
+        // every other provider in the same file.
+        let env_key = route_env_key(id);
+        let from_environment = accounts.is_empty() && std::env::var_os(&env_key).is_some();
+        if accounts.is_empty() && !from_environment {
             continue;
-        };
-        let Some(account) = accounts.first() else {
-            continue;
-        };
-        let Some(db_path) = credential_db else {
-            continue;
-        };
+        }
         let provider_api = provider.get("api");
         let models = provider.get("models").and_then(Value::as_object);
         let Some(models) = models else { continue };
@@ -91,7 +96,9 @@ pub fn routes(
             }
             // A model's own api overrides the provider's, the way the
             // product's catalog builds it.
-            let api = model.get("api").filter(|api| api.get("type").is_some());
+            let api = model
+                .get("api")
+                .filter(|api| api.get("type").is_some() || api.get("url").is_some());
             let api = api.or(provider_api);
             let Some(api) = api else { continue };
             let Some((transport, endpoint)) = transport(api, model_id) else {
@@ -100,16 +107,23 @@ pub fn routes(
             let key = format!("{id}/{model_id}");
             let primary = selected == Some(key.as_str());
             primary_seen |= primary;
+            let credential = match (from_environment, credential_db) {
+                (true, _) => json!({ "type": "environment", "key": env_key }),
+                (false, Some(db_path)) => json!({
+                    "type": "database",
+                    "path": db_path.display().to_string(),
+                    // Every account answers through its own route, and
+                    // `route_entry` replaces this id per account.
+                    "id": accounts[0].id,
+                    "integration": accounts[0].integration,
+                }),
+                (false, None) => continue,
+            };
             let mut entry = json!({
                 "id": key,
                 "provider": transport,
                 "model": model_id,
-                "credential": {
-                    "type": "database",
-                    "path": db_path.display().to_string(),
-                    "id": account.id,
-                    "integration": account.integration,
-                },
+                "credential": credential,
                 "primary": primary,
             });
             gateway_session_header(id, &mut entry);
@@ -134,6 +148,10 @@ pub fn routes(
                 if !bounded.is_empty() {
                     entry["limit"] = Value::Object(bounded);
                 }
+            }
+            if from_environment {
+                entries.push(entry);
+                continue;
             }
             for (position, account) in accounts.iter().enumerate() {
                 entries.push(route_entry(
@@ -164,6 +182,17 @@ pub fn routes(
 fn gateway_session_header(provider: &str, entry: &mut Value) {
     if provider == "opencode-go" {
         entry["auth"] = json!({ "headers": { "x-opencode-session": "$session" } });
+    }
+}
+
+/// The environment variable a provider's key is normally supplied in. The
+/// catalog names OpenCode's gateway `OPENCODE_API_KEY`, so the mechanical
+/// `PROVIDER_API_KEY` spelling would look for `OPENCODE_GO_API_KEY` and find
+/// nothing.
+pub fn route_env_key(provider_id: &str) -> String {
+    match provider_id {
+        "opencode-go" => "OPENCODE_API_KEY".to_string(),
+        _ => format!("{}_API_KEY", provider_id.to_uppercase().replace('-', "_")),
     }
 }
 
@@ -210,82 +239,58 @@ pub fn catalog_key_routes(
     snapshot_key_routes(&snapshot, declared, credential_db)
 }
 
-/// Reconcile an existing manifest with the product credential store: drop the
-/// routes whose credential is gone, add the ones a newly stored key covers, and
-/// answer how many entries the manifest gained or lost.
+/// Rewrite the manifest from the configuration and the credential store, and
+/// answer how many entries changed.
 ///
 /// The launcher writes the manifest once, before the engine starts, and an
-/// engine restart re-reads exactly that file. A key stored afterwards had no
-/// route to serve, and a key deleted afterwards left a route that could only
-/// fail, so a restart could never tell the operator the truth about the store.
-/// Providers the manifest already routes stay untouched, which keeps a
-/// re-entered key a no-op instead of a duplicate.
-pub fn refresh_key_routes(path: &Path, credential_db: Option<&Path>) -> Result<usize, String> {
-    let Some(snapshot) = models_snapshot() else {
-        return Ok(0);
-    };
-    refresh_snapshot_key_routes(path, &snapshot, credential_db)
-}
-
-fn refresh_snapshot_key_routes(
+/// engine restart re-reads exactly that file. Reconciling entry by entry cannot
+/// keep it true: storing a key under an existing label replaces the row, so the
+/// credential id changes, and a route still naming the old id is a route that
+/// can only fail. Re-deriving the whole list from the same inputs the launch
+/// used is the only answer that cannot drift — a stored key, a replaced key and
+/// a second account all reach the engine the same way.
+///
+/// The primary route is carried over by id when it still exists, because the
+/// operator's chosen model is not something a key edit may change.
+pub fn refresh_routes(
     path: &Path,
-    snapshot: &Value,
+    sources: &[Source],
     credential_db: Option<&Path>,
 ) -> Result<usize, String> {
-    let text =
-        std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let manifest: Value =
-        serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
-    let Some(entries) = manifest.as_array() else {
-        return Err(format!("{}: not a route list", path.display()));
-    };
-    // An unreadable store is not evidence that every key is gone, so a failed
-    // read leaves the manifest alone: the engine still fails honestly on use.
-    let stored = match credential_db.map(crate::credential::list_database) {
-        None => None,
-        Some(Ok(list)) => Some(
-            list.iter()
-                .map(|entry| entry.id.clone())
-                .collect::<std::collections::HashSet<_>>(),
-        ),
-        Some(Err(_)) => None,
-    };
-    let kept = entries
+    let previous = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default();
+    let chosen = previous
         .iter()
-        .filter(|entry| {
-            let credential = &entry["credential"];
-            if credential["type"].as_str() != Some("database") {
-                return true;
+        .find(|entry| entry.get("primary").and_then(Value::as_bool) == Some(true))
+        .and_then(|entry| entry.get("id").and_then(Value::as_str))
+        .map(str::to_string);
+    let mut derived = routes(sources, credential_db)?.unwrap_or_default();
+    // A route the operator had selected keeps the default when the new
+    // derivation still serves it; otherwise the derivation's own choice stands.
+    if let Some(chosen) = chosen {
+        if derived
+            .iter()
+            .any(|entry| entry.get("id").and_then(Value::as_str) == Some(chosen.as_str()))
+        {
+            for entry in derived.iter_mut() {
+                entry["primary"] = json!(entry.get("id").and_then(Value::as_str) == Some(&chosen));
             }
-            match (&stored, credential["id"].as_str()) {
-                (Some(stored), Some(id)) => stored.contains(id),
-                _ => true,
-            }
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let removed = entries.len() - kept.len();
-    // A route id is provider-qualified, so the providers the manifest still
-    // serves are the ones whose configuration must keep winning.
-    let mut declared = serde_json::Map::new();
-    for provider in kept
-        .iter()
-        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
-        .filter_map(|id| id.split_once('/'))
-        .map(|(provider, _)| provider.to_string())
-    {
-        declared.insert(provider, Value::Null);
+        }
     }
-    let extra = snapshot_key_routes(snapshot, &declared, credential_db);
-    let added = extra.len();
-    if removed == 0 && added == 0 {
+    let changed = previous.len() != derived.len()
+        || previous
+            .iter()
+            .zip(derived.iter())
+            .any(|(before, after)| before != after);
+    if !changed {
         return Ok(0);
     }
-    let mut merged = kept;
-    merged.extend(extra);
-    let body = serde_json::to_vec(&merged).map_err(|error| error.to_string())?;
+    let body = serde_json::to_vec_pretty(&derived).map_err(|error| error.to_string())?;
     std::fs::write(path, body).map_err(|error| format!("{}: {error}", path.display()))?;
-    Ok(removed + added)
+    Ok(derived.len().abs_diff(previous.len()).max(1))
 }
 
 fn snapshot_key_routes(
@@ -396,10 +401,10 @@ fn snapshot_key_routes(
 /// credentials in the query or userinfo are refused.
 fn transport(api: &Value, model_id: &str) -> Option<(String, Option<String>)> {
     let url = api.get("url").and_then(Value::as_str);
-    match api.get("type").and_then(Value::as_str)? {
+    match api.get("type").and_then(Value::as_str) {
         // Plugin catalogs without an AI SDK package declare an
         // OpenAI-compatible base URL directly.
-        "native" => {
+        Some("native") => {
             let base = url?.trim_end_matches('/');
             let suffix = "chat/completions";
             let endpoint = if base.ends_with(suffix) {
@@ -409,7 +414,7 @@ fn transport(api: &Value, model_id: &str) -> Option<(String, Option<String>)> {
             };
             Some(("openai-chat".into(), Some(endpoint)))
         }
-        "aisdk" => {
+        Some("aisdk") => {
             let package = api.get("package").and_then(Value::as_str)?;
             let defaults: &[(&str, &str)] = &[
                 ("@ai-sdk/deepseek", "https://api.deepseek.com/v1"),
@@ -466,7 +471,14 @@ fn transport(api: &Value, model_id: &str) -> Option<(String, Option<String>)> {
                 _ => None,
             }
         }
-        _ => None,
+        // A hand-written entry that names only a base URL, or a wire older than
+        // the `aisdk`/`native` split, is an OpenAI-compatible endpoint. The
+        // product planner treated it that way, and configurations written then
+        // still carry it; refusing them would drop providers that serve turns
+        // today.
+        _ => url
+            .and_then(|base| base.trim_end_matches('/').join_pair("chat/completions"))
+            .map(|endpoint| ("openai-chat".into(), Some(endpoint))),
     }
 }
 
@@ -854,89 +866,80 @@ mod tests {
     }
 
     /// A key stored while the TUI runs has to reach the manifest the engine
-    /// re-reads on restart. Writing it there is what makes the "restarting the
-    /// engine to load its models" notice true instead of another dead end.
+    /// re-reads on restart, and a replaced key must not detach the route it
+    /// already served: `store_key` keeps the credential id, so re-deriving
+    /// leaves the manifest unchanged instead of pointing at a dead id.
     #[test]
-    fn a_refreshed_manifest_gains_the_stored_keys_routes() {
+    fn a_refreshed_manifest_follows_the_store() {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("credentials.db");
-        let connection = rusqlite::Connection::open(&database).unwrap();
-        connection
-            .execute(
-                "CREATE TABLE credential (id text primary key, integration_id text, label text, value text)",
-                [],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO credential VALUES ('cred_zhipu', 'zhipuai-coding-plan', 'default', '{\"type\":\"key\",\"key\":\"sk-test\"}')",
-                [],
-            )
-            .unwrap();
-        let path = directory.path().join("routes.json");
         std::fs::write(
-            &path,
-            serde_json::to_vec(&json!([{
-                "id": "vendor/other",
-                "provider": "openai-chat",
-                "model": "other",
-                "endpoint": "https://vendor.test/v1/chat/completions",
-                "primary": true,
-            }]))
+            directory.path().join("miao.json"),
+            serde_json::to_string(&json!({
+                "model": "vendor/deepseek",
+                "providers": {
+                    "vendor": {
+                        "models": {
+                            "deepseek": {
+                                "api": {
+                                    "type": "aisdk",
+                                    "package": "@ai-sdk/openai-compatible",
+                                    "url": "https://vendor.test/v1",
+                                },
+                            },
+                        },
+                    },
+                },
+            }))
             .unwrap(),
         )
         .unwrap();
-        let snapshot = json!({
-            "zhipuai-coding-plan": {
-                "npm": "@ai-sdk/openai-compatible",
-                "api": "https://open.bigmodel.cn/api/coding/paas/v4",
-                "models": { "glm-5.3": { "modalities": { "output": ["text"] } } },
-            },
-            // The provider the manifest already routes must not be duplicated.
-            "vendor": {
-                "npm": "@ai-sdk/openai-compatible",
-                "api": "https://vendor.test/v1",
-                "models": { "other": { "modalities": { "output": ["text"] } } },
-            },
-        });
-        let added =
-            refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("refreshes");
-        assert_eq!(added, 1, "only the new provider's model is appended");
-        let manifest: Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).expect("valid JSON");
-        let ids: Vec<&str> = manifest
-            .as_array()
-            .expect("a list")
-            .iter()
-            .filter_map(|entry| entry.get("id").and_then(Value::as_str))
-            .collect();
-        assert_eq!(ids, vec!["vendor/other", "zhipuai-coding-plan/glm-5.3"]);
-        // Re-running is how a re-entered key behaves: nothing is added twice.
-        let again =
-            refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("idempotent");
-        assert_eq!(again, 0);
-        // Deleting the key takes its route with it: the manifest must not keep
-        // pointing at a credential that is gone.
-        rusqlite::Connection::open(&database)
-            .unwrap()
-            .execute("DELETE FROM credential", [])
-            .unwrap();
+        let sources = vec![Source::Dir(directory.path().to_path_buf())];
+        crate::credential::store_key(&database, "vendor", "sk-first", None).expect("stores");
+        let path = directory.path().join("routes.json");
+        std::fs::write(&path, b"[]").unwrap();
         assert_eq!(
-            refresh_snapshot_key_routes(&path, &snapshot, Some(&database)).expect("prunes"),
-            1
+            refresh_routes(&path, &sources, Some(&database)).expect("refreshes"),
+            1,
+            "the stored key reaches the manifest"
         );
-        let manifest: Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).expect("valid JSON");
+        let first: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(first[0]["id"], "vendor/deepseek");
+        assert_eq!(first[0]["primary"], true);
+        let id = first[0]["credential"]["id"].as_str().unwrap().to_string();
+        // Replacing the key keeps its row, so the route keeps resolving and
+        // nothing has to be rewritten.
+        let replaced =
+            crate::credential::store_key(&database, "vendor", "sk-second", None).expect("replaces");
+        assert_eq!(replaced.id, id, "a replaced key keeps its credential id");
+        assert_eq!(
+            refresh_routes(&path, &sources, Some(&database)).expect("idempotent"),
+            0
+        );
+        // A second account is a second route, named after its label.
+        crate::credential::store_key(&database, "vendor", "sk-other", Some("work")).expect("adds");
+        refresh_routes(&path, &sources, Some(&database)).expect("adds the account");
+        let manifest: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let ids: Vec<&str> = manifest
             .as_array()
             .expect("a list")
             .iter()
             .filter_map(|entry| entry.get("id").and_then(Value::as_str))
             .collect();
-        // The catalog route lost its credential and went with it; a manifest
-        // entry that names no credential (an operator's own route) is not ours
-        // to drop.
-        assert_eq!(ids, vec!["vendor/other"]);
+        assert_eq!(ids, vec!["vendor/deepseek", "vendor/deepseek@work"]);
+        assert_eq!(
+            manifest[1]["account"]["label"], "work",
+            "the account list is built from this metadata"
+        );
+        assert_eq!(
+            manifest[0]["primary"], true,
+            "the chosen route stays default"
+        );
+        // Deleting every key takes their routes with them.
+        crate::credential::remove_key(&database, "vendor", None).expect("removes");
+        refresh_routes(&path, &sources, Some(&database)).expect("prunes");
+        let manifest: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(manifest.as_array().expect("a list").len(), 0);
     }
 
     #[test]

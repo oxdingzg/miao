@@ -3845,43 +3845,88 @@ fn render_sign_in(
     sign_in: &crate::dialogs::SignInDialog,
     theme: &Theme,
 ) {
+    use crate::dialogs::SignInField;
     let palette = theme.palette;
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            format!("{}  API key", sign_in.name),
-            Style::new().fg(palette.text_muted),
-        ))),
-        Rect { height: 1, ..area },
-    );
-    let input_area = Rect {
-        y: area.y + 1,
-        height: 1,
-        ..area
+    // Two fields when a second key is being added: the label is what tells the
+    // accounts apart, so it is asked for first and the key follows it.
+    let account = sign_in.account.as_ref();
+    let mut row = area.y;
+    let mut draw = |frame: &mut Frame, label: &str, text: &str, focused: bool| {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                label.to_string(),
+                Style::new().fg(palette.text_muted),
+            ))),
+            Rect {
+                y: row,
+                height: 1,
+                ..area
+            },
+        );
+        row += 1;
+        let input_area = Rect {
+            y: row,
+            height: 1,
+            ..area
+        };
+        if input_area.width > 0 {
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    clip_cells(text, 0, input_area.width),
+                    Style::new().fg(match focused {
+                        true => palette.text,
+                        false => palette.text_muted,
+                    }),
+                ))),
+                input_area,
+            );
+        }
+        row += 2;
+        input_area
     };
-    if input_area.width == 0 {
-        return;
-    }
-    let text = clip_cells(sign_in.input.text(), 0, input_area.width);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            text,
-            Style::new().fg(palette.text),
-        ))),
-        input_area,
+    let account_area = account.map(|account| {
+        let focused = sign_in.field == SignInField::Account;
+        draw(
+            frame,
+            &format!("{}  account", sign_in.name),
+            account.text(),
+            focused,
+        )
+    });
+    let key_area = draw(
+        frame,
+        &format!("{}  API key", sign_in.name),
+        sign_in.input.text(),
+        account.is_none() || sign_in.field == SignInField::Key,
     );
+    let hint = match account.is_some() {
+        true => "tab switches · enter stores · esc cancels",
+        false => "enter stores · esc cancels",
+    };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "enter stores · esc cancels",
+            hint,
             Style::new().fg(palette.text_muted),
         ))),
         Rect {
-            y: area.y + 3,
+            y: row.saturating_sub(1),
             height: 1,
             ..area
         },
     );
-    let (_, cells) = sign_in.input.cursor_position();
-    let column = cells.min(input_area.width as usize - 1) as u16;
+    let (focused, input_area) = match (account, sign_in.field) {
+        (Some(_), SignInField::Account) => (
+            account
+                .map(|account| account.cursor_position().1)
+                .unwrap_or(0),
+            account_area.unwrap_or(key_area),
+        ),
+        _ => (sign_in.input.cursor_position().1, key_area),
+    };
+    if input_area.width == 0 {
+        return;
+    }
+    let column = focused.min(input_area.width as usize - 1) as u16;
     frame.set_cursor_position(Position::new(input_area.x + column, input_area.y));
 }
 

@@ -781,6 +781,18 @@ pub struct SignInDialog {
     pub provider: String,
     pub name: String,
     pub input: Editor,
+    /// The account a second key is stored under. `None` edits the default
+    /// account, which is what re-entering a key means; `Some` adds another key
+    /// beside it, and the label is what the account list and a route id show.
+    pub account: Option<Editor>,
+    /// Which field the keyboard is in while `account` is present.
+    pub field: SignInField,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignInField {
+    Account,
+    Key,
 }
 
 /// A paste into a one-line field: the line breaks a clipboard often carries
@@ -1479,6 +1491,21 @@ impl Dialog {
             provider: provider.to_string(),
             name: name.to_string(),
             input: Editor::new(),
+            account: None,
+            field: SignInField::Key,
+        })
+    }
+
+    /// Add a second key for a provider that already holds one. The account
+    /// label is collected first because it is what tells the two apart in the
+    /// account list and in a route id.
+    pub fn add_account_prompt(provider: &str, name: &str) -> Self {
+        Dialog::SignIn(SignInDialog {
+            provider: provider.to_string(),
+            name: name.to_string(),
+            input: Editor::new(),
+            account: Some(Editor::new()),
+            field: SignInField::Account,
         })
     }
 
@@ -1559,7 +1586,7 @@ impl Dialog {
             Dialog::Palette(palette) => handle_palette_key(palette, key),
             Dialog::Rename(rename) => handle_rename_key(&mut rename.input, key),
             Dialog::Tag(tag) => handle_rename_key(&mut tag.input, key),
-            Dialog::SignIn(sign_in) => handle_rename_key(&mut sign_in.input, key),
+            Dialog::SignIn(sign_in) => handle_sign_in_key(sign_in, key),
             Dialog::WorktreeNew(dialog) => handle_rename_key(&mut dialog.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
@@ -1714,7 +1741,13 @@ impl Dialog {
     pub fn paste(&mut self, text: &str) -> bool {
         match self {
             Dialog::SavedPermissions(dialog) => dialog.paste(text),
-            Dialog::SignIn(sign_in) => insert_paste(&mut sign_in.input, text),
+            // A paste lands in the field the keyboard is in: a key pasted while
+            // the account label is being typed would otherwise fill the wrong
+            // one and read as "the key was ignored".
+            Dialog::SignIn(sign_in) => match (&mut sign_in.account, sign_in.field) {
+                (Some(account), SignInField::Account) => insert_paste(account, text),
+                _ => insert_paste(&mut sign_in.input, text),
+            },
             Dialog::Rename(rename) => insert_paste(&mut rename.input, text),
             Dialog::Tag(tag) => insert_paste(&mut tag.input, text),
             Dialog::WorktreeNew(dialog) => insert_paste(&mut dialog.input, text),
@@ -1784,7 +1817,16 @@ impl Dialog {
             let filter = u16::from(list.shows_filter());
             return rows + 3 + filter;
         }
-        if self.rename_input().is_some() || self.sign_in().is_some() {
+        // The key prompt grows a row for the account label it collects when a
+        // second key is being added: two labelled inputs, a blank row between
+        // them and the hint line.
+        if let Some(sign_in) = self.sign_in() {
+            return match sign_in.account.is_some() {
+                true => 8,
+                false => 5,
+            };
+        }
+        if self.rename_input().is_some() {
             return 5;
         }
         6
@@ -1818,6 +1860,12 @@ pub enum Action {
     TogglePin(String),
     Remove(String),
     Submit(String),
+    /// A stored provider key, with the account label it belongs to: `None`
+    /// replaces the default account, `Some` adds another key beside it.
+    SubmitAccount {
+        account: Option<String>,
+        key: String,
+    },
     Confirmed(ConfirmKind),
     /// Take one stashed prompt back into the composer.
     StashRestore(usize),
@@ -2083,6 +2131,87 @@ fn handle_palette_key(palette: &mut PaletteDialog, key: KeyEvent) -> Action {
             Action::None
         }
         _ => Action::None,
+    }
+}
+
+/// The key prompt, with an optional account label in front of the key itself.
+///
+/// `Tab` moves between the two fields, which is the only thing a two-field
+/// dialog needs beyond typing. `Enter` in the label field moves on to the key
+/// instead of submitting: a label alone stores nothing, and a key entered
+/// first would otherwise have to be retyped after naming the account.
+fn handle_sign_in_key(sign_in: &mut SignInDialog, key: KeyEvent) -> Action {
+    let Some(account) = sign_in.account.as_mut() else {
+        return match handle_rename_key(&mut sign_in.input, key) {
+            Action::Submit(key) => Action::SubmitAccount { account: None, key },
+            action => action,
+        };
+    };
+    if key.code == KeyCode::Esc {
+        return Action::Close;
+    }
+    if key.code == KeyCode::Tab {
+        sign_in.field = match sign_in.field {
+            SignInField::Account => SignInField::Key,
+            SignInField::Key => SignInField::Account,
+        };
+        return Action::None;
+    }
+    if key.code == KeyCode::Enter {
+        return match sign_in.field {
+            SignInField::Account => {
+                if account.text().trim().is_empty() {
+                    return Action::None;
+                }
+                sign_in.field = SignInField::Key;
+                Action::None
+            }
+            SignInField::Key => {
+                let key = sign_in.input.text().trim().to_string();
+                if key.is_empty() {
+                    return Action::None;
+                }
+                Action::SubmitAccount {
+                    account: Some(account.text().trim().to_string()),
+                    key,
+                }
+            }
+        };
+    }
+    match sign_in.field {
+        SignInField::Account => {
+            edit_one_line(account, key);
+            Action::None
+        }
+        SignInField::Key => handle_rename_key(&mut sign_in.input, key),
+    }
+}
+
+/// One-line editing for a field that has no submit of its own: the same keys a
+/// rename accepts, minus `Enter` and `Esc`, which the dialog interprets.
+fn edit_one_line(input: &mut Editor, key: KeyEvent) {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        KeyCode::Backspace => {
+            input.backspace();
+        }
+        KeyCode::Delete => {
+            input.delete_forward();
+        }
+        KeyCode::Left => {
+            input.move_left();
+        }
+        KeyCode::Right => {
+            input.move_right();
+        }
+        KeyCode::Home => {
+            input.move_line_start();
+        }
+        KeyCode::End => {
+            input.move_line_end();
+        }
+        KeyCode::Char(c) if !ctrl => input.insert_char(c),
+        _ => {}
     }
 }
 

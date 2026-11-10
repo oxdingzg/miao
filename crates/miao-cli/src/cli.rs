@@ -2195,12 +2195,16 @@ fn default_db(workspace: &std::path::Path) -> PathBuf {
 /// one the engine already applies to stored credentials, so a report that names
 /// this file points at the file the product actually writes.
 fn product_db() -> Option<PathBuf> {
-    let root = std::env::var_os("MIAO_DATA_HOME")
+    product_db_with(|name| std::env::var(name).ok())
+}
+
+/// The same resolution against a caller-supplied environment, so a launch built
+/// for one machine reads that machine's store rather than the process's.
+fn product_db_with(env: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let root = env("MIAO_DATA_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("XDG_DATA_HOME").map(|dir| PathBuf::from(dir).join("miao")))
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share/miao"))
-        })?;
+        .or_else(|| env("XDG_DATA_HOME").map(|dir| PathBuf::from(dir).join("miao")))
+        .or_else(|| env("HOME").map(|home| PathBuf::from(home).join(".local/share/miao")))?;
     Some(root.join("miao.db"))
 }
 
@@ -2379,7 +2383,6 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     let Ok(mut routes) = model_routes(&layers, &model) else {
         return;
     };
-    routes.extend(unconfigured_key_routes(&layers));
     settle_primary(&mut routes, &model);
     let Some(primary) = routes.iter().find(|route| route["primary"] == true) else {
         return;
@@ -2447,6 +2450,27 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     if let Some(path) = write_routes_manifest("miao-tui-routes", &routes) {
         std::env::set_var("MIAO_ENGINE_MODEL_ROUTES_CONFIG", path);
     }
+    // The TUI rewrites this manifest when a key is stored or replaced, and a
+    // rewrite has to read the same configuration this launch did: the plan is
+    // the layers in order, including the project and inline documents a bare
+    // directory name would lose.
+    let plan = config_sources(&layers)
+        .iter()
+        .map(|source| match source {
+            miao_engine::config_derive::Source::Dir(dir) => {
+                serde_json::json!({ "dir": dir.display().to_string() })
+            }
+            miao_engine::config_derive::Source::File(file) => {
+                serde_json::json!({ "file": file.display().to_string() })
+            }
+            miao_engine::config_derive::Source::Content(content) => {
+                serde_json::json!({ "content": content })
+            }
+        })
+        .collect::<Vec<_>>();
+    if let Ok(encoded) = serde_json::to_string(&plan) {
+        std::env::set_var("MIAO_TUI_CONFIG_SOURCES", encoded);
+    }
 }
 
 /// Write the derived routes where the engine reads them and answer the path.
@@ -2462,33 +2486,6 @@ fn write_routes_manifest(name: &str, routes: &[serde_json::Value]) -> Option<std
     let path = std::env::temp_dir().join(format!("{name}-{}.json", std::process::id()));
     std::fs::write(&path, encoded).ok()?;
     Some(path)
-}
-
-/// The routes a stored key gives a provider the configuration never names.
-///
-/// Storing a key from the TUI is the operator asking for that provider, but the
-/// configured `providers` map is the only thing `model_routes` reads, so a
-/// provider added that way stayed unroutable: its models never reached the
-/// picker, re-entering the key changed nothing, and restarting miao only
-/// re-derived the same configuration subset. The catalog snapshot already
-/// carries the transport, endpoint and models, so the launcher adds those
-/// routes here and a stored key is enough to serve them.
-fn unconfigured_key_routes(layers: &[PathBuf]) -> Vec<serde_json::Value> {
-    let declared = merged_config(layers)
-        .and_then(|parsed| {
-            parsed
-                .get("providers")
-                .and_then(|value| value.as_object())
-                .cloned()
-        })
-        .unwrap_or_default();
-    let credential_db = std::env::var_os("MIAO_ENGINE_CREDENTIAL_DB")
-        .map(PathBuf::from)
-        .or_else(miao_engine::credential::default_database);
-    miao_engine::native_routes::catalog_key_routes(
-        &declared,
-        credential_db.as_deref().filter(|path| path.is_file()),
-    )
 }
 
 /// Settle the one default route. A model the operator named wins, wherever its
@@ -2592,184 +2589,37 @@ fn agent_manifest_for(
 /// own credential source, which is what makes switching between providers
 /// actually authenticate.
 fn model_routes(layers: &[PathBuf], requested: &str) -> Result<Vec<serde_json::Value>, String> {
-    let Some(parsed) = merged_config(layers) else {
-        return Ok(Vec::new());
-    };
-    let Some(providers) = parsed.get("providers").and_then(|value| value.as_object()) else {
-        return Ok(Vec::new());
-    };
-    // A caller with nothing specific to ask for (the read-only route dump)
-    // still wants the primary the product would actually use, so fall back to
-    // the configured default instead of an arbitrary first entry.
-    let configured = parsed.get("model").and_then(|value| value.as_str());
-    let requested = match requested.is_empty() {
-        true => configured.unwrap_or(""),
-        false => requested,
-    };
-    let credential_db = std::env::var("MIAO_ENGINE_CREDENTIAL_DB").unwrap_or_else(|_| {
-        std::env::var_os("HOME")
-            .map(|home| {
-                std::path::PathBuf::from(home)
-                    .join(".local/share/miao/miao.db")
-                    .display()
-                    .to_string()
-            })
-            .unwrap_or_default()
-    });
-    // Which stored credential belongs to an integration, so a route can name it.
-    let credential_id = |integration: &str| -> Option<String> {
-        let connection = rusqlite::Connection::open_with_flags(
-            &credential_db,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .ok()?;
-        connection
-            .query_row(
-                "SELECT id FROM credential WHERE integration_id=?1 AND label='default' LIMIT 1",
-                rusqlite::params![integration],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-    };
-    let mut routes = Vec::new();
-    for (provider_id, provider) in providers {
-        let api = provider
-            .get("api")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        // Some providers carry the URL per model instead of on the provider.
-        let provider_url = api
-            .get("url")
-            .and_then(|value| value.as_str())
-            .unwrap_or("");
-        let package = format!(
-            "{}{}",
-            api.get("package")
-                .and_then(|value| value.as_str())
-                .unwrap_or(""),
-            api.get("type")
-                .and_then(|value| value.as_str())
-                .unwrap_or("")
-        );
-        // The engine posts to the endpoint verbatim, so an OpenAI-compatible
-        // base URL needs its completions path appended here.
-        let protocol = if package.contains("anthropic") {
-            "anthropic"
-        } else if package.contains("google") || package.contains("gemini") {
-            "gemini"
-        } else {
-            "openai-chat"
-        };
-        let credential = match credential_id(provider_id) {
-            Some(id) => serde_json::json!({
-                "type": "database",
-                "path": credential_db,
-                "id": id,
-                "integration": provider_id,
-            }),
-            None => serde_json::json!({
-                "type": "environment",
-                "key": route_env_key(provider_id),
-            }),
-        };
-        if let Some(models) = provider.get("models").and_then(|value| value.as_object()) {
-            for (model_id, model) in models {
-                // A provider may carry its URL per model; fall back to the
-                // provider-level one. The engine posts to the endpoint verbatim,
-                // so an OpenAI-compatible base URL needs the completions path.
-                let model_url = model
-                    .get("api")
-                    .and_then(|value| value.get("url"))
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("");
-                let base_url = if model_url.is_empty() {
-                    provider_url
-                } else {
-                    model_url
-                };
-                let endpoint = match protocol {
-                    "openai-chat"
-                        if !base_url.is_empty() && !base_url.ends_with("/chat/completions") =>
-                    {
-                        format!("{}/chat/completions", base_url.trim_end_matches('/'))
-                    }
-                    _ => base_url.to_string(),
-                };
-                // A route without an endpoint cannot be called, and one bad
-                // entry makes the whole manifest fail to load: skip it instead.
-                if endpoint.is_empty() {
-                    continue;
-                }
-                // The id is what the product and the engine address a route
-                // by, so it has to be unique: two entries can serve the same
-                // model name (a mirror and the vendor itself), and the engine
-                // rejects the whole catalogue when two routes claim one id.
-                // Qualify it with the provider, the way the product's own
-                // `model` setting already does ("volcengine/deepseek-...");
-                // `model` stays the bare name that goes upstream and carries
-                // the identity the engine compares against the base provider.
-                let id = format!("{provider_id}/{model_id}");
-                let mut route = serde_json::json!({
-                    "id": id,
-                    "provider": protocol,
-                    "model": model_id,
-                    "endpoint": endpoint,
-                    "credential": credential,
-                    "primary": false,
-                });
-                // OpenCode's gateway routes a turn by conversation and refuses
-                // one that does not name it (400 MissingSessionID), so its
-                // routes carry the Session's opaque digest. The engine
-                // substitutes `$session`, which keeps sibling Sessions distinct
-                // and matches the header the product's own routes send.
-                if provider_id == "opencode-go" {
-                    route["auth"] = serde_json::json!({
-                        "headers": { "x-opencode-session": "$session" },
-                    });
-                }
-                if let Some(limit) = model.get("limit") {
-                    route["limit"] = limit.clone();
-                }
-                if let Some(modalities) = model
-                    .get("capabilities")
-                    .and_then(|value| value.get("input"))
-                    .and_then(|value| value.as_array())
-                {
-                    route["input_modalities"] = serde_json::Value::Array(modalities.clone());
-                }
-                routes.push(route);
-            }
-        }
-    }
-    // Exactly one route must be primary: the model actually being asked for,
-    // falling back to the first usable route when the name is not configured.
-    // A provider-qualified name picks its exact route; a bare model name is
-    // accepted too, and then only the first match becomes primary — several
-    // providers can serve one model name, and the engine allows one default.
-    if !routes.is_empty() {
-        let index = routes
-            .iter()
-            .position(|route| route["id"].as_str() == Some(requested))
-            .or_else(|| {
-                routes
-                    .iter()
-                    .position(|route| route["model"].as_str() == Some(requested))
-            })
-            .unwrap_or(0);
-        routes[index]["primary"] = serde_json::json!(true);
-    }
-    Ok(routes)
+    model_routes_with(layers, requested, credential_db_path().ok().as_deref())
 }
 
-/// The environment variable a provider's key is normally supplied in. The
-/// product's catalog names OpenCode's gateway `OPENCODE_API_KEY`, so the
-/// mechanical `PROVIDER_API_KEY` spelling would look for `OPENCODE_GO_API_KEY`
-/// and find nothing.
-fn route_env_key(provider_id: &str) -> String {
-    match provider_id {
-        "opencode-go" => "OPENCODE_API_KEY".to_string(),
-        _ => format!("{}_API_KEY", provider_id.to_uppercase().replace('-', "_")),
-    }
+/// The same derivation against an explicit store, so a caller that knows which
+/// store a launch will use does not have to re-resolve it, and a test can hand
+/// over a fixture instead of the operator's own keys.
+fn model_routes_with(
+    layers: &[PathBuf],
+    requested: &str,
+    credential_db: Option<&std::path::Path>,
+) -> Result<Vec<serde_json::Value>, String> {
+    // One derivation, in the engine: it already models a provider with several
+    // stored keys as several routes (`provider/model@label`) and carries the
+    // `account` metadata the TUI's account list is built from. A second copy
+    // here read only the `default` label, so every extra account was invisible
+    // and no key action could name it.
+    let routes = miao_engine::native_routes::routes(&config_sources(layers), credential_db)?;
+    let mut routes = routes.unwrap_or_default();
+    let requested = match requested.is_empty() {
+        true => merged_config(layers)
+            .and_then(|parsed| {
+                parsed
+                    .get("model")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default(),
+        false => requested.to_string(),
+    };
+    settle_primary(&mut routes, &requested);
+    Ok(routes)
 }
 
 /// Map the product's `lsp` section onto the engine's `lsp::Config` array: the
@@ -4361,7 +4211,13 @@ fn engine_argv_with(
     // provider, endpoint and credential all come from the primary entry.
     let mut derived_routes = false;
     if env("MIAO_ENGINE_MODEL_ROUTES_CONFIG").is_none() {
-        if let Ok(routes) = model_routes(&layers, model) {
+        // The store this launch will read, resolved through the same environment
+        // the rest of the argv comes from, so a caller that supplies its own
+        // environment gets routes derived against its own store.
+        let credential_db = env("MIAO_ENGINE_CREDENTIAL_DB")
+            .map(PathBuf::from)
+            .or_else(|| product_db_with(&env));
+        if let Ok(routes) = model_routes_with(&layers, model, credential_db.as_deref()) {
             if !routes.is_empty() {
                 if let Some(primary) = routes.iter().find(|route| route["primary"] == true) {
                     // A placeholder model name matches no route, and the engine
@@ -4617,36 +4473,40 @@ fn auth_write(rest: &[String]) -> Result<(), String> {
                 serde_json::json!({ "type": "key", "key": key })
             }
             .to_string();
-            let id = credential_id();
-            // A login replaces the previous default for that integration
-            // instead of piling rows up — unless it is a named account, where
-            // multiple accounts legitimately coexist.
-            let label = match &account {
-                Some(name) => {
+            // A login replaces the credential that label already holds rather
+            // than piling rows up, and keeps its id: the manifest, a route and
+            // a Session's account pin all name that id, so a changed secret
+            // must not detach them. A named account is a second row beside the
+            // default, which is what "another key for the same provider" means.
+            let label = account.unwrap_or_else(|| "default".to_string());
+            let id: String = match connection
+                .query_row(
+                    "SELECT id FROM credential WHERE integration_id=?1 AND label=?2 LIMIT 1",
+                    rusqlite::params![integration, label],
+                    |row| row.get(0),
+                )
+                .ok()
+            {
+                Some(id) => {
                     connection
                         .execute(
-                            "DELETE FROM credential WHERE integration_id=?1 AND label=?2",
-                            rusqlite::params![integration, name],
+                            "UPDATE credential SET value=?2, active=1, time_updated=?3 WHERE id=?1",
+                            rusqlite::params![id, value, now],
                         )
                         .map_err(|error| error.to_string())?;
-                    name.as_str()
+                    id
                 }
                 None => {
+                    let id = credential_id();
                     connection
                         .execute(
-                            "DELETE FROM credential WHERE integration_id=?1 AND label='default'",
-                            rusqlite::params![integration],
+                            "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,?3,?4,1,?5,?5)",
+                            rusqlite::params![id, integration, label, value, now],
                         )
                         .map_err(|error| error.to_string())?;
-                    "default"
+                    id
                 }
             };
-            connection
-                .execute(
-                    "INSERT INTO credential(id,integration_id,label,value,active,time_created,time_updated) VALUES(?1,?2,?3,?4,1,?5,?5)",
-                    rusqlite::params![id, integration, label, value, now],
-                )
-                .map_err(|error| error.to_string())?;
             println!("stored {integration} {label} credential {id}");
             Ok(())
         }
@@ -4757,31 +4617,13 @@ fn list_models() -> Result<(), String> {
             let layers = config_layers(std::path::Path::new("."), None, &|name| {
                 std::env::var(name).ok()
             });
-            let mut ids = model_routes(&layers, "")?
+            // `model_routes` is the engine's own derivation, so it already
+            // covers the providers the configuration never names but a stored
+            // key does — there is nothing left to append.
+            model_routes(&layers, "")?
                 .iter()
                 .filter_map(|route| route["id"].as_str().map(str::to_string))
-                .collect::<Vec<_>>();
-            // A provider the configuration does not name still serves turns
-            // when the shipped snapshot knows it and a key credential is
-            // stored, so the engine routes it. `model_routes` reads only the
-            // configured providers, and a listing built from it alone hid
-            // every one of those routes — opencode-go among them — while the
-            // engine was already serving them.
-            let credential_db = std::env::var_os("MIAO_ENGINE_CREDENTIAL_DB")
-                .map(PathBuf::from)
-                .or_else(product_db)
-                .filter(|path| path.is_file());
-            if let Ok(Some(routes)) = miao_engine::native_routes::routes(
-                &config_sources(&layers),
-                credential_db.as_deref(),
-            ) {
-                ids.extend(
-                    routes
-                        .iter()
-                        .filter_map(|route| route["id"].as_str().map(str::to_string)),
-                );
-            }
-            ids
+                .collect::<Vec<_>>()
         }
     };
     ids.sort();
@@ -6003,7 +5845,7 @@ mod tests {
         anchored_sessions, carry_uncommitted_changes, config_layers, config_layers_with, db_backup,
         db_file_bytes, db_read_only, db_report, db_vacuum, default_db, engine_argv_with,
         event_line, git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config,
-        model_routes, parsed_session_location, plugin_entries, project_copy_apply,
+        model_routes_with, parsed_session_location, plugin_entries, project_copy_apply,
         project_copy_plan, retention_plan, serve_database, settle_primary, strip_comments,
         tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
         write_routes_manifest,
@@ -6211,6 +6053,17 @@ mod tests {
         dir
     }
 
+    /// A credential store holding one key per named integration. A route needs
+    /// a secret, so a fixture that names providers has to name their keys too.
+    fn credential_fixture(dir: &std::path::Path, integrations: &[&str]) -> std::path::PathBuf {
+        let database = dir.join("credentials.db");
+        for integration in integrations {
+            miao_engine::credential::store_key(&database, integration, "sk-fixture", None)
+                .expect("stores");
+        }
+        database
+    }
+
     #[test]
     fn mcp_section_maps_to_the_engine_shape() {
         let dir = config_dir(
@@ -6260,7 +6113,9 @@ mod tests {
                \"mirror\": { \"api\": { \"type\": \"openai\", \"url\": \"https://mirror.test/v1\" }, \
                  \"models\": { \"deepseek\": {} } } } }",
         );
-        let routes = model_routes(std::slice::from_ref(&dir), "").expect("derives");
+        let database = credential_fixture(&dir, &["vendor", "mirror"]);
+        let routes =
+            model_routes_with(std::slice::from_ref(&dir), "", Some(&database)).expect("derives");
         assert_eq!(routes.len(), 2);
         let ids: Vec<&str> = routes
             .iter()
@@ -6292,7 +6147,9 @@ mod tests {
                \"vendor\": { \"api\": { \"type\": \"openai\", \"url\": \"https://vendor.test/v1\" }, \
                  \"models\": { \"deepseek\": {}, \"other\": {} } } } }",
         );
-        let routes = model_routes(std::slice::from_ref(&dir), "").expect("derives");
+        let database = credential_fixture(&dir, &["vendor"]);
+        let routes =
+            model_routes_with(std::slice::from_ref(&dir), "", Some(&database)).expect("derives");
         let primary = routes
             .iter()
             .find(|route| route["primary"] == true)
@@ -6368,8 +6225,13 @@ mod tests {
                \"vendor\": { \"api\": { \"url\": \"https://vendor.test/v1\" }, \
                  \"models\": { \"other\": {} } } } }",
         );
-        let routes =
-            model_routes(std::slice::from_ref(&dir), "opencode-go/deepseek").expect("derives");
+        let database = credential_fixture(&dir, &["opencode-go", "vendor"]);
+        let routes = model_routes_with(
+            std::slice::from_ref(&dir),
+            "opencode-go/deepseek",
+            Some(&database),
+        )
+        .expect("derives");
         let go = routes
             .iter()
             .find(|route| route["id"] == "opencode-go/deepseek")
@@ -6379,8 +6241,6 @@ mod tests {
             go["endpoint"],
             "https://opencode.ai/inference/go/openai/v1/chat/completions"
         );
-        // The key's documented name is not the mechanical provider spelling.
-        assert_eq!(go["credential"]["key"], "OPENCODE_API_KEY");
         let other = routes
             .iter()
             .find(|route| route["id"] == "vendor/other")
@@ -6389,6 +6249,43 @@ mod tests {
             other.get("auth").is_none(),
             "only the gateway needs the header"
         );
+        // The key's documented name is not the mechanical provider spelling:
+        // that rule only applies to the environment fallback, which a stored
+        // key never reaches.
+        assert_eq!(
+            miao_engine::native_routes::route_env_key("opencode-go"),
+            "OPENCODE_API_KEY"
+        );
+        assert_eq!(
+            miao_engine::native_routes::route_env_key("vendor"),
+            "VENDOR_API_KEY"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A provider whose key lives only in the environment still routes, and one
+    /// with no key at all routes nothing: writing an environment credential the
+    /// engine cannot resolve makes it refuse the whole manifest, so an absent
+    /// key has to produce no route rather than a broken one.
+    #[test]
+    fn an_environment_key_routes_only_when_it_is_set() {
+        let dir = config_dir(
+            "routes-env-key",
+            "{ \"providers\": { \"fixture-env\": { \"api\": { \"type\": \"aisdk\", \"package\": \"@ai-sdk/openai-compatible\", \"url\": \"https://env.test/v1\" }, \"models\": { \"m\": {} } } } }",
+        );
+        let layers = std::slice::from_ref(&dir);
+        assert!(
+            model_routes_with(layers, "", None)
+                .expect("derives")
+                .is_empty(),
+            "no key anywhere routes nothing"
+        );
+        std::env::set_var("FIXTURE_ENV_API_KEY", "sk-env");
+        let routes = model_routes_with(layers, "", None).expect("derives");
+        std::env::remove_var("FIXTURE_ENV_API_KEY");
+        assert_eq!(routes.len(), 1, "the environment key routes the provider");
+        assert_eq!(routes[0]["credential"]["type"], "environment");
+        assert_eq!(routes[0]["credential"]["key"], "FIXTURE_ENV_API_KEY");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -6479,7 +6376,8 @@ mod tests {
             merged["providers"]["vendor"]["api"]["url"], "https://project.test/v1",
             "the nearer layer wins key for key"
         );
-        let routes = model_routes(&layers, "").expect("derives");
+        let database = credential_fixture(&root, &["vendor"]);
+        let routes = model_routes_with(&layers, "", Some(&database)).expect("derives");
         let primary = routes
             .iter()
             .find(|route| route["primary"] == true)
@@ -6522,6 +6420,13 @@ mod tests {
     #[test]
     fn a_default_start_encodes_the_stack_as_a_plan() {
         let (root, global, workspace) = layered_fixture("layer-plan");
+        // The product store under the fixture's own HOME: the launch resolves
+        // the credential database through the environment it was handed, so the
+        // route this asserts comes from the fixture rather than this machine.
+        let product = root.join("home/.local/share/miao");
+        std::fs::create_dir_all(&product).expect("product dir");
+        miao_engine::credential::store_key(&product.join("miao.db"), "vendor", "sk-fixture", None)
+            .expect("stores");
         let db = root.join("miao.db");
         let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
         let position = argv

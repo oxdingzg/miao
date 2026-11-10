@@ -50,18 +50,30 @@ fn stored_credential(
     path: &std::path::Path,
     integration: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let candidates: Vec<crate::credential::Metadata> = crate::credential::list_database(path)?
+    let mut candidates: Vec<crate::credential::Metadata> = crate::credential::list_database(path)?
         .into_iter()
         .filter(|credential| credential.integration == integration && !credential.expired)
         .collect();
+    // Several keys for one provider is the operator's own arrangement — the
+    // second account is what a per-Session pin selects. Naming no id has to
+    // keep working, so the account the store calls `default` answers; only an
+    // integration whose accounts are all named is genuinely ambiguous.
+    candidates.sort_by(|left, right| {
+        let rank =
+            |credential: &crate::credential::Metadata| u8::from(credential.label != "default");
+        rank(left)
+            .cmp(&rank(right))
+            .then_with(|| left.id.cmp(&right.id))
+    });
     match candidates.len() {
-        1 => Ok(candidates.into_iter().next().expect("one candidate").id),
         0 => Err(format!(
             "no unexpired credential is stored for {integration}; pass --credential-id or set an API key"
         )
         .into()),
+        _ if candidates[0].label == "default" => Ok(candidates[0].id.clone()),
+        1 => Ok(candidates.remove(0).id),
         _ => Err(format!(
-            "several unexpired credentials are stored for {integration}; pass --credential-id to choose one"
+            "several unexpired credentials are stored for {integration} and none is the default; pass --credential-id to choose one"
         )
         .into()),
     }
