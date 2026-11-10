@@ -298,8 +298,13 @@ impl Store {
             tx.commit()?;Ok(rearm)
         }).await
     }
-    pub async fn recover_crons(&self) -> Result<(), Error> {
-        self.adopt_crons().await.map(|_| ())
+    /// The re-armed definitions, one tuple per recovered schedule: the
+    /// Session, the cron id, the overlaid pattern, whether it recurs, and the
+    /// first occurrence and expiry the next loop should honour.
+    pub async fn recover_crons(
+        &self,
+    ) -> Result<Vec<(String, String, String, bool, u64, u64)>, Error> {
+        self.adopt_crons().await
     }
 }
 /// Every reader of a schedule definition — a fired occurrence, a list row, a
