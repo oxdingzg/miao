@@ -246,6 +246,11 @@ impl Budget {
         self.deadline()
             .is_some_and(|deadline| tokio::time::Instant::now() >= deadline)
     }
+    /// What is left of the armed window, or `None` while it is unarmed.
+    fn remaining(&self) -> Option<Duration> {
+        self.deadline()
+            .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
+    }
     fn note_failure(&self, reason: &str) {
         *self.failure.lock().unwrap_or_else(|held| held.into_inner()) = Some(reason.to_owned());
     }
@@ -1229,6 +1234,30 @@ pub(crate) async fn request_with_retry(
         {
             return Err(error);
         }
+        let pause = retry_pause(attempt, requested);
+        // The loop re-checks the window before dispatching, so a pause the window
+        // cannot outlast never produces another attempt: sleeping through it only
+        // delays this failure, and a 15-minute `Retry-After` used to be waited out
+        // in full before the turn admitted its budget was spent. The refusal is its
+        // own event, so it is never mistaken for a retry that will happen.
+        if let Some(remaining) = scope
+            .budget
+            .remaining()
+            .filter(|remaining| *remaining <= pause)
+        {
+            let _ = progress
+                .send(json!({
+                    "kind": "provider.window",
+                    "attempt": attempt + 1,
+                    "reason": reason,
+                    "status": status,
+                    "cause": cause,
+                    "requested_ms": pause.as_millis() as u64,
+                    "remaining_ms": remaining.as_millis() as u64,
+                }))
+                .await;
+            return Err(error);
+        }
         announce_retry(
             progress,
             cancel,
@@ -1238,7 +1267,7 @@ pub(crate) async fn request_with_retry(
                 status,
                 cause,
                 source: pause_source(requested),
-                pause: retry_pause(attempt, requested),
+                pause,
             },
         )
         .await?;
@@ -1787,6 +1816,68 @@ mod retry_tests {
         budget.arm();
         tokio::time::sleep(Duration::from_millis(80)).await;
         assert!(budget.expired(), "the armed window must end the retries");
+    }
+
+    /// A pause the window cannot outlast never produces another attempt, so the
+    /// turn refuses it at once instead of sleeping through the provider's delay.
+    #[tokio::test]
+    async fn a_retry_after_beyond_the_window_fails_without_sleeping() {
+        let (endpoint, state, server) = serve(vec![Scripted {
+            status: 429,
+            retry_after: Some("2"),
+        }])
+        .await;
+        let started = std::time::Instant::now();
+        let (outcome, notices) = drive(&endpoint, Duration::from_millis(200)).await;
+        let elapsed = started.elapsed();
+        server.abort();
+        assert!(
+            matches!(outcome, Err(ProviderError::Http(429, _))),
+            "{outcome:?}"
+        );
+        assert_eq!(
+            state.lock().unwrap().1,
+            1,
+            "no attempt followed the refusal"
+        );
+        assert!(
+            elapsed < Duration::from_millis(150),
+            "the turn waited {elapsed:?}"
+        );
+        let refused: Vec<&Value> = notices
+            .iter()
+            .filter(|notice| notice["kind"] == "provider.window")
+            .collect();
+        assert_eq!(refused.len(), 1, "{notices:?}");
+        assert_eq!(refused[0]["requested_ms"], 2_000);
+        assert!(
+            delays(&notices).is_empty(),
+            "the refused pause was never announced as a retry"
+        );
+    }
+
+    /// A pause the window can outlast still retries, and can still succeed.
+    #[tokio::test]
+    async fn a_pause_within_the_window_can_still_end_in_success() {
+        let (endpoint, state, server) = serve(vec![
+            Scripted {
+                status: 429,
+                retry_after: Some("1"),
+            },
+            Scripted {
+                status: 200,
+                retry_after: None,
+            },
+        ])
+        .await;
+        let (outcome, _) = drive(&endpoint, Duration::from_secs(3)).await;
+        server.abort();
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(
+            state.lock().unwrap().1,
+            2,
+            "the retry did happen after the pause"
+        );
     }
 
     #[tokio::test]
