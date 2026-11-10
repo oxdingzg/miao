@@ -11,10 +11,9 @@ def classify(paths):
     windows = any(
         path.startswith((
             "packages/core/", "packages/schema/", "packages/protocol/", "packages/server/",
-            "packages/miao/src/installation/", "packages/miao/test/installation/",
             ".github/workflows/", ".github/actions/", ".github/scripts/",
         ))
-        or path in ("package.json", "bun.lock", "turbo.json", "packages/miao/package.json")
+        or path in ("package.json", "bun.lock", "turbo.json")
         or path.endswith(".ps1")
         for path in paths
     )

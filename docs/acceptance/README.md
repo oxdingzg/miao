@@ -94,6 +94,7 @@ newer record is the one to read.
 | `2026-11-10-job06-cross-session-fairness.md` | `b298679b84` | JOB-06 engine side (per-Session fair shares on the job and subagent pools, the `resources` snapshot with queue accounting, the saturated-pool control-lane pin, stress-harness numbers for queue latency, starvation, RSS, and fds from a build-host run; the release stamp stays open) |
 | `2026-11-11-job04-cancellation-matrix.md` | `878f2aa43f` | JOB-04 (the cancellation matrix over a spawned command, an approval, a delegated child, an MCP call and an LSP request; the new LSP bound against a server that never answers; the wait-reason rows for approvals, backpressure, MCP, LSP and subagents re-run; no real terminal driven) |
 | `2026-11-11-his05-verification-receipts.md` | `feat/his05-verification-receipts` | HIS-05 (the `review` state on every completion receipt — found/fixed/verified/unverified derived from an executed check and its source snapshot; commit/push/PR authorization via the command classifier; branch discipline beyond approval stays unenforced) |
+| `2026-11-11-rus02-retirement.md` | `chore/rus02-retirement-record` | RUS-02 (the TS execution path is gone: inventory targets deleted, client/data acceptance and the rollback drill cited, the last CI references to `packages/miao` removed with the dead integration runner) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
