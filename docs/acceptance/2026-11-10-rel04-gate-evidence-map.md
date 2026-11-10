@@ -64,10 +64,12 @@ darwin-arm64 / linux-x64 / windows-x64 / darwin-x64 (Rosetta) against release
 `v0.3.25` artifacts; healthy/broken extension mix records (worker-load-diagnostics,
 4 pass); linux-arm64 covered by the release workflow building on-target (#2331/#2332).
 
-Missing: darwin-x64 **native** Intel run. The configured build hosts are arm64
-(probed 2026-11-10: `macmini` reports `arm64`), so this needs either an Intel Mac or
-an explicit product decision to move darwin-x64 out of the supported matrix; the
-spec does not allow leaving it implicit.
+Resolved 2026-11-10 (owner decision): darwin-x64 **native** verification is deferred,
+not granted. The build-host fleet is arm64 (probed 2026-11-10: `macmini` reports
+`arm64`); no Intel Mac will be procured or assigned for this. The existing Rosetta
+result stays the platform's only fact record; the trigger to revisit is exactly one —
+a real user report from Intel Mac hardware. Recorded in
+`specs/rust-retirement-gates.md`; not counted as `passed`.
 
 ## G6 — version and protocol
 
@@ -87,8 +89,9 @@ SHA-256 per supported platform, produced from one release. Next release can carr
 | `docs/acceptance/2026-11-01-perf04.md`, `2026-11-09-perf05-backpressure.md` | 2026-11 trees | resource profiles, backpressure |
 
 Missing: the fixed-task benchmark with declared models, verifiers, repeat counts and
-per-run raw results (`script/engine-benchmark.ts`) — needs an authorised real-model
-budget before it can run.
+per-run raw results (`script/engine-benchmark.ts`). Budget authorised 2026-11-10
+(owner decision): the benchmark runs against **`glm-5.3-flash`** as the real model;
+costs still go into the report verbatim.
 
 ## G8 — release and recovery
 
@@ -102,7 +105,9 @@ final artifacts per supported platform, and a verified rollback path.
 1. Observation window: closes 2026-11-16; closure record lists in-window failures
    (none observed so far) and re-verifies G1–G4 evidence on its own tree.
 2. G1–G4: the missing records listed above — each is one bounded drill or inventory.
-3. G5 darwin-x64: hardware or an explicit scope decision.
-4. G6: paired checklist at the next release.
-5. G7: benchmark budget.
-6. Then RUS-02 steps 2–3, then G8.
+3. G6: paired checklist at the next release.
+4. G7: run the fixed-task benchmark on `glm-5.3-flash` (budget authorised 2026-11-10).
+5. Then RUS-02 steps 2–3, then G8.
+
+Deferred by explicit owner decision (2026-11-10): G5 darwin-x64 native verification
+waits for real Intel-user feedback; see `specs/rust-retirement-gates.md`.
