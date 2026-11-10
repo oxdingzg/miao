@@ -33,6 +33,10 @@ pub struct Note {
     pub origin_session: String,
     pub updated_at_ms: u64,
     pub expires_at_ms: Option<u64>,
+    /// The review switch. A disabled note stays listed for review but is never
+    /// authoritative, and its sources are not probed. Absent in older stores.
+    #[serde(default)]
+    pub disabled: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -77,6 +81,8 @@ pub enum Query {
         #[serde(default)]
         sources: Vec<Source>,
         ttl_seconds: Option<u64>,
+        #[serde(default)]
+        disabled: Option<bool>,
     },
     IndexFile {
         id: String,
@@ -89,9 +95,24 @@ pub enum Query {
         expected_revision: u64,
         expected_store_sha256: Option<String>,
     },
+    Toggle {
+        id: String,
+        expected_revision: u64,
+        expected_store_sha256: Option<String>,
+    },
 }
 fn limit() -> usize {
     10
+}
+/// The review class of a note: what kind of memory it is, independent of its
+/// validity. Preference and constraint notes carry user instructions, repo
+/// facts carry project knowledge, and file indexes are automated observations.
+pub fn origin_class(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Preference | Kind::Constraint => "user_instruction",
+        Kind::RepoFact => "project_knowledge",
+        Kind::FileIndex => "automated_observation",
+    }
 }
 fn id(value: &str) -> bool {
     !value.is_empty()
@@ -126,7 +147,9 @@ impl Query {
         let query: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
         let valid = match &query {
             Self::List { query, limit } => query.len() <= 256 && (1..=20).contains(limit),
-            Self::Get { id: value, .. } | Self::Delete { id: value, .. } => id(value),
+            Self::Get { id: value, .. }
+            | Self::Delete { id: value, .. }
+            | Self::Toggle { id: value, .. } => id(value),
             Self::IndexFile {
                 id: value, path, ..
             } => id(value) && source_path(path),
@@ -163,7 +186,7 @@ impl Query {
     pub fn writes(&self) -> bool {
         matches!(
             self,
-            Self::Put { .. } | Self::IndexFile { .. } | Self::Delete { .. }
+            Self::Put { .. } | Self::IndexFile { .. } | Self::Delete { .. } | Self::Toggle { .. }
         )
     }
     pub fn expected_store(&self) -> Option<&str> {
@@ -177,6 +200,10 @@ impl Query {
                 ..
             }
             | Self::Delete {
+                expected_store_sha256,
+                ..
+            }
+            | Self::Toggle {
                 expected_store_sha256,
                 ..
             } => expected_store_sha256.as_deref(),

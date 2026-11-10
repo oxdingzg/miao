@@ -8,18 +8,20 @@ Source freshness validates listed file bytes, not the semantic truth of a model-
 ## Operations
 
 - `list` accepts optional literal `query` and `limit` (default 10, maximum 20). Entries include ID,
-  title, kind, note revision and source state; bodies are retrieved separately.
+  title, kind, origin class, note revision and source state; bodies are retrieved separately.
 - `get` takes `id`. Bodies are returned by default only for current sourced notes. `include_stale:true`
-  permits explicit review of expired, foreign, changed or unverified notes. Restricted sources stay
-  withheld by this tool.
-- `put` takes `id`, `expected_revision`, `title`, `kind`, `body`, and optional `sources`, `derivation`
-  and `ttl_seconds`. `repo_fact` and `file_index` require source fingerprints and a derivation.
-  Preference/constraint notes without adequate sources remain unverified; their default expiry is
-  seven days. An explicit TTL is bounded to 30 days.
+  permits explicit review of expired, foreign, changed, unverified or disabled notes. Restricted
+  sources stay withheld by this tool.
+- `put` takes `id`, `expected_revision`, `title`, `kind`, `body`, and optional `sources`, `derivation`,
+  `ttl_seconds` and `disabled`. `repo_fact` and `file_index` require source fingerprints and a
+  derivation. Preference/constraint notes without adequate sources remain unverified; their default
+  expiry is seven days. An explicit TTL is bounded to 30 days.
 - `index_file` takes `id`, one workspace-relative `path`, and `expected_revision`. It builds a small
   deterministic file index: byte/line counts and up to 32 lexical declaration candidates. Candidate
   coverage is explicitly partial; use live source or LSP for semantic symbol resolution.
 - `delete` takes `id` and `expected_revision`.
+- `toggle` takes `id` and `expected_revision` and flips the note's disabled switch without touching
+  its content, sources or validity.
 
 Writes also carry `expected_store_sha256`, returned by list/get/write operations. A null hash creates
 an absent store. The whole-file hash protects manual edits and concurrent writers; the per-note
@@ -35,6 +37,13 @@ and exact SHA-256 values. Source paths are canonicalized when written. Retrieval
 source bytes, with per-call deduplication and budgets. A modified/missing/unreadable source, expired
 TTL, foreign workspace scope or absent derivation prevents default body reuse. Refresh a file index
 explicitly with the current store hash and note revision; editing a source does not spawn model calls.
+
+Every note presents an origin class derived from its kind: preference and constraint notes are user
+instructions, repo facts are project knowledge, and file indexes are automated observations. The
+disabled switch is a review control, not a validity signal: disabled entries stay listed for review,
+report `source_state` `disabled`, skip source validation entirely and are never authoritative.
+Re-enabling never revives expired, changed or unverified content — re-put the note to re-assert it
+with fresh sources and TTL. An edit through `put` preserves the switch unless the caller sets it.
 
 The file is ordinary workspace data, inspectable and editable with normal filesystem tools. Knowledge
 operations use normal workspace read/write permission. Source validation requires allowed direct
