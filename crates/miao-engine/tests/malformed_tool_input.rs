@@ -58,9 +58,9 @@ fn input(prompt: &str) -> Input {
     }
 }
 
-async fn runtime(url: &str, dir: &std::path::Path) -> Runtime {
+async fn runtime(store: Store, url: &str, dir: &std::path::Path) -> Runtime {
     Runtime::new(
-        Store::open(dir.join("engine.db")).await.unwrap(),
+        store,
         Arc::new(OpenAIChat::new(url.to_owned(), "fixture".into(), "model".into()).unwrap())
             as Arc<dyn Provider>,
         Tools::new(dir).await.unwrap(),
@@ -117,7 +117,7 @@ async fn an_unknown_tool_with_valid_arguments_is_named_in_the_settled_result() {
     ])
     .await;
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = runtime(&url, dir.path()).await;
+    let runtime = runtime(store.clone(), &url, dir.path()).await;
     runtime.admit(input("use it"), true).await.unwrap();
     let events = finished(&store).await;
     assert_eq!(
@@ -159,7 +159,7 @@ async fn wrong_typed_arguments_settle_a_result_that_names_the_expected_type() {
     ])
     .await;
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = runtime(&url, dir.path()).await;
+    let runtime = runtime(store.clone(), &url, dir.path()).await;
     runtime.admit(input("read it"), true).await.unwrap();
     let events = finished(&store).await;
     assert_eq!(
@@ -199,7 +199,7 @@ async fn oversized_tool_arguments_pause_the_drain_with_a_visible_reason() {
     let (url, mut requests, server) =
         common::endpoint(vec![(200, calls(&[("big-1", "read_file", &arguments)]))]).await;
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = runtime(&url, dir.path()).await;
+    let runtime = runtime(store.clone(), &url, dir.path()).await;
     runtime.admit(input("read it"), true).await.unwrap();
     let events = finished(&store).await;
     // Pausing, not failing: the Session stays usable and the transcript says why.
@@ -257,7 +257,7 @@ async fn repeated_failing_identical_calls_hit_the_same_refusal_bound() {
         .collect();
     let (url, mut requests, server) = common::endpoint(bodies).await;
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = runtime(&url, dir.path()).await;
+    let runtime = runtime(store.clone(), &url, dir.path()).await;
     runtime.admit(input("read it"), true).await.unwrap();
     let events = finished(&store).await;
     // Five failing executions count like five successful ones: the sixth
