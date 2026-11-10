@@ -176,21 +176,24 @@ async fn stress_curve_for_the_fair_job_pool() {
 
     sampler.abort();
     let final_snapshot = runtime.resources().await;
-    let rows = samples.lock().unwrap();
-    let peak_queued = rows
-        .iter()
-        .filter_map(|row| row["jobs"]["queued"].as_u64())
-        .max()
-        .unwrap_or(0);
-    let rss = rows
-        .iter()
-        .filter_map(|row| row["rss_kb"].as_u64())
-        .collect::<Vec<_>>();
-    let fds = rows
-        .iter()
-        .filter_map(|row| row["fds"].as_u64())
-        .collect::<Vec<_>>();
-    println!("samples: {}", rows.len());
+    let (sample_count, peak_queued, rss, fds) = {
+        let rows = samples.lock().unwrap();
+        let peak_queued = rows
+            .iter()
+            .filter_map(|row| row["jobs"]["queued"].as_u64())
+            .max()
+            .unwrap_or(0);
+        let rss = rows
+            .iter()
+            .filter_map(|row| row["rss_kb"].as_u64())
+            .collect::<Vec<_>>();
+        let fds = rows
+            .iter()
+            .filter_map(|row| row["fds"].as_u64())
+            .collect::<Vec<_>>();
+        (rows.len(), peak_queued, rss, fds)
+    };
+    println!("samples: {sample_count}");
     println!("wall_ms: {}", started.elapsed().as_millis());
     println!("peak_queued: {peak_queued}");
     println!(
