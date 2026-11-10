@@ -95,6 +95,10 @@ struct Output {
 const RETAINED: usize = 1024 * 1024;
 /// Bytes one read returns.
 const WINDOW: u64 = 32768;
+/// The fleet-wide terminal registry bound, and the share one Session may
+/// hold. A Session at its share is refused with a message naming the limit.
+pub const GLOBAL_LIMIT: usize = 32;
+pub const PER_SESSION_LIMIT: usize = 8;
 impl Output {
     fn append(&mut self, bytes: &[u8]) {
         self.bytes.extend(bytes);
@@ -211,12 +215,12 @@ impl Registry {
             return Err(ToolError::Interrupted);
         }
         let mut terminals = self.terminals.lock().await;
-        if terminals.len() >= 32
+        if terminals.len() >= GLOBAL_LIMIT
             || terminals
                 .keys()
                 .filter(|(owner, _)| owner == session)
                 .count()
-                >= 8
+                >= PER_SESSION_LIMIT
         {
             return Err(ToolError::External(
                 "terminal limit reached; stop an existing terminal".into(),
@@ -375,12 +379,12 @@ impl Registry {
             return Err(ToolError::Interrupted);
         }
         let mut terminals = self.terminals.lock().await;
-        if terminals.len() >= 32
+        if terminals.len() >= GLOBAL_LIMIT
             || terminals
                 .keys()
                 .filter(|(owner, _)| owner == session)
                 .count()
-                >= 8
+                >= PER_SESSION_LIMIT
         {
             return Err(ToolError::External(
                 "terminal limit reached; stop an existing terminal".into(),
@@ -573,6 +577,11 @@ impl Registry {
             }
             _ => Err(ToolError::Unsupported),
         }
+    }
+
+    /// How many terminals the registry holds, for the resource snapshot.
+    pub async fn count(&self) -> usize {
+        self.terminals.lock().await.len()
     }
 
     /// Kill every terminal one Session owns. A removed Session must not leave a
