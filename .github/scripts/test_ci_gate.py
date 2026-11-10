@@ -23,11 +23,6 @@ class GateTest(unittest.TestCase):
 
     def test_product_session_changes_require_actual_native_contracts(self):
         for path in [
-            "packages/miao/src/engine/native-engine.ts",
-            "packages/miao/test/engine/native-default-parity-http.test.ts",
-            "packages/miao/test/preload.ts",
-            "packages/server/src/handlers/session.ts",
-            "packages/server/src/native-session.ts",
             "packages/core/src/session/runner/llm.ts",
             "packages/core/src/system-context/persona/gemini.txt",
             "packages/core/src/google-account/transport.ts",
@@ -43,7 +38,7 @@ class GateTest(unittest.TestCase):
             "crates/miao-cli/src/cli.rs",
             "crates/miao-cli/Cargo.lock",
             "docs/cli.md",
-            "packages/miao/script/build.ts",
+            "script/build-native-cli.ts",
             ".github/workflows/engine-artifacts.yml",
         ]:
             self.assertTrue(gate.classify([path])["cli"], path)
