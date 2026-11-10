@@ -1,0 +1,12 @@
+model,scope,engine,task,runs,passed,attempts,billed_input,cached_input,output,cost,unknown_cost_steps,delegated,p50_ms,p95_ms
+zhipuai-coding-plan/glm-5.3-flash,total,product,*,10,10,61,794720,716736,10432,0,61,0,31892,81738
+zhipuai-coding-plan/glm-5.3-flash,task,product,bugfix,1,1,5,63192,38528,279,0,5,0,21728,21728
+zhipuai-coding-plan/glm-5.3-flash,task,product,feature,1,1,9,125813,110016,3048,0,9,0,81738,81738
+zhipuai-coding-plan/glm-5.3-flash,task,product,refactor,1,1,5,64451,50880,524,0,5,0,19287,19287
+zhipuai-coding-plan/glm-5.3-flash,task,product,unfamiliar-repo,1,1,5,64411,63232,307,0,5,0,24317,24317
+zhipuai-coding-plan/glm-5.3-flash,task,product,multifile,1,1,4,52266,50176,1034,0,4,0,27846,27846
+zhipuai-coding-plan/glm-5.3-flash,task,product,recovery,1,1,8,103784,100864,2198,0,8,0,44897,44897
+zhipuai-coding-plan/glm-5.3-flash,task,product,long-session,1,1,12,153315,151424,1311,0,12,0,31207,31207
+zhipuai-coding-plan/glm-5.3-flash,task,product,impossible,1,1,2,25061,24640,179,0,2,0,38877,38877
+zhipuai-coding-plan/glm-5.3-flash,task,product,test-repair,1,1,5,64098,50432,683,0,5,0,37866,37866
+zhipuai-coding-plan/glm-5.3-flash,task,product,tool-failure,1,1,6,78329,76544,869,0,6,0,31892,31892
