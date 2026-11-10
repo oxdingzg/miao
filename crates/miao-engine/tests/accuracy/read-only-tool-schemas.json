@@ -126,6 +126,9 @@
         "maxLength": 2048,
         "type": "string"
       },
+      "disabled": {
+        "type": "boolean"
+      },
       "expected_revision": {
         "minimum": 0,
         "type": "integer"
@@ -164,7 +167,8 @@
           "get",
           "put",
           "index_file",
-          "delete"
+          "delete",
+          "toggle"
         ],
         "type": "string"
       },

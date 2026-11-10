@@ -793,6 +793,11 @@ impl Tools {
         >,
         store_resource: &str,
     ) -> &'static str {
+        // The review switch dominates: a disabled note is off regardless of its
+        // sources, so probing them would spend budget on a non-authoritative record.
+        if note.disabled {
+            return "disabled";
+        }
         let mut status = "current";
         for source in &note.sources {
             if !cache.contains_key(&source.path) {
@@ -915,7 +920,7 @@ impl Tools {
                     if !terms.iter().all(|term| index.contains(term)) {
                         continue;
                     }
-                    notes.push(json!({"id":id,"title":note.title,"kind":note.kind,"revision":note.revision,"source_state":state,"source_count":note.sources.len()}));
+                    notes.push(json!({"id":id,"title":note.title,"kind":note.kind,"origin_class":crate::knowledge::origin_class(note.kind),"revision":note.revision,"source_state":state,"source_count":note.sources.len()}));
                     if notes.len() >= limit {
                         break;
                     }
@@ -939,7 +944,7 @@ impl Tools {
                 }
                 let body = (state == "current" || include_stale).then_some(&note.body);
                 return Ok(
-                    json!({"id":id,"title":note.title,"kind":note.kind,"revision":note.revision,"store_sha256":expected,"source_state":state,"body":body,"derivation":if body.is_some(){Some(&note.derivation)}else{None},"sources":note.sources,"origin_session":note.origin_session,"updated_at_ms":note.updated_at_ms,"expires_at_ms":note.expires_at_ms,"instructions":guidance}),
+                    json!({"id":id,"title":note.title,"kind":note.kind,"origin_class":crate::knowledge::origin_class(note.kind),"disabled":note.disabled,"revision":note.revision,"store_sha256":expected,"source_state":state,"body":body,"derivation":if body.is_some(){Some(&note.derivation)}else{None},"sources":note.sources,"origin_session":note.origin_session,"updated_at_ms":note.updated_at_ms,"expires_at_ms":note.expires_at_ms,"instructions":guidance}),
                 );
             }
             Query::Delete {
@@ -947,6 +952,18 @@ impl Tools {
                 expected_revision,
                 ..
             } => (id, expected_revision, None),
+            Query::Toggle {
+                id,
+                expected_revision,
+                ..
+            } => {
+                let toggled = document.notes.get(&id).map(|existing| {
+                    let mut note = existing.clone();
+                    note.disabled = !note.disabled;
+                    note
+                });
+                (id, expected_revision, toggled)
+            }
             Query::Put {
                 id,
                 expected_revision,
@@ -956,6 +973,7 @@ impl Tools {
                 derivation,
                 sources,
                 ttl_seconds,
+                disabled,
                 ..
             } => {
                 let mut verified = vec![];
@@ -972,6 +990,15 @@ impl Tools {
                     matches!(kind, Kind::Preference | Kind::Constraint).then_some(7 * 24 * 3600)
                 });
                 let now = crate::approval::now_ms();
+                // Editing preserves the review switch unless the caller sets
+                // it, so a review edit never silently re-enables. Computed
+                // before the result tuple moves the note id.
+                let disabled = disabled.unwrap_or_else(|| {
+                    document
+                        .notes
+                        .get(&id)
+                        .is_some_and(|existing| existing.disabled)
+                });
                 (
                     id,
                     expected_revision,
@@ -986,6 +1013,7 @@ impl Tools {
                         origin_session: session.into(),
                         updated_at_ms: now,
                         expires_at_ms: ttl.map(|ttl| now.saturating_add(ttl * 1000)),
+                        disabled,
                     }),
                 )
             }
@@ -999,7 +1027,7 @@ impl Tools {
                     .knowledge_source(&path, policy, &mut spent, &prepared.resource)
                     .await?;
                 let body = crate::knowledge::index(&source.path, &bytes)?;
-                (id,expected_revision,Some(Note {revision:0,title:source.path.chars().take(40).collect(),kind:Kind::FileIndex,body,derivation:"Bounded lexical declaration candidates from exact source bytes; semantic completeness is unknown.".into(),sources:vec![source],location:digest(self.location().as_bytes()),origin_session:session.into(),updated_at_ms:crate::approval::now_ms(),expires_at_ms:None}))
+                (id,expected_revision,Some(Note {revision:0,title:source.path.chars().take(40).collect(),kind:Kind::FileIndex,body,derivation:"Bounded lexical declaration candidates from exact source bytes; semantic completeness is unknown.".into(),sources:vec![source],location:digest(self.location().as_bytes()),origin_session:session.into(),updated_at_ms:crate::approval::now_ms(),expires_at_ms:None,disabled:false}))
             }
         };
         let revision = document.notes.get(&id).map_or(0, |note| note.revision);
@@ -1022,6 +1050,8 @@ impl Tools {
         } else {
             document.notes.remove(&id);
         }
+        // Read before the commit worker takes ownership of the document.
+        let disabled = document.notes.get(&id).map(|note| note.disabled);
         let revision = document.revision;
         let root = self.directory.clone();
         // The blocking commit is joined even if cancellation follows dispatch.
@@ -1031,7 +1061,7 @@ impl Tools {
         .await
         .map_err(|_| ToolError::External("knowledge commit worker failed".into()))??;
         Ok(
-            json!({"id":id,"revision":revision,"store_sha256":applied["sha256"],"deleted":deleted,"applied":true,"storage":applied,"instructions":guidance}),
+            json!({"id":id,"revision":revision,"store_sha256":applied["sha256"],"deleted":deleted,"disabled":disabled,"applied":true,"storage":applied,"instructions":guidance}),
         )
     }
 
@@ -2241,8 +2271,8 @@ impl Tools {
         });
         definitions.push(ToolDefinition {
             name:"knowledge".into(),
-            description:"Reviewable workspace knowledge in .miao/knowledge.json. list(query?,limit?) returns a short source-freshness index; get(id,include_stale?) returns current sourced notes, or stale/unverified notes for explicit review. Writes also use expected_store_sha256 from list/get/write results (null creates the store). put requires id, expected_revision (0=create note), title, kind, body; repo_fact/file_index also require sources[{path,sha256}] and derivation. index_file(id,path,expected_revision) builds bounded lexical declaration candidates from one file; delete(id,expected_revision) removes a note. Sources must be readable workspace files. Preference/constraint notes expire after seven days by default. Writes use ordinary workspace write permission. Notes are advisory: current instructions, AGENTS.md and live source win.".into(),
-            input_schema:json!({"type":"object","properties":{"op":{"type":"string","enum":["list","get","put","index_file","delete"]},"id":{"type":"string","maxLength":128},"query":{"type":"string","maxLength":256},"limit":{"type":"integer","minimum":1,"maximum":20},"include_stale":{"type":"boolean"},"expected_revision":{"type":"integer","minimum":0},"expected_store_sha256":{"type":["string","null"],"pattern":"^[a-fA-F0-9]{64}$"},"title":{"type":"string","maxLength":160},"kind":{"type":"string","enum":["repo_fact","preference","constraint","file_index"]},"body":{"type":"string","maxLength":8192},"derivation":{"type":"string","maxLength":2048},"sources":{"type":"array","maxItems":8,"items":{"type":"object","properties":{"path":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"}},"required":["path","sha256"],"additionalProperties":false}},"ttl_seconds":{"type":"integer","minimum":1,"maximum":2592000},"path":{"type":"string"}},"required":["op"],"additionalProperties":false}),
+            description:"Reviewable workspace knowledge in .miao/knowledge.json. list(query?,limit?) returns a short source-freshness index with origin classes; get(id,include_stale?) returns current sourced notes, or stale/unverified/disabled notes for explicit review. Writes also use expected_store_sha256 from list/get/write results (null creates the store). put requires id, expected_revision (0=create note), title, kind, body; repo_fact/file_index also require sources[{path,sha256}] and derivation; optional disabled sets the review switch, absent preserves it. index_file(id,path,expected_revision) builds bounded lexical declaration candidates from one file; toggle(id,expected_revision) flips the switch without refreshing validity; delete(id,expected_revision) removes a note. Kinds classify origin: preference/constraint are user instructions, repo_fact is project knowledge, file_index is an automated observation. Disabled entries stay listed, report source_state disabled, skip source validation and are never authoritative; re-enabling never revives expired or changed facts, re-put to re-assert. Sources must be readable workspace files. Preference/constraint notes expire after seven days by default. Writes use ordinary workspace write permission. Notes are advisory: current instructions, AGENTS.md and live source win.".into(),
+            input_schema:json!({"type":"object","properties":{"op":{"type":"string","enum":["list","get","put","index_file","delete","toggle"]},"id":{"type":"string","maxLength":128},"query":{"type":"string","maxLength":256},"limit":{"type":"integer","minimum":1,"maximum":20},"include_stale":{"type":"boolean"},"expected_revision":{"type":"integer","minimum":0},"expected_store_sha256":{"type":["string","null"],"pattern":"^[a-fA-F0-9]{64}$"},"title":{"type":"string","maxLength":160},"kind":{"type":"string","enum":["repo_fact","preference","constraint","file_index"]},"body":{"type":"string","maxLength":8192},"derivation":{"type":"string","maxLength":2048},"disabled":{"type":"boolean"},"sources":{"type":"array","maxItems":8,"items":{"type":"object","properties":{"path":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"}},"required":["path","sha256"],"additionalProperties":false}},"ttl_seconds":{"type":"integer","minimum":1,"maximum":2592000},"path":{"type":"string"}},"required":["op"],"additionalProperties":false}),
         });
         definitions.push(ToolDefinition{name:"recall".into(),description:"Search this Session's raw immutable messages, including history before compaction. Literal case-sensitive substring; opaque provider state excluded. Pass tool_use_id instead of query to restore the elided middle of one tool output that context pruning replaced. Both search and archived-output scans may return empty pages; pass next_before_message_seq as before_message_seq to continue until exhausted. Once an output is found, use next_offset to page its contents.".into(),input_schema:json!({"type":"object","properties":{"query":{"type":"string","maxLength":512},"tool_use_id":{"type":"string","maxLength":128},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":20,"default":10},"before_message_seq":{"type":"integer","minimum":0}},"additionalProperties":false})});
         definitions.extend([
