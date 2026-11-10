@@ -56,17 +56,15 @@ impl Drop for RestoreGuard {
 pub struct Preferences {
     pub mouse: bool,
     pub cursor: Option<Cursor>,
+    /// Whether the terminal is asked for focus-change reports at all. Off
+    /// keeps the escapes out of terminals that turn them into garbage input;
+    /// [`restore`] still disables reporting unconditionally, so a flipped
+    /// preference takes effect without a stale terminal mode.
+    pub focus_reporting: bool,
 }
 
 pub fn init(preferences: Preferences) -> io::Result<Tui> {
-    enable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        EnterAlternateScreen,
-        EnableBracketedPaste,
-        EnableFocusChange
-    )?;
-    apply(preferences);
+    enter(preferences)?;
     Terminal::new(CrosstermBackend::new(io::stdout()))
 }
 
@@ -92,15 +90,21 @@ pub fn suspend() {
 
 /// Take the terminal back after [`suspend`] and repaint from scratch.
 pub fn resume(terminal: &mut Tui, preferences: Preferences) -> io::Result<()> {
-    enable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        EnterAlternateScreen,
-        EnableBracketedPaste,
-        EnableFocusChange
-    )?;
-    apply(preferences);
+    enter(preferences)?;
     redraw(terminal)
+}
+
+/// Raw mode, the alternate screen, bracketed paste, and — unless the
+/// configuration turned focus reporting off — focus changes, in the order both
+/// entry points used to spell out.
+fn enter(preferences: Preferences) -> io::Result<()> {
+    enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
+    if preferences.focus_reporting {
+        execute!(io::stdout(), EnableFocusChange)?;
+    }
+    apply(preferences);
+    Ok(())
 }
 
 /// Fullscreen repaint without a cursor-position query. `Terminal::clear`

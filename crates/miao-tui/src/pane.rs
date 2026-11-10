@@ -375,6 +375,31 @@ impl Shell {
         }
     }
 
+    /// A double click: the word under the cell on the transcript. The draft
+    /// keeps its drag-only selection, and a press outside the transcript stays
+    /// the ordinary press it already was. The claimed surface owns the
+    /// release, the way [`Self::begin_selection`] hands the drag over.
+    pub fn select_word(&mut self, position: Position) -> bool {
+        let selected = self.transcript.select_word_at(position);
+        if selected {
+            self.drag = Some(DragTarget::Transcript);
+        }
+        selected
+    }
+
+    /// The first transcript cell that starts a word, for a test aiming a
+    /// double click at painted text.
+    #[cfg(test)]
+    pub fn transcript_word_cell(&self) -> Option<Position> {
+        self.transcript.first_word_cell()
+    }
+
+    /// The painted transcript area, for a test aiming a press at the pane.
+    #[cfg(test)]
+    pub fn transcript_area(&self) -> Rect {
+        self.transcript.area
+    }
+
     pub fn scroll_transcript(&mut self, delta: i32) {
         // Scrolling up detaches from the bottom; new content then lands above
         // the viewport instead of pulling it along. Scrolling back down to the
@@ -840,9 +865,13 @@ impl Pane for TranscriptPane {
             if line.style.bg.is_some() {
                 let used = line.width();
                 if used < width {
+                    // A band pads in its own ink: a diff row's tint must stay
+                    // the row's green or red all the way to the edge, not fade
+                    // into the panel surface mid-block.
+                    let ink = line.style.bg.unwrap_or(palette.surface);
                     line.spans.push(Span::styled(
                         " ".repeat(width - used),
-                        Style::new().bg(palette.surface),
+                        Style::new().bg(ink),
                     ));
                 }
             }
@@ -1300,6 +1329,53 @@ impl TranscriptPane {
         }
         let text = selection_text(&self.rendered, self.area, a, b);
         (!text.is_empty()).then_some(text)
+    }
+
+    /// Select the word run under a cell, the double-click gesture. The run is
+    /// what [`joins_word`] keeps whole, so `crates/tui` and `--flag` come out
+    /// in one piece. A cell that starts no word — whitespace, most
+    /// punctuation, a wide glyph — selects nothing and returns false, so the
+    /// caller can treat the press as the ordinary click it is.
+    pub fn select_word_at(&mut self, position: Position) -> bool {
+        if !self.area.contains(position) || self.rendered.is_empty() {
+            return false;
+        }
+        let Some(row) = self.rendered.get((position.y - self.area.y) as usize) else {
+            return false;
+        };
+        let column = (position.x - self.area.x) as usize;
+        let is_word = |index: usize| {
+            row.get(index)
+                .and_then(|symbol| symbol.chars().next())
+                .is_some_and(joins_word)
+        };
+        if !is_word(column) {
+            return false;
+        }
+        let start = (0..column).rev().find(|index| !is_word(*index));
+        let end = (column..row.len()).find(|index| !is_word(*index));
+        let start = start.map_or(0, |index| index + 1);
+        let end = end.map_or(row.len() - 1, |index| index - 1);
+        self.selection = Some((
+            Position::new(self.area.x + start as u16, position.y),
+            Position::new(self.area.x + end as u16, position.y),
+        ));
+        true
+    }
+
+    /// The first painted cell that starts a word, so a test can aim a double
+    /// click at real text instead of guessing a coordinate.
+    #[cfg(test)]
+    pub fn first_word_cell(&self) -> Option<Position> {
+        self.rendered.iter().enumerate().find_map(|(y, row)| {
+            row.iter().enumerate().find_map(|(x, symbol)| {
+                symbol
+                    .chars()
+                    .next()
+                    .filter(|character| joins_word(*character))
+                    .map(|_| Position::new(self.area.x + x as u16, self.area.y + y as u16))
+            })
+        })
     }
 }
 
@@ -3050,6 +3126,15 @@ impl Pane for SidebarPane {
                 "▾ Context",
                 Style::new().fg(palette.text_muted),
             )));
+            // The 24-hour strip is the first read of this section, not a block
+            // of its own at the far end of the column: it drew the same spend
+            // twice and sat a scroll away from the numbers it explains.
+            lines.extend(hourly_lines(
+                self.usage_hourly.as_ref(),
+                text_width,
+                &palette,
+            ));
+            lines.push(Line::default());
             match &self.usage {
                 None => lines.push(Line::from(Span::styled(
                     "no usage yet",
@@ -3218,11 +3303,13 @@ impl Pane for SidebarPane {
             }
             if let Some((files, added, removed)) = self.changes {
                 let noun = if files == 1 { "file" } else { "files" };
+                lines.push(Line::default());
                 lines.push(Line::from(Span::styled(
                     format!("▾ Changes {files} {noun}  +{added} −{removed}"),
                     Style::new().fg(palette.text_muted),
                 )));
             }
+            lines.push(Line::default());
             if let Some(goal) = &self.goal {
                 // The status word is the one thing here that can need the
                 // operator, so it keeps colour only when it does.
@@ -3249,8 +3336,10 @@ impl Pane for SidebarPane {
                         Style::new().fg(palette.text_muted),
                     )));
                 }
-                lines.push(Line::default());
             }
+            // Every ▾ section opens after one blank row; the Goal block no
+            // longer carries its own trailing one.
+            lines.push(Line::default());
             let done = self
                 .todos
                 .iter()
@@ -3298,15 +3387,6 @@ impl Pane for SidebarPane {
                 )));
             }
         }
-        // Last 24h: the fleet-wide reference read, demoted to the bottom of
-        // the column — the session's own numbers above are what the
-        // operator acts on first.
-        lines.push(Line::default());
-        lines.extend(hourly_lines(
-            self.usage_hourly.as_ref(),
-            text_width,
-            &palette,
-        ));
         // No wrapping: a long title or todo would otherwise split into several
         // rows, pushing the rest of the column off the screen and reading as one
         // character per line for CJK.
@@ -4187,7 +4267,11 @@ mod tests {
     fn animations_off_keep_the_landing_screen_still() {
         let theme = crate::theme::Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut home = Home::new(theme);
         assert!(
@@ -4445,7 +4529,9 @@ mod tests {
         // AGT-04: a displayed plan is not an implemented one, and a checklist is
         // not a Goal. Both are painted, and the Goal comes first with its own
         // header so the operator cannot read the todo list as the objective.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -4543,7 +4629,11 @@ mod tests {
         // do, not a clipped fragment of it.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let approval = crate::session::ApprovalView {
             request_id: "run-1/call_1".into(),
@@ -4602,7 +4692,11 @@ mod tests {
         // columns, not just at the wide default.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut composer = Composer::new(Path::new("."));
         composer.paste("fix the parser at forty columns");
@@ -4633,9 +4727,10 @@ mod tests {
         // UX-03: with every colour dropped, the glyph is what still says what
         // happened. A monochrome theme must not turn a checklist into one
         // undifferentiated column of text.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME)
-            .expect("theme")
-            .monochrome();
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme")
+                .monochrome();
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -4695,7 +4790,9 @@ mod tests {
 
     #[test]
     fn an_alerting_status_is_painted_in_the_warning_color() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -4730,7 +4827,11 @@ mod tests {
         // of the row, ahead of the model.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let status = StatusStrip {
             model: Some("fake/model".into()),
@@ -4771,7 +4872,9 @@ mod tests {
     /// border, the filter row and the hint.
     #[test]
     fn the_models_dialog_paints_its_rows() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -4929,7 +5032,9 @@ mod tests {
     /// prompt marker claimed the operator typed words they never wrote.
     #[test]
     fn injected_context_renders_as_a_note_not_a_prompt() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -4989,7 +5094,11 @@ mod tests {
     fn a_wrapped_code_block_keeps_its_box_edges() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let document = "```\nuname -a 输出是 Darwin host.local 25.5.0 Darwin Kernel Version 25.5.0 RELEASE_ARM64_T8112 arm64\n```";
         let rows = prose_lines(document, &theme);
@@ -5042,7 +5151,11 @@ mod tests {
         };
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let lines = crate::tool::lines(&tool, None, &theme, false, None);
         assert!(lines.len() > 1, "the fixture has a header and a body row");
@@ -5146,7 +5259,9 @@ mod tests {
 
     #[test]
     fn a_streamed_draft_is_parsed_on_demand_not_per_delta() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5178,7 +5293,9 @@ mod tests {
 
     #[test]
     fn the_draft_shows_the_answer_before_it_is_committed() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5214,7 +5331,9 @@ mod tests {
         // The TS transcript shows thinking as one header line while it streams
         // and keeps that line once the answer starts; the reasoning text itself
         // never tiles the screen.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5266,7 +5385,9 @@ mod tests {
         // text, and nothing framing it. The panel it used to be drew a rule
         // above and below plus a background band, so a one-line question took
         // five rows of screen and read as a box something had been put into.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5313,7 +5434,9 @@ mod tests {
     /// read `✓ Miao · deepseek-v4-1-flash-261017` down the whole pane.
     #[test]
     fn the_step_footer_names_the_identity_only_when_it_changes() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5348,7 +5471,9 @@ mod tests {
     fn consecutive_inline_tools_butt_together_like_the_typescript_rows() {
         // Two single-row tools read as one list; prose reopens the gap the way
         // the TS sibling margin does.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5411,7 +5536,9 @@ mod tests {
         // The box's title is where the run's state lives: what the run is
         // doing, what is waiting, and anything the operator must know. An idle
         // Session says only the box's own name.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5437,7 +5564,9 @@ mod tests {
         // The tone is the only signal that separates a model still thinking
         // from one that has gone quiet; a monochrome title left the operator to
         // read the words every frame.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5462,7 +5591,9 @@ mod tests {
     /// rather than only its tail.
     #[test]
     fn a_long_draft_wraps_inside_the_box() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5602,7 +5733,9 @@ mod tests {
     /// count, which read as a lost message.
     #[test]
     fn a_queued_prompt_is_named_above_the_input() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5679,7 +5812,9 @@ mod tests {
 
     #[test]
     fn the_status_strip_carries_the_queued_count_like_the_typescript_hints() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5713,7 +5848,9 @@ mod tests {
 
     #[test]
     fn the_status_strip_pins_the_running_build_at_its_right_edge() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5747,7 +5884,9 @@ mod tests {
 
     #[test]
     fn a_running_tool_rides_the_tail_as_one_spinner_row() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5817,7 +5956,9 @@ mod tests {
         // The TS default ("hide") drops reasoning that produced prose; a step
         // with no text keeps one duration header so a model that narrates
         // between tools still reads as having thought.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5884,7 +6025,9 @@ mod tests {
 
     #[test]
     fn a_failed_turn_renders_its_message_as_an_error_line() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -5902,7 +6045,9 @@ mod tests {
 
     #[test]
     fn the_last_response_is_the_newest_assistant_text() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -5950,7 +6095,11 @@ mod tests {
         // body or the sidebar is doing beside it.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         shell.status.model = Some("fake/model".into());
@@ -6025,7 +6174,11 @@ mod tests {
         // prose-width input.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         let mut terminal =
@@ -6055,7 +6208,11 @@ mod tests {
     fn the_input_starts_on_the_transcripts_column() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         shell.set_transcript(&Transcript {
@@ -6100,7 +6257,11 @@ mod tests {
         // 200-column lines: the same rule the session list follows.
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut shell = Shell::new(Path::new("."), theme);
         shell.set_transcript(&Transcript {
@@ -6144,7 +6305,9 @@ mod tests {
         // the `● ` bullet: every wrapped row — first and continuation alike —
         // keeps the text inside the same width, and continuations start at the
         // bullet column, never at column zero.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -6179,7 +6342,9 @@ mod tests {
         // The TS prompt panel paints `❯ ` once, before the first row; wrapped
         // and multi-line continuations start at the marker column with the
         // panel edge and background intact.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -6222,7 +6387,9 @@ mod tests {
     fn the_thought_header_clips_instead_of_folding() {
         // TS ReasoningHeader is `wrapMode="none"`: a long summary is cut at the
         // row, never folded into a second line.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -6264,7 +6431,9 @@ mod tests {
     fn the_phase_row_right_aligns_the_elapsed_time_like_the_typescript_row() {
         // The elapsed time rides the phase it measures, inside the composer's
         // title: one fact on one line, in the box the operator is typing into.
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             Path::new("."),
             Theme {
@@ -6400,7 +6569,11 @@ mod tests {
     fn a_command_completion_row_says_what_the_command_does() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut composer = Composer::new(Path::new("."));
         composer.completion = crate::editor::Completion {
@@ -6508,7 +6681,11 @@ mod tests {
     fn home_theme() -> Theme {
         Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         }
     }
 
@@ -6536,6 +6713,43 @@ mod tests {
         pane.begin_selection(Position { x: 0, y: 0 });
         pane.update_selection(Position { x: 2, y: 0 });
         assert_eq!(pane.take_selection().as_deref(), Some("abc"));
+    }
+
+    /// A double click selects the run `joins_word` keeps whole: the letters,
+    /// and the punctuation inside paths and flags.
+    #[test]
+    fn a_double_click_selects_the_word_under_the_cell() {
+        let mut pane = TranscriptPane::new(home_theme());
+        let row = "run crates/tui next"
+            .chars()
+            .map(|character| character.to_string())
+            .collect::<Vec<_>>();
+        pane.rendered = vec![row];
+        pane.area = Rect::new(0, 0, 19, 1);
+        assert!(pane.select_word_at(Position { x: 5, y: 0 }));
+        assert_eq!(pane.take_selection().as_deref(), Some("crates/tui"));
+    }
+
+    /// A cell that starts no word stays a click: a double click on a gap must
+    /// not copy whatever happens to sit next to it.
+    #[test]
+    fn a_double_click_on_a_gap_selects_nothing() {
+        let mut pane = TranscriptPane::new(home_theme());
+        let row = "a b"
+            .chars()
+            .map(|character| character.to_string())
+            .collect::<Vec<_>>();
+        pane.rendered = vec![row];
+        pane.area = Rect::new(0, 0, 3, 1);
+        assert!(!pane.select_word_at(Position { x: 1, y: 0 }));
+        assert_eq!(pane.take_selection(), None);
+    }
+
+    /// A double click outside the painted pane is no gesture at all.
+    #[test]
+    fn a_double_click_outside_the_pane_selects_nothing() {
+        let mut pane = pane_with_text();
+        assert!(!pane.select_word_at(Position { x: 0, y: 5 }));
     }
 
     /// The selection is consumed either way, so a click followed by a drag
@@ -6914,18 +7128,14 @@ mod tests {
             .iter()
             .position(|row| row.contains("Todo"))
             .expect("todo header");
-        // The Last 24h reference block now sits below the checklist; the count
-        // stops at its header so only the todo's own rows are counted. The
-        // column's left border survives trimming, so a padding row still reads
-        // as "│    "; only a row with content counts.
-        let last24 = rows[header + 1..]
+        // The checklist is bounded by the column itself now that the 24-hour
+        // strip opens the Context section above it: everything between its
+        // header and the first blank row is the todo's own rows. The column's
+        // left border survives trimming, so a padding row still reads as
+        // "│    "; only a row with content counts.
+        let below = rows[header + 1..]
             .iter()
-            .position(|row| row.contains("Last 24h"))
-            .map(|offset| header + 1 + offset)
-            .expect("last 24h header");
-        let below = rows[header + 1..last24]
-            .iter()
-            .filter(|row| {
+            .take_while(|row| {
                 !row.trim_matches(|c: char| c == '│' || c.is_whitespace())
                     .is_empty()
             })
@@ -6945,6 +7155,57 @@ mod tests {
             "the title is truncated: {:?}",
             rows[title]
         );
+    }
+    /// Every ▾ section opens after one blank row, wherever it sits in the
+    /// column: a section header glued to the rows above reads as part of them.
+    #[test]
+    fn every_section_header_opens_after_a_blank_row() {
+        let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: Some((2, 10, 4)),
+            mode: Some("build".into()),
+            theme: home_theme(),
+            session: Some(home_row("ses_u", "usage", None)),
+            usage: None,
+            usage_hourly: None,
+            goal: Some(crate::session::GoalView {
+                status: "active".into(),
+                objective: "ship the release".into(),
+                budget: None,
+                evidence: None,
+            }),
+            todos: vec![crate::session::TodoView {
+                content: "write tests".into(),
+                status: "in_progress".into(),
+            }],
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(60)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let blank = |row: &String| {
+            row.trim_matches(|c: char| c == '│' || c.is_whitespace())
+                .is_empty()
+        };
+        for header in ["▾ Context", "▾ Mode", "▾ Changes", "▾ Goal", "▾ Todo"] {
+            let at = rows
+                .iter()
+                .position(|row| row.contains(header))
+                .unwrap_or_else(|| panic!("{header} header missing: {rows:?}"));
+            assert!(
+                at > 0 && blank(&rows[at - 1]),
+                "{header} must open after a blank row: {rows:?}"
+            );
+        }
     }
 
     fn home_row(id: &str, title: &str, preview: Option<&str>) -> SessionSummary {
@@ -7090,7 +7351,9 @@ mod draft_gap_tests {
     /// the first line of the answer sat on adjacent rows.
     #[test]
     fn the_thinking_header_is_separated_from_the_answer() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: "t".into(),
             palette,
@@ -7119,7 +7382,9 @@ mod draft_gap_tests {
     /// between two things, not above the only one.
     #[test]
     fn an_answer_without_thinking_starts_on_the_first_row() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: "t".into(),
             palette,
@@ -7143,7 +7408,9 @@ mod layout_alignment_tests {
     /// what the operator sees as "the left column does not line up".
     #[test]
     fn the_transcript_the_composer_and_the_sidebar_share_their_edges() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let mut shell = Shell::new(
             std::path::Path::new("."),
             Theme {
@@ -7220,7 +7487,9 @@ mod draft_tool_tests {
     /// between them.
     #[test]
     fn a_streamed_tool_call_paints_a_tool_row() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -7267,7 +7536,9 @@ mod interleave_tests {
     /// when the turn committed.
     #[test]
     fn a_streamed_turn_keeps_its_arrival_order() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
             palette,
@@ -7309,7 +7580,9 @@ mod final_layout_check {
     /// through the layout.
     #[test]
     fn no_cell_falls_back_to_the_terminal_default() {
-        let palette = crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme");
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
         let theme = Theme {
             name: "t".into(),
             palette,

@@ -377,7 +377,7 @@ mod tests {
     use ratatui::style::Color;
 
     fn palette() -> Palette {
-        theme::builtin("miao").expect("builtin theme")
+        theme::builtin("miao", crate::theme::ThemeMode::Dark).expect("builtin theme")
     }
 
     fn text(spans: &[Span<'_>]) -> String {

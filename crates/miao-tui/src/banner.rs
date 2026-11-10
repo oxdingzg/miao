@@ -284,7 +284,11 @@ mod tests {
     fn theme() -> Theme {
         Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         }
     }
 
@@ -380,9 +384,12 @@ mod tests {
     fn a_monochrome_theme_paints_no_light() {
         let monochrome = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME)
-                .expect("theme")
-                .monochrome(),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme")
+            .monochrome(),
         };
         let banner = Banner::new();
         let line = banner.line(2, 1_200, true, &monochrome);

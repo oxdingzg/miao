@@ -25,7 +25,7 @@ use miao_tui::config::AttentionConfig;
 use miao_tui::event::AppEvent;
 use miao_tui::keybinds::Keymap;
 use miao_tui::session::{Entry, Part, Reasoning, SessionState, Transcript};
-use miao_tui::theme::{self, Theme, DEFAULT_THEME};
+use miao_tui::theme::{self, Theme, ThemeMode, DEFAULT_THEME};
 
 /// One frame at 60 Hz. The gate the evidence is collected against.
 const BUDGET: Duration = Duration::from_micros(16_700);
@@ -83,7 +83,8 @@ fn transcript(entries: usize) -> Transcript {
 
 fn app(label: &str, entries: usize) -> (App, PathBuf) {
     let dir = main_dir(label);
-    let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+    let palette =
+        theme::builtin(DEFAULT_THEME, ThemeMode::Dark).expect("default theme is built in");
     let mut app = App::new(
         dir.clone(),
         Theme {

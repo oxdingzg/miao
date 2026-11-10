@@ -20,7 +20,8 @@ use serde_json::{json, Value};
 
 #[tokio::test]
 async fn the_in_process_engine_forwards_provider_deltas() {
-    let (mut connection, mut events, session, server) = started("deltas").await;
+    let (mut connection, mut events, session, server) =
+        started("deltas", streaming_endpoint()).await;
     let client = connection.connect().await.expect("connect");
     client
         .admit(
@@ -68,7 +69,8 @@ async fn the_in_process_engine_forwards_provider_deltas() {
 
 #[tokio::test]
 async fn the_in_process_engine_forwards_durable_events() {
-    let (mut connection, mut events, session, server) = started("events").await;
+    let (mut connection, mut events, session, server) =
+        started("events", streaming_endpoint()).await;
     let client = connection.connect().await.expect("connect");
     client
         .admit(
@@ -120,16 +122,89 @@ async fn the_in_process_engine_forwards_durable_events() {
     let _ = server.join();
 }
 
+/// PERF-05: control outranks the rendering flood. A turn streams tens of
+/// thousands of deltas; mid-flood the test asks the engine to cancel. The
+/// control round trip is bounded while the flood pours, the run settles as
+/// `interrupted` instead of riding the flood to completion, and nothing fails
+/// the transport — a backlog must not cost the Session its stream.
+#[tokio::test]
+async fn a_cancel_lands_ahead_of_a_pouring_delta_flood() {
+    let (mut connection, mut events, session, server) = started("flood", flood_endpoint()).await;
+    let client = connection.connect().await.expect("connect");
+    client
+        .admit(
+            json!({
+                "session_id": session,
+                "input_id": "inp_flood_1",
+                "prompt": "flood please",
+            }),
+            false,
+            Vec::new(),
+        )
+        .await
+        .expect("admit");
+    client
+        .request("resume", json!({ "session_id": session }))
+        .await
+        .expect("resume");
+
+    // Five hundred deltas in, the flood is live and the egress is behind: the
+    // reported backpressure mark sits at 256 frames, so a real backlog exists
+    // when the control request cuts in.
+    let cancel_mark = 500;
+    let mut deltas = 0usize;
+    let mut cancel_took = None;
+    let mut settled = None;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    while tokio::time::Instant::now() < deadline {
+        let event = tokio::time::timeout(Duration::from_secs(10), events.recv())
+            .await
+            .expect("the in-process engine stopped answering");
+        match event {
+            Some(TransportEvent::Progress(params)) if params["kind"] == "provider.delta" => {
+                deltas += 1;
+                if deltas == cancel_mark {
+                    let began = std::time::Instant::now();
+                    client.cancel(&session).await.expect("cancel mid-flood");
+                    cancel_took = Some(began.elapsed());
+                }
+            }
+            Some(TransportEvent::Event(event)) if event.kind == "run.finished" => {
+                settled = event.data["reason"].as_str().map(str::to_string);
+                break;
+            }
+            Some(TransportEvent::Resync(reason)) => panic!("undecodable frame: {reason}"),
+            Some(TransportEvent::Failure(failure)) => panic!("engine failed: {failure:?}"),
+            _ => {}
+        }
+    }
+    let took = cancel_took.expect("the flood never reached the cancel mark");
+    assert!(
+        took < Duration::from_secs(5),
+        "the cancel waited {took:?} behind the flood"
+    );
+    assert_eq!(
+        settled.as_deref(),
+        Some("interrupted"),
+        "a flood the operator cancelled must settle the run as interrupted, not completed"
+    );
+    let _ = server.join();
+}
+
 /// Configure the in-process engine against a scripted SSE peer, open one
-/// Session on it, and subscribe. Both tests start from the same place: the
-/// scripted route is the only provider either one can reach.
-async fn started(name: &str) -> (Connection, EventRx, String, std::thread::JoinHandle<()>) {
+/// Session on it, and subscribe. Every test starts from the same place: the
+/// scripted route is the only provider any of them can reach, and the caller
+/// picks the peer's script.
+async fn started(
+    name: &str,
+    peer: (String, std::thread::JoinHandle<()>),
+) -> (Connection, EventRx, String, std::thread::JoinHandle<()>) {
     // `configure` refuses to start without a credential source, and the route
     // manifest names its own variable; neither value ever reaches the engine's
     // output.
     std::env::set_var("OPENAI_API_KEY", "PRIMARY_KEY_NEVER_PRINT");
     std::env::set_var("MIAO_TEST_ROUTE_KEY", "ROUTE_KEY_NEVER_PRINT");
-    let (endpoint, server) = streaming_endpoint();
+    let (endpoint, server) = peer;
     let dir = std::env::temp_dir().join(format!(
         "miao-embedded-{name}-{}-{}",
         std::process::id(),
@@ -248,6 +323,74 @@ fn streaming_endpoint() -> (String, std::thread::JoinHandle<()>) {
             )
             .expect("stop frame");
         socket.flush().expect("stop flush");
+    });
+    (endpoint, server)
+}
+
+/// A scripted OpenAI-chat SSE peer that floods: batches of one-byte content
+/// deltas written back to back with only a pause between batches, so the turn
+/// is still streaming long after the test has issued its control request. A
+/// failed write is the engine hanging up — a cancelled run drops its provider
+/// stream — and ends the flood quietly instead of failing the fixture thread.
+fn flood_endpoint() -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind the fixture endpoint");
+    let endpoint = format!(
+        "http://{}/v1/chat/completions",
+        listener.local_addr().expect("fixture address")
+    );
+    let server = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().expect("accept the engine request");
+        let _ = socket.set_read_timeout(Some(Duration::from_secs(20)));
+        let mut request = Vec::new();
+        let mut byte = [0u8; 1];
+        while !request.ends_with(b"\r\n\r\n") {
+            if socket.read_exact(&mut byte).is_err() {
+                return;
+            }
+            request.push(byte[0]);
+        }
+        let headers = String::from_utf8_lossy(&request).to_ascii_lowercase();
+        let Some(length) = headers.lines().find_map(|line| {
+            line.strip_prefix("content-length: ")
+                .and_then(|value| value.trim().parse::<usize>().ok())
+        }) else {
+            return;
+        };
+        let mut body = vec![0u8; length];
+        if socket.read_exact(&mut body).is_err() {
+            return;
+        }
+        if socket
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            )
+            .is_err()
+        {
+            return;
+        }
+        let frame = "data: {\"id\":\"fixture\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"},\"finish_reason\":null}]}\n\n";
+        // Sixty-four deltas a batch with a 2 ms pause between batches: fast
+        // enough that the flood is the busy lane for the whole test, slow
+        // enough that it is still pouring seconds from now, when the control
+        // request has long landed. Sixty-four thousand deltas sits far past
+        // the reported backpressure mark, and the run never reaches the
+        // flood's end on its own.
+        for _ in 0..1_000 {
+            let mut batch = String::new();
+            for _ in 0..64 {
+                batch.push_str(frame);
+            }
+            if socket.write_all(batch.as_bytes()).is_err() {
+                return;
+            }
+            let _ = socket.flush();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        // Only a flood the engine never cancelled reaches this line; still
+        // finish the protocol so the turn settles instead of hanging.
+        let _ = socket.write_all(
+            b"data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
     });
     (endpoint, server)
 }

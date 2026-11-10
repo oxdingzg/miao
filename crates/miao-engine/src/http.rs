@@ -51,6 +51,196 @@ pub const PROTOCOL_VERSION: &str = "engine-http-0";
 
 const PROTOCOL_HEADER: &str = "miao-engine-protocol";
 
+/// Origins a window may use against this plane: the desktop shell's custom
+/// scheme, and any loopback HTTP origin (a dev server or a web build pointed at a
+/// local engine). A foreign origin gets no permission at all rather than a
+/// wildcard, because the plane answers authenticated commands.
+fn allowed_origin(origin: &str) -> bool {
+    if matches!(
+        origin,
+        "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
+    ) {
+        return true;
+    }
+    let rest = origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"));
+    let Some(rest) = rest else { return false };
+    let host = rest.split('/').next().unwrap_or(rest);
+    // A bracketed IPv6 host contains colons of its own, so the port separator is
+    // only meaningful outside the brackets.
+    let host = match host.strip_prefix('[') {
+        Some(inner) => match inner.split(']').next() {
+            Some(address) => format!("[{address}]"),
+            None => return false,
+        },
+        None => host.split(':').next().unwrap_or(host).to_string(),
+    };
+    matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]")
+}
+
+fn apply_cors(response: &mut Response, origin: Option<&str>) {
+    let Some(origin) = origin.and_then(|value| HeaderValue::from_str(value).ok()) else {
+        return;
+    };
+    let headers = response.headers_mut();
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, OPTIONS"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("authorization, content-type, miao-engine-protocol"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_EXPOSE_HEADERS,
+        HeaderValue::from_static(PROTOCOL_HEADER),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_static("600"),
+    );
+    headers.append(header::VARY, HeaderValue::from_static("origin"));
+}
+
+/// Answer the preflight locally: a window never sends its bearer token on one,
+/// so an authenticated `OPTIONS` would be rejected and the real request would
+/// never follow.
+async fn cors(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let requested = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let allowed = requested
+        .as_deref()
+        .filter(|origin| allowed_origin(origin))
+        .map(str::to_owned);
+    if request.method() == axum::http::Method::OPTIONS {
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        apply_cors(&mut response, allowed.as_deref());
+        return response;
+    }
+    let mut response = next.run(request).await;
+    apply_cors(&mut response, allowed.as_deref());
+    response
+}
+
+#[cfg(test)]
+mod cors_tests {
+    use super::{allowed_origin, apply_cors};
+    use axum::http::{HeaderValue, StatusCode};
+    use axum::response::IntoResponse;
+
+    #[test]
+    fn admits_the_shell_scheme_and_loopback_web_origins() {
+        for origin in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "http://localhost:1420",
+            "http://127.0.0.1:4319",
+            "https://[::1]:8443",
+        ] {
+            assert!(allowed_origin(origin), "{origin} should be admitted");
+        }
+    }
+
+    #[test]
+    fn refuses_every_other_origin() {
+        for origin in [
+            "https://example.org",
+            "http://localhost.example.org",
+            "http://127.0.0.1.example.org:1420",
+            "file://",
+            "null",
+        ] {
+            assert!(!allowed_origin(origin), "{origin} should be refused");
+        }
+    }
+
+    /// The unit tests above cover the decision; this one covers the wiring, so a
+    /// router that forgets `.layer(from_fn(cors))` fails here instead of leaving
+    /// every window with "Failed to fetch".
+    #[tokio::test]
+    async fn the_router_applies_the_permission_to_real_requests() {
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use axum::routing::post;
+        use axum::Router;
+        use tower::ServiceExt;
+
+        let app = Router::new()
+            .route("/rpc", post(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(super::cors));
+        let request = |method: &str, origin: &str| {
+            Request::builder()
+                .method(method)
+                .uri("/rpc")
+                .header("origin", origin)
+                .body(Body::empty())
+                .expect("request")
+        };
+
+        let preflight = app
+            .clone()
+            .oneshot(request("OPTIONS", "tauri://localhost"))
+            .await
+            .expect("preflight");
+        assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            preflight.headers().get("access-control-allow-origin"),
+            Some(&HeaderValue::from_static("tauri://localhost"))
+        );
+
+        let posted = app
+            .clone()
+            .oneshot(request("POST", "http://127.0.0.1:1420"))
+            .await
+            .expect("post");
+        assert_eq!(posted.status(), StatusCode::OK);
+        assert_eq!(
+            posted.headers().get("access-control-allow-origin"),
+            Some(&HeaderValue::from_static("http://127.0.0.1:1420"))
+        );
+        assert_eq!(
+            &to_bytes(posted.into_body(), 16).await.expect("body")[..],
+            b"ok"
+        );
+
+        let foreign = app
+            .oneshot(request("POST", "https://example.org"))
+            .await
+            .expect("foreign");
+        assert!(foreign
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none());
+    }
+
+    #[test]
+    fn writes_the_permission_only_for_an_admitted_origin() {
+        let mut refused = StatusCode::NO_CONTENT.into_response();
+        apply_cors(&mut refused, None);
+        assert!(refused
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none());
+
+        let mut allowed = StatusCode::NO_CONTENT.into_response();
+        apply_cors(&mut allowed, Some("tauri://localhost"));
+        assert_eq!(
+            allowed.headers().get("access-control-allow-origin"),
+            Some(&HeaderValue::from_static("tauri://localhost"))
+        );
+        assert_eq!(
+            allowed.headers().get("access-control-expose-headers"),
+            Some(&HeaderValue::from_static("miao-engine-protocol"))
+        );
+    }
+}
+
 /// Provider requests may carry base64 image attachments; match the engine's
 /// 8 MiB attachment bound plus envelope headroom.
 const MAX_BODY: usize = 9 * 1024 * 1024;
@@ -90,6 +280,11 @@ pub async fn serve_with_idle_timeout(
         .route("/version", get(version))
         .route("/api/health", get(health))
         .route("/lease", post(lease))
+        // A window loads its bundle from a custom scheme (`tauri://localhost`) or,
+        // in development, a local web server. Both are cross-origin relative to
+        // this loopback plane, so without an explicit permission the renderer's
+        // own `fetch` is rejected before the bearer token is even read.
+        .layer(axum::middleware::from_fn(cors))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(state.clone());
     axum::serve(listener, router)

@@ -52,6 +52,10 @@ pub struct Preferences {
     /// same fact in its local store and reads it from the status line.
     #[serde(default)]
     pub model: Option<String>,
+    /// The colour mode the operator pinned ("dark"/"light"). `None` leaves the
+    /// default; an unparsable value is dropped on read.
+    #[serde(default)]
+    pub theme_mode_lock: Option<String>,
 }
 
 pub fn preferences() -> Preferences {
@@ -61,6 +65,12 @@ pub fn preferences() -> Preferences {
 pub fn save_theme(name: &str) {
     let mut prefs = preferences();
     prefs.theme = Some(name.to_string());
+    write_json("preferences.json", &prefs);
+}
+
+pub fn save_mode_lock(mode: Option<&str>) {
+    let mut prefs = preferences();
+    prefs.theme_mode_lock = mode.map(str::to_string);
     write_json("preferences.json", &prefs);
 }
 
@@ -148,6 +158,15 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Serializes tests that touch the `MIAO_*` environment variables: the harness
+/// runs tests on parallel threads, and those variables redirect where every
+/// loader reads its configuration, themes and preferences.
+#[cfg(test)]
+pub(crate) fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(test)]

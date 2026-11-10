@@ -272,13 +272,13 @@ fn the_changes_whole_path_is_reported_small_and_scaled() {
 /// The dialog's own paint, on a test backend at a review-sized area: 200
 /// frames per scale, so per-frame work over every file cannot hide.
 fn render_report() -> serde_json::Value {
-    use miao_tui::theme::{builtin, Theme, DEFAULT_THEME};
+    use miao_tui::theme::{builtin, Theme, ThemeMode, DEFAULT_THEME};
     use miao_tui::workspace_changes::{Change, Dialog, VcsState};
     use ratatui::{backend::TestBackend, Terminal};
 
     let theme = Theme {
         name: DEFAULT_THEME.to_string(),
-        palette: builtin(DEFAULT_THEME).expect("theme"),
+        palette: builtin(DEFAULT_THEME, ThemeMode::Dark).expect("theme"),
     };
     let paint = |files: usize| -> Vec<u128> {
         let state = VcsState {

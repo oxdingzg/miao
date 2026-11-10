@@ -412,9 +412,10 @@ pub struct App {
     /// When the leader was armed, so a stale one expires instead of eating a
     /// keystroke minutes later.
     leader_since: Option<Instant>,
-    /// The row and moment of the last click on the landing list, so a
-    /// second click on the same row is a double click rather than two
-    /// selections.
+    /// The cell and moment of the last press, so a second press on the same
+    /// transcript cell inside the double-click window selects the word under
+    /// it instead of being another empty click.
+    last_click: Option<(ratatui::layout::Position, Instant)>,
     /// When a transient notice stops being true. A notice reports something
     /// that already happened ("copied 120 characters"); leaving it on screen
     /// until the next event turns it into permanent clutter.
@@ -629,6 +630,7 @@ impl App {
             pending_routes_reload: false,
             leader: false,
             leader_since: None,
+            last_click: None,
             notice_until: None,
             leave_armed: None,
             leader_timeout: Duration::from_millis(2000),
@@ -1426,6 +1428,11 @@ impl App {
         }
     }
 
+    /// Two presses on the same cell inside this window are a double click.
+    /// The terminal reports presses as they come, so the app keeps its own
+    /// window instead of assuming the emulator coalesces clicks.
+    const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
+
     /// The wheel moves through the open dialog, the Session list, or the
     /// transcript. Apart from naming a landing row, buttons stay out of the
     /// way: text selection belongs to the terminal.
@@ -1448,6 +1455,19 @@ impl App {
             match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     self.leader = false;
+                    // A second press on the same cell inside the window is a
+                    // double click: the transcript selects the word under it
+                    // and the release copies it, the way a terminal does. A
+                    // cell that starts no word falls through to the ordinary
+                    // press, which selects nothing.
+                    let repeat = self.last_click.take().is_some_and(|(cell, at)| {
+                        cell == position && at.elapsed() <= Self::DOUBLE_CLICK_WINDOW
+                    });
+                    self.last_click = Some((position, Instant::now()));
+                    if repeat && self.screen == Screen::Session && self.shell.select_word(position)
+                    {
+                        return;
+                    }
                     match self.screen {
                         Screen::Session => {
                             self.shell.begin_selection(position);
@@ -1490,6 +1510,14 @@ impl App {
             MouseEventKind::ScrollDown => 1,
             _ => return,
         };
+        // An open dialog owns the wheel first: the notch moves what the
+        // pointer is over instead of the transcript behind it. Dialogs move
+        // one row per notch, the way their arrow keys do; the transcript keeps
+        // the configured speed and burst.
+        if let Some(dialog) = self.dialog.as_mut() {
+            dialog.scroll(delta);
+            return;
+        }
         match self.screen {
             Screen::Session => {
                 // One notch moves `scroll_speed` rows, or more when the notches
@@ -1720,7 +1748,10 @@ impl App {
 
     fn open_theme(&mut self) {
         let current = self.shell.theme().name.clone();
-        self.open_dialog(Dialog::theme(&current, &self.themes));
+        let lock = crate::state::preferences()
+            .theme_mode_lock
+            .and_then(|mode| theme::ThemeMode::parse(&mode));
+        self.open_dialog(Dialog::theme(&current, lock, &self.themes));
     }
 
     fn open_sessions(&mut self) {
@@ -2126,10 +2157,25 @@ impl App {
                     engine.move_session(&session_id, &directory);
                 }
             }
-            Some(Dialog::Theme(_)) => {
-                let name = self.themes.names().get(index).map(|name| name.to_string());
-                if let Some(name) = name {
-                    self.apply_theme(&name);
+            Some(Dialog::Theme(list)) => {
+                let Some(row) = list.rows.get(index) else {
+                    return;
+                };
+                match row.id.as_str() {
+                    "mode:dark" => self.set_mode_lock(Some("dark")),
+                    "mode:light" => self.set_mode_lock(Some("light")),
+                    "mode:unlock" => self.set_mode_lock(None),
+                    _ => {
+                        let name = row.id.parse::<usize>().ok().and_then(|index| {
+                            self.themes
+                                .names()
+                                .get(index)
+                                .map(|name| (*name).to_string())
+                        });
+                        if let Some(name) = name {
+                            self.apply_theme(&name);
+                        }
+                    }
                 }
             }
             Some(Dialog::ModelProviders(list)) => {
@@ -3200,6 +3246,19 @@ impl App {
         };
         self.shell.set_theme(theme.clone());
         self.home.set_theme(theme);
+    }
+
+    fn set_mode_lock(&mut self, mode: Option<&str>) {
+        state::save_mode_lock(mode);
+        let loaded = theme::load(&self.workspace);
+        self.themes = loaded.catalog;
+        self.shell.set_theme(loaded.theme.clone());
+        self.home.set_theme(loaded.theme);
+        self.notice(match mode {
+            Some("dark") => "theme pinned to dark",
+            Some("light") => "theme pinned to light",
+            _ => "theme unlocked, dark by default",
+        });
     }
 
     fn session_id(&self) -> Option<String> {
@@ -4733,7 +4792,8 @@ mod tests {
     }
 
     fn app_with(startup: Startup) -> App {
-        let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+        let palette = theme::builtin(DEFAULT_THEME, theme::ThemeMode::Dark)
+            .expect("default theme is built in");
         App::new(
             PathBuf::from("."),
             Theme {
@@ -4750,7 +4810,8 @@ mod tests {
     /// An app whose keymap was overridden, so a test can prove the help view
     /// follows live bindings instead of a written-down copy.
     fn app_with_overrides(overrides: &BTreeMap<String, Option<Vec<String>>>) -> App {
-        let palette = theme::builtin(DEFAULT_THEME).expect("default theme is built in");
+        let palette = theme::builtin(DEFAULT_THEME, theme::ThemeMode::Dark)
+            .expect("default theme is built in");
         App::new(
             PathBuf::from("."),
             Theme {
@@ -5221,6 +5282,170 @@ mod tests {
             app.home.notice(),
             Some("Copied 7 characters"),
             "the drag copies what it covered and reports it"
+        );
+    }
+
+    /// UX-02: a double click on the transcript selects the word under the
+    /// pointer and the release copies it, no drag required.
+    #[test]
+    fn a_double_click_copies_the_word_under_it() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        // The pane snapshots its cells only while a selection is live, so a
+        // preparatory press fills the snapshot the word lookup reads.
+        let area = app.shell.transcript_area();
+        assert!(
+            app.shell
+                .begin_selection(ratatui::layout::Position::new(area.x, area.y)),
+            "the transcript painted a pane to press on: {area:?}"
+        );
+        draw(&mut app);
+        let cell = app
+            .shell
+            .transcript_word_cell()
+            .expect("the transcript painted a word");
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            app.handle(AppEvent::Mouse(MouseEvent::new(
+                kind,
+                cell.x,
+                cell.y,
+                KeyModifiers::NONE,
+            )));
+        }
+        let notice = app.shell.composer.notice.clone();
+        assert!(
+            notice
+                .as_deref()
+                .is_some_and(|text| text.starts_with("Copied ")),
+            "the double click copied the word: {notice:?}"
+        );
+    }
+
+    /// A second press only becomes a double click inside the window: a late
+    /// click is a click, and a click copies nothing.
+    #[test]
+    fn a_second_click_after_the_window_is_just_a_click() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        // The pane snapshots its cells only while a selection is live, so a
+        // preparatory press fills the snapshot the word lookup reads.
+        let area = app.shell.transcript_area();
+        assert!(
+            app.shell
+                .begin_selection(ratatui::layout::Position::new(area.x, area.y)),
+            "the transcript painted a pane to press on: {area:?}"
+        );
+        draw(&mut app);
+        let cell = app
+            .shell
+            .transcript_word_cell()
+            .expect("the transcript painted a word");
+        // Pretend the first press happened before the window opened, the way
+        // the notice test pretends its moment passed.
+        app.last_click = Some((cell, Instant::now() - Duration::from_millis(600)));
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            app.handle(AppEvent::Mouse(MouseEvent::new(
+                kind,
+                cell.x,
+                cell.y,
+                KeyModifiers::NONE,
+            )));
+        }
+        assert_eq!(
+            app.shell.composer.notice, None,
+            "a late press is not a double click"
+        );
+    }
+
+    /// Two presses on different cells are two clicks, not a double click: the
+    /// second press starts a fresh selection instead of grabbing a word.
+    #[test]
+    fn two_clicks_on_different_cells_are_not_a_double_click() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        // The pane snapshots its cells only while a selection is live, so a
+        // preparatory press fills the snapshot the word lookup reads.
+        let area = app.shell.transcript_area();
+        assert!(
+            app.shell
+                .begin_selection(ratatui::layout::Position::new(area.x, area.y)),
+            "the transcript painted a pane to press on: {area:?}"
+        );
+        draw(&mut app);
+        let cell = app
+            .shell
+            .transcript_word_cell()
+            .expect("the transcript painted a word");
+        let elsewhere = ratatui::layout::Position::new(cell.x + 1, cell.y);
+        for (kind, x) in [
+            (MouseEventKind::Down(MouseButton::Left), cell.x),
+            (MouseEventKind::Up(MouseButton::Left), cell.x),
+            (MouseEventKind::Down(MouseButton::Left), elsewhere.x),
+            (MouseEventKind::Up(MouseButton::Left), elsewhere.x),
+        ] {
+            app.handle(AppEvent::Mouse(MouseEvent::new(
+                kind,
+                x,
+                cell.y,
+                KeyModifiers::NONE,
+            )));
+        }
+        assert_eq!(
+            app.shell.composer.notice, None,
+            "two cells are two clicks, not a word grab"
+        );
+    }
+
+    /// UX-02: the wheel over an open dialog moves the dialog, not the
+    /// transcript behind it.
+    #[test]
+    fn a_wheel_notch_moves_an_open_dialog_not_the_transcript() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(forty_messages()),
+            state: Box::new(SessionState::default()),
+        });
+        draw(&mut app);
+        app.dialog = Some(Dialog::Message(TextDialog {
+            title: "details",
+            lines: (0..20).map(|index| format!("line {index}")).collect(),
+            scroll: 3,
+        }));
+        let tail = app.shell.transcript_scroll();
+        app.handle(wheel(MouseEventKind::ScrollDown));
+        let scroll = match app.dialog.as_ref() {
+            Some(Dialog::Message(text)) => text.scroll,
+            _ => panic!("the text dialog stays open"),
+        };
+        assert_eq!(scroll, 4, "one notch moved the dialog one row");
+        assert_eq!(
+            app.shell.transcript_scroll(),
+            tail,
+            "the transcript behind the dialog did not move"
         );
     }
 
@@ -7250,6 +7475,68 @@ mod tests {
         assert_eq!(
             app.shell.title.status(),
             Some("needs approval · bash · Esc interrupt")
+        );
+    }
+
+    /// PERF-05: a flooding engine must not swallow the keyboard. Provider
+    /// frames keep folding into the streaming draft around a keystroke, the
+    /// composer still takes the key typed mid-flood, and Esc still asks the
+    /// engine to cancel the run: input outranks the rendering backlog.
+    #[test]
+    fn keys_still_execute_while_an_engine_backpressure_flood_pours_in() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_flood", 0)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                active_run: Some("run-1".into()),
+                ..SessionState::default()
+            }),
+        });
+        // The egress is behind, then the frames pour in — the shape a stall
+        // leaves queued ahead of the render loop.
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "backpressure",
+            "session_id": "ses_flood",
+            "queued": 300,
+            "cleared": false,
+        })));
+        let delta = |seq: usize| {
+            AppEvent::Provider(serde_json::json!({
+                "kind": "provider.delta",
+                "session_id": "ses_flood",
+                "run_id": "run-1",
+                "data": {"kind": "delta", "delta": {"kind": "text.delta", "text": format!("w{seq} ")}, "raw": {}},
+            }))
+        };
+        for seq in 0..256 {
+            app.handle(delta(seq));
+        }
+        // The keystroke lands mid-flood; the backlog keeps pouring around it.
+        app.handle(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        for seq in 256..512 {
+            app.handle(delta(seq));
+        }
+        // The key was consumed, not dropped behind the flood.
+        assert_eq!(app.shell.composer.editor.text(), "x");
+        // The flood itself reached the draft whole, on both sides of the key.
+        let streamed = app
+            .draft
+            .as_ref()
+            .map(|draft| draft.text())
+            .unwrap_or_default();
+        assert!(streamed.starts_with("w0 "), "{streamed:?}");
+        assert!(streamed.ends_with("w511 "), "{streamed:?}");
+        // Cancellation is not queued behind the rendering batch either. The
+        // recording may hold whatever else this Session's setup asked for, so
+        // the cancel is named across the whole recording, not at its head.
+        app.handle(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(
+            std::iter::from_fn(|| requests.try_recv().ok())
+                .any(|request| matches!(request, engine::Request::Cancel { .. })),
+            "Esc during a backlog still cancels the run"
         );
     }
 
@@ -9408,6 +9695,61 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::Redo { session_id }) if session_id == "ses_a"
         ));
+    }
+
+    /// UX-01: pinning light recolours every `{dark, light}` pair at once and
+    /// survives a reload, because the pin lives in the state dir, not in App.
+    #[test]
+    fn pinning_light_recolours_and_survives_a_reload() {
+        let _env = crate::state::env_lock();
+        let dir = std::env::temp_dir().join(format!("miao-tui-app-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config_dir = dir.join(".miao");
+        std::fs::create_dir_all(config_dir.join("themes")).unwrap();
+        std::fs::write(config_dir.join("tui.json"), r#"{"theme": "paired"}"#).unwrap();
+        std::fs::write(
+            config_dir.join("themes").join("paired.json"),
+            r##"{"theme": {"primary": {"dark": "#ff0000", "light": "#00ff00"}, "secondary": "#111111", "accent": "#00ff00", "error": "#ff0000", "warning": "#ffaa00", "success": "#00ff00", "text": "#eeeeee", "textMuted": "#808080", "background": "#101010", "backgroundPanel": "#181818", "backgroundElement": "#202020", "border": 8, "borderActive": "#ffffff"}}"##,
+        )
+        .unwrap();
+        let state = dir.join("state");
+        std::env::set_var("MIAO_TUI_STATE_DIR", &state);
+
+        let loaded = theme::load(&dir);
+        assert_eq!(loaded.mode, theme::ThemeMode::Dark);
+        assert_eq!(loaded.theme.name, "paired");
+        let mut app = App::new(
+            dir.clone(),
+            loaded.theme,
+            loaded.catalog,
+            Keymap::default(),
+            crate::config::AttentionConfig::default(),
+            Startup::default(),
+        );
+        app.set_mode_lock(Some("light"));
+        assert_eq!(
+            app.shell.theme().palette.primary,
+            ratatui::style::Color::Rgb(0, 255, 0)
+        );
+        assert_eq!(app.home.notice(), Some("theme pinned to light"));
+        assert_eq!(
+            app.themes.palette("paired").map(|palette| palette.primary),
+            Some(ratatui::style::Color::Rgb(0, 255, 0))
+        );
+
+        // What a restart does: load again from disk and stay light.
+        let reloaded = theme::load(&dir);
+        assert_eq!(reloaded.mode, theme::ThemeMode::Light);
+        assert_eq!(
+            reloaded
+                .catalog
+                .palette("paired")
+                .map(|palette| palette.primary),
+            Some(ratatui::style::Color::Rgb(0, 255, 0))
+        );
+
+        std::env::remove_var("MIAO_TUI_STATE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

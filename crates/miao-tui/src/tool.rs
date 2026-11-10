@@ -1123,7 +1123,16 @@ fn paint_diff(
                 if *marker != ' ' && start < block {
                     spans.push(Span::styled(" ".repeat(block - start), block_style));
                 }
-                out.push(Line::from(spans));
+                let mut line = Line::from(spans);
+                // The row-level tint is what survives the transcript pipeline:
+                // trailing pad spans can be trimmed downstream, and the pane
+                // re-pads any row whose line style carries a background. A
+                // span-only tint reads as a ragged streak; the line style is
+                // the block.
+                if *marker != ' ' {
+                    line.style = Style::new().bg(palette.diff_block(*marker == '+'));
+                }
+                out.push(line);
             }
         }
     }
@@ -1751,7 +1760,7 @@ mod tests {
     fn theme() -> Theme {
         Theme {
             name: "test".to_string(),
-            palette: theme::builtin("miao").expect("builtin theme"),
+            palette: theme::builtin("miao", crate::theme::ThemeMode::Dark).expect("builtin theme"),
         }
     }
 
@@ -1762,7 +1771,11 @@ mod tests {
     fn an_unreturned_call_reads_as_settled_not_running() {
         let theme = Theme {
             name: crate::theme::DEFAULT_THEME.to_string(),
-            palette: crate::theme::builtin(crate::theme::DEFAULT_THEME).expect("theme"),
+            palette: crate::theme::builtin(
+                crate::theme::DEFAULT_THEME,
+                crate::theme::ThemeMode::Dark,
+            )
+            .expect("theme"),
         };
         let mut call = tool("apply_patch", serde_json::json!({}), None, false);
         call.unreturned = true;
@@ -1887,6 +1900,38 @@ mod tests {
 
     /// A colourless theme has no canvas to mix into, so the block drops away and
     /// the glyphs and words keep carrying the change on their own.
+    /// The row-level style is what survives the transcript pipeline: trailing
+    /// pad spans can be trimmed downstream, and the pane re-pads any row whose
+    /// line style carries a background. A span-only tint reads as a ragged
+    /// streak; the line style is the block.
+    #[test]
+    fn a_diff_row_carries_its_tint_on_the_line_style() {
+        let theme = theme();
+        let palette = theme.palette;
+        let call = tool(
+            "apply_patch",
+            json!({"patch": "*** Begin Patch\n*** Update File: src/a.rs\n@@ -1,2 +1,2 @@\n kept\n-gone\n+kept better and longer\n*** End Patch"}),
+            None,
+            false,
+        );
+        let rows = lines(&call, None, &theme, false, None);
+        let find = |needle: &str| {
+            rows.iter()
+                .find(|row| row_text(row).contains(needle))
+                .unwrap_or_else(|| panic!("no row holds {needle}: {:?}", rendered(&rows)))
+        };
+        assert_eq!(
+            find("kept better and longer").style.bg,
+            Some(palette.diff_block(true))
+        );
+        assert_eq!(find("gone").style.bg, Some(palette.diff_block(false)));
+        assert_eq!(
+            find(" kept").style.bg,
+            None,
+            "an unchanged row stays on the canvas"
+        );
+    }
+
     #[test]
     fn a_colourless_theme_paints_no_diff_block() {
         let theme = theme().monochrome();

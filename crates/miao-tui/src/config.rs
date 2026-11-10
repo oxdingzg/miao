@@ -38,6 +38,12 @@ pub struct Config {
     /// Capture mouse input for wheel scrolling. Defaults to on, like the
     /// TypeScript host.
     pub mouse: bool,
+    /// Ask the terminal to report focus changes. Defaults to on. Turning it
+    /// off keeps the focus escapes out of terminals that turn them into
+    /// garbage input behind multiplexers or SSH hops; notifications gated on
+    /// focus then stay silent (focus is never known), while sounds keep
+    /// playing.
+    pub focus_reporting: bool,
     /// Rows one wheel notch moves the transcript. The TypeScript host calls this
     /// `scroll_speed` and defaults it to 3.
     pub scroll_speed: f64,
@@ -96,6 +102,7 @@ impl Default for Config {
         Self {
             attention: AttentionConfig::default(),
             mouse: true,
+            focus_reporting: true,
             scroll_speed: 3.0,
             scroll_acceleration: false,
             leader_timeout_ms: 2000,
@@ -210,6 +217,7 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     let Some(object) = value.as_object() else {
         return;
     };
+    warn_unknown_fields(object, path, warnings);
     // The TypeScript host flattens a nested `tui` object; a top-level field
     // takes precedence over the same name nested under it.
     let nested = object.get("tui").and_then(serde_json::Value::as_object);
@@ -229,6 +237,15 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
     }
     if let Some(cursor) = field("cursor") {
         merge_cursor(cursor, path, config, warnings);
+    }
+    if let Some(focus) = field("focus_reporting") {
+        match focus.as_bool() {
+            Some(focus) => config.focus_reporting = focus,
+            None => warnings.push(format!(
+                "tui config {}: focus_reporting must be a boolean, ignoring",
+                path.display()
+            )),
+        }
     }
     if let Some(speed) = field("scroll_speed") {
         match speed.as_f64() {
@@ -314,6 +331,78 @@ fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String
             )),
         }
     }
+}
+
+/// Top-level `tui.json` fields the TypeScript host understands. The ones this
+/// loader does not read belong to another loader or are not mirrored yet, but
+/// none of them is an unknown field.
+pub(crate) const KNOWN_FIELDS: &[&str] = &[
+    "$schema",
+    "theme",
+    "tui",
+    "keybinds",
+    "plugin",
+    "plugin_enabled",
+    "leader_timeout",
+    "attention",
+    "prompt",
+    "scroll_speed",
+    "scroll_acceleration",
+    "diff_style",
+    "cursor",
+    "mouse",
+    "animations",
+    "focus_reporting",
+];
+
+/// Names every top-level field neither loader reads, pointing at the known
+/// field the name probably meant, so a typo surfaces instead of the setting
+/// silently doing nothing.
+pub(crate) fn warn_unknown_fields(
+    object: &serde_json::Map<String, serde_json::Value>,
+    path: &Path,
+    warnings: &mut Vec<String>,
+) {
+    for key in object.keys() {
+        if KNOWN_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+        let closest = KNOWN_FIELDS
+            .iter()
+            .copied()
+            .min_by_key(|known| edit_distance(key, known))
+            .filter(|known| edit_distance(key, known) <= 2);
+        if let Some(known) = closest {
+            warnings.push(format!(
+                "tui config {}: ignoring unsupported field \"{key}\", did you mean \"{known}\"?",
+                path.display()
+            ));
+            continue;
+        }
+        warnings.push(format!(
+            "tui config {}: ignoring unsupported field \"{key}\"",
+            path.display()
+        ));
+    }
+}
+
+/// Smallest number of single-character edits between two keys.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut current = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            current.push(
+                (previous[j] + usize::from(ca != cb))
+                    .min(current[j] + 1)
+                    .min(previous[j + 1] + 1),
+            );
+        }
+        previous = current;
+    }
+    previous[b.len()]
 }
 
 /// `scroll_acceleration` is `{ "enabled": bool }` in the TypeScript schema; a
@@ -605,6 +694,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// UX-02: focus behaviour belongs to the same `tui.json` the other
+    /// terminal settings read, so one file describes the whole terminal.
+    #[test]
+    fn focus_reporting_comes_from_the_same_files() {
+        assert!(Config::default().focus_reporting);
+        let dir = temp_dir("focus");
+        let (config, warnings) = merge_at(r#"{"focus_reporting": false}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!config.focus_reporting);
+
+        let (config, warnings) = merge_at(r#"{"focus_reporting": "nope"}"#, &dir);
+        assert!(config.focus_reporting, "a bad value keeps the default");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn scroll_speed_and_acceleration_come_from_the_typescript_keys() {
         let dir = temp_dir("scroll");
@@ -870,6 +975,7 @@ mod tests {
 
     #[test]
     fn project_files_apply_root_first_and_closer_files_win() {
+        let _env = crate::state::env_lock();
         let dir = temp_dir("chain");
         let nested = dir.join("a").join("b");
         std::fs::create_dir_all(dir.join(".miao")).unwrap();
@@ -891,6 +997,27 @@ mod tests {
         assert!(config.attention.enabled);
         assert_eq!(config.attention.volume, 0.9);
         std::env::remove_var("MIAO_CONFIG_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unknown_field_names_the_closest_known_key() {
+        let dir = temp_dir("unknown-field");
+        let (_, warnings) = merge_at(r#"{"them": "nord"}"#, &dir);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].contains("did you mean \"theme\""),
+            "{warnings:?}"
+        );
+
+        // `animations` belongs to this loader's known set, so it stays silent.
+        let (_, warnings) = merge_at(r#"{"animations": true}"#, &dir);
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        // A name far from every known key keeps the plain warning.
+        let (_, warnings) = merge_at(r#"{"zzzzzzzzz": 1}"#, &dir);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(!warnings[0].contains("did you mean"), "{warnings:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
