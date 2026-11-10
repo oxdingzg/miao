@@ -18,8 +18,7 @@ the stopped job's output tail kept inside the row width.
 
 Pinned tests (all `ok` in run 42753914256):
 
-- `tests/jobs.rs::the_jobs_command_serves_owners_output_and_children_in_one_answer` —
-  the wire answer composes owners, output, and the subagent side list
+- `tests/jobs.rs::the_jobs_command_serves_owners_output_and_children_in_one_answer`
 - `tests/jobs.rs::admitted_job_survives_turn_cancel_and_instruction_reads_do_not_wait_for_it`
 - `tests/jobs.rs::job_ownership_and_explicit_cancel_are_separate_from_turn_control`
 - `tests/jobs.rs::stop_all_jobs_cancels_every_job_the_session_owns`
