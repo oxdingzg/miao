@@ -467,6 +467,11 @@ estimate.
       `protect_turns` (default 2) user messages keep their output, each payload over `prune_chars`
       keeps a bounded head and tail around an explicit elision mark, and stored history is untouched
       (`tests/context_prune.rs`).
+- [x] Bound a request only on evidence that it does not fit. A window an endpoint stated when it
+      refused this history is that evidence; a window the shipped catalog declares is a budget to
+      plan against and must not cap requests on its own, because the cap (`window - headroom`) sits
+      below the trigger's own threshold, where the history would be trimmed instead of compacted
+      (`refusal_evidence`, unit-tested).
 - [x] Trip a breaker after N refused summaries, reset by an explicit `compact` request. Three
       consecutive rejections trip it; an explicit `compact` that commits a checkpoint resets it
       (`Runtime::reset_compaction_breaker(session)`, called from the host's `compact` dispatch,
