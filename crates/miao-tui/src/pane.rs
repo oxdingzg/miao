@@ -834,6 +834,11 @@ impl Pane for TranscriptPane {
                 visible.remove(0);
             }
             let frame = SPINNER_FRAMES[(now_ms() / 160) as usize % SPINNER_FRAMES.len()];
+            // This row never passes the wrapper that clips completed rows, so
+            // it clips itself: a long in-flight call used to ride the tail
+            // across the divider into the sidebar. "{frame} running " is ten
+            // display cells.
+            let label = fit(label, (content.width as usize).saturating_sub(10));
             visible.push(Line::from(Span::styled(
                 format!("{frame} running {label}"),
                 Style::new().fg(palette.text_muted),
@@ -6179,6 +6184,74 @@ mod tests {
             "{:?}",
             text(&terminal)
         );
+    }
+
+    /// The in-flight call's row never passes the wrapper that clips completed
+    /// rows, so a long label used to ride the tail across the divider into the
+    /// sidebar column. The painted row ends inside the transcript column, at
+    /// the ellipsis `fit` writes for a clip, and the sidebar's rule keeps its
+    /// own cell.
+    #[test]
+    fn a_long_running_tool_label_clips_to_the_transcript_column() {
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User {
+                    text: "question".into(),
+                    seq: 1,
+                },
+                Entry::Assistant {
+                    agent: None,
+                    model: None,
+                    parts: vec![Part::Text("answer. ".repeat(90).trim_end().into())],
+                },
+            ],
+            ..Transcript::default()
+        };
+        shell.set_transcript(&transcript);
+        let label = "巡检 4 个从零子会话(TOOL-01 · 分支 · worktrees)".repeat(6);
+        shell.set_running_tool(Some(label));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).expect("terminal");
+        terminal
+            .draw(|frame| shell.render(frame))
+            .expect("draw");
+        let rows = (0..24)
+            .map(|y| {
+                (0..120)
+                    .map(|x| {
+                        terminal
+                            .backend()
+                            .buffer()
+                            .cell(ratatui::prelude::Position::new(x, y))
+                            .map(|cell| cell.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        // On a 120-column window the transcript ends on column 76 and the
+        // sidebar's rule sits on 77: exactly the boundary the row crossed.
+        let (y, row) = rows
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row[..77].concat().contains("running"))
+            .expect("the spinner row is painted");
+        let left = row[..77].concat();
+        assert!(
+            left.trim_end().ends_with('…'),
+            "the label clips at the column edge: {left:?}"
+        );
+        assert_eq!(row[77], "│", "the sidebar's rule keeps its cell: row {y}");
     }
 
     #[test]
