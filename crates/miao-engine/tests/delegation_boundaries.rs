@@ -446,14 +446,18 @@ async fn a_running_child_refuses_redispatch_until_its_outcome_is_settled() {
     admit(&store, "start the watch");
     finish(&store, "parent").await;
     runtime.shutdown().await;
-    let transcript = store.history("parent").await.unwrap().to_string();
+    let transcript = store.history("parent").await.unwrap();
     assert!(
-        transcript.contains("outcome is unknown"),
-        "the refused redispatch explains itself: {transcript}"
+        transcript
+            .iter()
+            .any(|message| message.content.to_string().contains("outcome is unknown")),
+        "the refused redispatch explains itself"
     );
     assert!(
-        transcript.contains("second report"),
-        "the settled child answers the redispatch: {transcript}"
+        transcript
+            .iter()
+            .any(|message| message.content.to_string().contains("second report")),
+        "the settled child answers the redispatch"
     );
     let starts = store
         .events("parent", 0, 500)

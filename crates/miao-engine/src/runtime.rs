@@ -6939,7 +6939,7 @@ fn agent_tools(
         .into_iter()
         .filter(|tool| {
             !(delegated && crate::subagent::is_delegation_tool(&tool.name))
-                && !deny.iter().any(|denied| *denied == tool.name)
+                && !deny.contains(&tool.name)
                 && agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
                 && policy.tool_visible(&tool.name)
         })
