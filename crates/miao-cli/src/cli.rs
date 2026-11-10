@@ -2456,15 +2456,15 @@ fn prepare_tui_engine(launch: &mut miao_tui::Launch) {
     // directory name would lose.
     let plan = config_sources(&layers)
         .iter()
-        .filter_map(|source| match source {
+        .map(|source| match source {
             miao_engine::config_derive::Source::Dir(dir) => {
-                Some(serde_json::json!({ "dir": dir.display().to_string() }))
+                serde_json::json!({ "dir": dir.display().to_string() })
             }
             miao_engine::config_derive::Source::File(file) => {
-                Some(serde_json::json!({ "file": file.display().to_string() }))
+                serde_json::json!({ "file": file.display().to_string() })
             }
             miao_engine::config_derive::Source::Content(content) => {
-                Some(serde_json::json!({ "content": content }))
+                serde_json::json!({ "content": content })
             }
         })
         .collect::<Vec<_>>();
@@ -5845,9 +5845,9 @@ mod tests {
         anchored_sessions, carry_uncommitted_changes, config_layers, config_layers_with, db_backup,
         db_file_bytes, db_read_only, db_report, db_vacuum, default_db, engine_argv_with,
         event_line, git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config,
-        model_routes, model_routes_with, parsed_session_location, plugin_entries,
-        project_copy_apply, project_copy_plan, retention_plan, serve_database, settle_primary,
-        strip_comments, tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
+        model_routes_with, parsed_session_location, plugin_entries, project_copy_apply,
+        project_copy_plan, retention_plan, serve_database, settle_primary, strip_comments,
+        tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
         write_routes_manifest,
     };
     use std::sync::{Mutex, MutexGuard};
