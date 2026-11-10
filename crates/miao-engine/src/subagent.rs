@@ -273,6 +273,50 @@ impl Selector {
     }
 }
 
+/// How a settled delegation reads (AGT-03): did the child's spend deliver
+/// enough to keep delegating, or should the run finish in a single agent?
+pub const VERDICT_POSITIVE: &str = "positive";
+pub const VERDICT_INSUFFICIENT: &str = "insufficient";
+pub const BENEFIT_DELIVERED: &str = "delivered";
+pub const BENEFIT_NO_RESULT: &str = "no_result";
+pub const BENEFIT_REWORK: &str = "rework";
+pub const RECOMMEND_DELEGATE: &str = "delegate";
+pub const RECOMMEND_SINGLE_AGENT: &str = "single_agent";
+
+pub struct NetBenefit {
+    pub verdict: &'static str,
+    pub reason: &'static str,
+    pub recommendation: &'static str,
+}
+
+impl NetBenefit {
+    /// One recovery retry is honoured: a child that returned nothing may be
+    /// re-dispatched once, because transient failures happen. That retry's
+    /// settlement is rework — the same task was paid for twice — whatever the
+    /// retry itself delivered, and it closes further delegation for the run.
+    pub fn judge(reason: &str, report: &str, redispatched: bool) -> Self {
+        if redispatched {
+            return Self {
+                verdict: VERDICT_INSUFFICIENT,
+                reason: BENEFIT_REWORK,
+                recommendation: RECOMMEND_SINGLE_AGENT,
+            };
+        }
+        if reason != "completed" || report.trim().is_empty() {
+            return Self {
+                verdict: VERDICT_INSUFFICIENT,
+                reason: BENEFIT_NO_RESULT,
+                recommendation: RECOMMEND_SINGLE_AGENT,
+            };
+        }
+        Self {
+            verdict: VERDICT_POSITIVE,
+            reason: BENEFIT_DELIVERED,
+            recommendation: RECOMMEND_DELEGATE,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,5 +383,31 @@ mod tests {
             .map(|n| format!("criterion {n}"))
             .collect();
         assert!(Input::parse(json!({"prompt": "p", "completion_criteria": at_limit})).is_ok());
+    }
+
+    #[test]
+    fn a_delivered_first_attempt_reads_positive() {
+        let benefit = NetBenefit::judge("completed", "done: 3 files changed", false);
+        assert_eq!(benefit.verdict, VERDICT_POSITIVE);
+        assert_eq!(benefit.reason, BENEFIT_DELIVERED);
+        assert_eq!(benefit.recommendation, RECOMMEND_DELEGATE);
+    }
+
+    #[test]
+    fn spend_without_a_result_reads_insufficient() {
+        for (reason, report) in [("failed", ""), ("cancelled", "partial"), ("completed", "   ")] {
+            let benefit = NetBenefit::judge(reason, report, false);
+            assert_eq!(benefit.verdict, VERDICT_INSUFFICIENT, "{reason}/{report}");
+            assert_eq!(benefit.reason, BENEFIT_NO_RESULT, "{reason}/{report}");
+            assert_eq!(benefit.recommendation, RECOMMEND_SINGLE_AGENT);
+        }
+    }
+
+    #[test]
+    fn a_redispatch_reads_rework_even_when_the_retry_delivered() {
+        let benefit = NetBenefit::judge("completed", "done", true);
+        assert_eq!(benefit.verdict, VERDICT_INSUFFICIENT);
+        assert_eq!(benefit.reason, BENEFIT_REWORK);
+        assert_eq!(benefit.recommendation, RECOMMEND_SINGLE_AGENT);
     }
 }
