@@ -192,3 +192,31 @@ async fn a_compaction_clears_the_scope_so_rereads_deliver_again() {
     assert_eq!(ledger["reads"], json!(3));
     assert_eq!(ledger["duplicate_reads"], json!(1));
 }
+
+#[tokio::test]
+async fn context_probes_read_outside_the_ledger_and_never_stub() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("data.txt"), "instructions\n").unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+    let probes = tools
+        .clone()
+        .with_read_scope(miao_engine::tools::PROBE_READ_SCOPE);
+
+    for _ in 0..2 {
+        let probe = read(&probes, json!({"path":"data.txt"})).await;
+        assert_eq!(
+            probe["text"],
+            json!("instructions\n"),
+            "assembly re-probes every turn and always needs the payload"
+        );
+        assert!(probe.get("unchanged").is_none());
+    }
+
+    read(&tools, json!({"path":"data.txt"})).await;
+    let again = read(&tools, json!({"path":"data.txt"})).await;
+    assert_eq!(again["unchanged"], json!(true));
+
+    let ledger = tools.read_ledger();
+    assert_eq!(ledger["reads"], json!(2));
+    assert_eq!(ledger["duplicate_reads"], json!(1));
+}

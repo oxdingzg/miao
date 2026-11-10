@@ -108,6 +108,11 @@ struct ReadLedger {
     sessions: std::collections::HashMap<String, SessionReads>,
 }
 
+/// The scope context assembly probes with: its reads repeat every turn and
+/// exist to build the prompt, not for the model, so they never record and
+/// never stub. The NUL prefix cannot collide with a session id.
+pub const PROBE_READ_SCOPE: &str = "\0context-probes";
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SkillInput {
@@ -406,13 +411,16 @@ impl Tools {
 
     /// The session's context was compacted, so its earlier deliveries may
     /// have left the live context: stop stubbing re-reads until the file is
-    /// delivered again.
+    /// delivered again. A compaction happens mid-task, so the measurement
+    /// totals stay; only the delivery memory goes.
     pub fn reset_read_ledger(&self, session: &str) {
         let mut ledger = self
             .read_ledger
             .lock()
             .unwrap_or_else(|held| held.into_inner());
-        ledger.sessions.remove(session);
+        if let Some(session) = ledger.sessions.get_mut(session) {
+            session.deliveries.clear();
+        }
     }
 
     /// The capability gates as one snapshot, so a reader never mixes two
@@ -2660,7 +2668,12 @@ impl Tools {
                         ReadForm::Whole
                     };
                     let delivered = if ranged { visible.len() } else { text.len() };
-                    let earlier = {
+                    let earlier = if self.read_scope == PROBE_READ_SCOPE {
+                        // Context assembly re-probes the same instruction
+                        // files every turn; those reads are not the model's
+                        // and must always carry their payload.
+                        None
+                    } else {
                         let mut ledger = self
                             .read_ledger
                             .lock()
