@@ -1454,7 +1454,7 @@ impl Runtime {
             "terminals": {
                 "limit": crate::terminal::GLOBAL_LIMIT,
                 "per_session": crate::terminal::PER_SESSION_LIMIT,
-                "active": terminals.len(),
+                "active": terminals,
             },
             "lsp": {"limit": crate::lsp::SERVER_LIMIT},
         })
