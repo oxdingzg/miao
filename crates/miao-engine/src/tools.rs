@@ -52,6 +52,10 @@ pub enum ToolError {
     StaleEditRecovery(&'static str),
     #[error("old_string is absent or ambiguous; use an exact match or replace_all")]
     AmbiguousEdit,
+    /// A fuzzy-recovery rejection that names its candidate regions, so one
+    /// corrected retry can succeed without a separate read turn.
+    #[error("{0}")]
+    AmbiguousFuzzy(String),
     #[error("file IO failed: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -227,6 +231,8 @@ pub struct Tools {
     hooks: Arc<StdRwLock<Arc<Vec<crate::hooks::Hook>>>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
     edit_recovery: bool,
+    short_anchors: bool,
+    batch_edit: bool,
     lsp_diagnostics: bool,
     compact_disclosure: bool,
     mcp_disclosure: crate::mcp::Disclosure,
@@ -318,6 +324,8 @@ impl Tools {
             hooks: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             edit_recovery: true,
+            short_anchors: true,
+            batch_edit: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
             mcp_disclosure: crate::mcp::Disclosure::default(),
@@ -1190,6 +1198,21 @@ impl Tools {
         self
     }
 
+    /// Evaluation ablation switch: `false` rejects the `anchor`/`new_text`
+    /// short carrier while the full `old_string`/`new_string` form keeps
+    /// working.
+    pub fn with_short_anchors(mut self, enabled: bool) -> Self {
+        self.short_anchors = enabled;
+        self
+    }
+
+    /// Evaluation ablation switch: `false` hides the multi-file patch tool
+    /// from the definitions and rejects its calls.
+    pub fn with_batch_edit(mut self, enabled: bool) -> Self {
+        self.batch_edit = enabled;
+        self
+    }
+
     /// Whether the host registered a tool of this name.
     ///
     /// A built-in with the same name must yield: under the product these tools
@@ -1422,9 +1445,11 @@ impl Tools {
             "run_command" if self.process_enabled() => process::Input::parse(input.clone())?.cwd,
             "bash" if self.process_enabled() => process::BashInput::parse(input.clone())?.cwd,
             "write_file" | "edit_file" if self.writes() => {
-                Mutation::parse(name, input.clone())?.path().to_owned()
+                Mutation::parse(name, input.clone(), self.short_anchors)?
+                    .path()
+                    .to_owned()
             }
-            "apply_patch" if self.writes() => {
+            "apply_patch" if self.writes() && self.batch_edit => {
                 crate::patch::parse(&Self::patch_input(name, input.clone())?)?;
                 ".".into()
             }
@@ -1960,7 +1985,8 @@ impl Tools {
                 }
                 return Ok(applied);
             }
-            let mutation = Mutation::parse(&prepared.name, prepared.input.clone())?;
+            let mutation =
+                Mutation::parse(&prepared.name, prepared.input.clone(), self.short_anchors)?;
             // The rebase statistics describe the text the model asked to
             // replace, whichever form named it.
             let anchor = match &mutation {
@@ -1989,7 +2015,8 @@ impl Tools {
                     applied,
                     Err(ToolError::StaleFile
                         | ToolError::StaleEditRecovery(_)
-                        | ToolError::AmbiguousEdit)
+                        | ToolError::AmbiguousEdit
+                        | ToolError::AmbiguousFuzzy(_))
                 )
             {
                 if let Ok(current) = tokio::fs::read(&prepared.path).await {
@@ -2270,9 +2297,11 @@ impl Tools {
         if self.writes() {
             definitions.extend([
                 ToolDefinition{name:"write_file".into(),description:"Write UTF-8 text (max 32768 bytes) under workspace. expected_sha256=null creates only; existing files require the current SHA-256 from read_file. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"},"expected_sha256":{"type":["string","null"]}},"required":["path","text","expected_sha256"],"additionalProperties":false})},
-                ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/1 MiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})},
-                        ToolDefinition{name:"edit_file".into(),description:"Conditionally replace old_string with new_string using the SHA-256 from read_file. new_string may be empty to delete the match. Ambiguous matches fail unless replace_all=true. Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","minLength":1},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
+                        ToolDefinition{name:"edit_file".into(),description:"Conditionally replace old_string with new_string using the SHA-256 from read_file. new_string may be empty to delete the match. Ambiguous matches fail unless replace_all=true. The replaced text may also be named anchor with the replacement new_text (short form, same semantics). Requires permission approval.".into(),input_schema:json!({"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","minLength":1},"new_string":{"type":"string"},"expected_sha256":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["path","old_string","new_string","expected_sha256"],"additionalProperties":false})},
             ]);
+            if self.batch_edit {
+                definitions.push(ToolDefinition{name:"apply_patch".into(),description:"Apply a strict V4A multi-file patch (Add/Update/Delete File sections with @@ hunks) as one transaction: all-or-nothing, context must match exactly, BOM/CRLF preserved, max 32 files/256 KiB patch/1 MiB per file. Requires permission approval for the whole patch.".into(),input_schema:json!({"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"],"additionalProperties":false})});
+            }
         }
         if self.process_enabled() {
             definitions.push(ToolDefinition{name:"run_command".into(),description:format!("Run an explicit argv in a workspace-write sandbox. Timeout 1..{} ms; stdout/stderr bounded to 32768 bytes each. No implicit shell and no background lifetime. pty merges stdout/stderr behind a terminal. Requires process permission.",crate::process::MAX_TIMEOUT_MS),input_schema:json!({"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128},"cwd":{"type":"string","default":"."},"timeout_ms":{"type":"integer","minimum":1,"maximum":crate::process::MAX_TIMEOUT_MS,"default":crate::process::DEFAULT_TIMEOUT_MS},"pty":{"type":"boolean","default":false}},"required":["argv"],"additionalProperties":false})});
