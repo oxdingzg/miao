@@ -16,6 +16,20 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 fn main() {
+    // A `--tree-child <role>` process is a stand-in for a broker, LSP server
+    // or worker the engine keeps alive: it blocks on its inherited stdin and
+    // leaves when the engine (its parent) dies and the pipe reaches EOF. The
+    // wall-clock cap only bounds a child whose parent died without closing the
+    // pipe, so no leaked stand-in can outlive the test run by much.
+    if std::env::args().nth(1).as_deref() == Some("--tree-child") {
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_secs(120));
+            std::process::exit(0);
+        });
+        let mut line = String::new();
+        let _ = std::io::stdin().read_line(&mut line);
+        return;
+    }
     if let Ok(expected) = std::env::var("MIAO_TUI_FAKE_EXPECT_PREFIX") {
         let mut args = std::env::args().skip(1);
         assert_eq!(args.next().as_deref(), Some(expected.as_str()));
@@ -91,6 +105,29 @@ fn main() {
     let stream_updates = Arc::new(AtomicU64::new(0));
     let mut stream_started = false;
     let mut permission_saved = true;
+
+    // PERF-04's tree criterion names broker, LSP and worker processes, which
+    // in the real product sit below the engine. One re-exec per named role
+    // gives a harness sampling the tree the shape the criterion describes:
+    // TUI → engine → helpers, three levels deep. They exist before readiness
+    // is published, so a ready harness never races their spawn.
+    let _tree_children: Vec<std::process::Child> =
+        if let Ok(tree) = std::env::var("MIAO_TUI_FAKE_TREE") {
+            let exe = std::env::current_exe().expect("the fixture knows its own exe");
+            tree.split(',')
+                .filter(|role| !role.is_empty())
+                .map(|role| {
+                    std::process::Command::new(&exe)
+                        .arg("--tree-child")
+                        .arg(role)
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                        .expect("spawn a tree helper")
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
     if let Some(path) = std::env::var_os("MIAO_TUI_FAKE_READY_FILE") {
         std::fs::write(path, b"ready").expect("publish fixture process readiness");

@@ -221,20 +221,38 @@ fn tree(pid: u32) -> Vec<u32> {
 }
 
 /// The executable name, so a record can say which members the tree held
-/// instead of only how many.
+/// instead of only how many. A fixture helper carries its role
+/// (`miao-tui-fake-engine:broker`), which is what distinguishes the stand-ins
+/// for the broker, LSP and worker members the criterion names.
 fn command_name(pid: u32) -> String {
     let Ok(output) = Command::new("ps")
-        .args(["-o", "comm=", "-p", &pid.to_string()])
+        .args(["-o", "args=", "-p", &pid.to_string()])
         .output()
     else {
         return "unknown".to_string();
     };
-    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    raw.rsplit('/').next().unwrap_or_default().to_string()
+    let args = String::from_utf8_lossy(&output.stdout);
+    let mut fields = args.split_whitespace();
+    let name = fields
+        .next()
+        .unwrap_or("unknown")
+        .rsplit('/')
+        .next()
+        .unwrap_or("unknown")
+        .to_string();
+    match (fields.next(), fields.next()) {
+        (Some("--tree-child"), Some(role)) => format!("{name}:{role}"),
+        _ => name,
+    }
 }
 
-/// Sum of the measured window across every process in the tree./// Sum of the measured window across every process in the tree.
-fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u128, u64, u64) {
+/// Sum of one measured window across every process in the tree.
+fn measure_tree(
+    harness: &Harness,
+    label: &str,
+    window: Duration,
+    members: usize,
+) -> (usize, u128, u64, u64, String) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !harness.ready() {
         assert!(
@@ -249,7 +267,7 @@ fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u12
     // what makes `processes >= 2` an assertion about the product rather than
     // about timing.
     let deadline = Instant::now() + Duration::from_secs(10);
-    while tree(harness.pid).len() < 2 && Instant::now() < deadline {
+    while tree(harness.pid).len() < members && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(50));
     }
     let pids = tree(harness.pid);
@@ -266,17 +284,17 @@ fn measure_tree(harness: &Harness, label: &str, window: Duration) -> (usize, u12
         fds += descriptors(*pid).unwrap_or(0) as u64;
     }
     let cpu_ms = cpu_ms.saturating_sub(before);
-    let members = pids
+    let roster = pids
         .iter()
         .map(|pid| command_name(*pid))
         .collect::<Vec<_>>()
         .join(",");
     println!(
-        "PERF-04 {label}: processes={} [{members}] cpu_ms={cpu_ms} over {}ms, rss_kb_total={rss_kb}, fds_total={fds}",
+        "PERF-04 {label}: processes={} [{roster}] cpu_ms={cpu_ms} over {}ms, rss_kb_total={rss_kb}, fds_total={fds}",
         pids.len(),
         window.as_millis()
     );
-    (pids.len(), cpu_ms, rss_kb, fds)
+    (pids.len(), cpu_ms, rss_kb, fds, roster)
 }
 
 /// `ps` prints `M:SS.ss` on macOS and `HH:MM:SS` on Linux; reading the parts
@@ -377,8 +395,8 @@ fn a_spawned_engine_appears_in_the_process_tree() {
     let (processes, cpu_ms, rss_kb, fds, evidence) = loop {
         attempts += 1;
         let mut harness = Harness::spawn_with("spawned", &[("MIAO_TUI_EMBEDDED", "0")], None);
-        let (processes, cpu_ms, rss_kb, fds) =
-            measure_tree(&harness, "spawned-engine", Duration::from_secs(3));
+        let (processes, cpu_ms, rss_kb, fds, _) =
+            measure_tree(&harness, "spawned-engine", Duration::from_secs(3), 2);
         if processes >= 2 || attempts == ATTEMPTS {
             break (processes, cpu_ms, rss_kb, fds, harness.describe());
         }
@@ -396,4 +414,172 @@ fn a_spawned_engine_appears_in_the_process_tree() {
         "the tree held {rss_kb} kB of memory"
     );
     assert!(fds > 0 && fds < 2048, "the tree held {fds} descriptors");
+}
+
+#[test]
+fn the_tree_reaches_the_engine_s_helpers() {
+    // The criterion names broker, LSP and worker processes, and in the real
+    // product those are the engine's children — exactly where the fixture's
+    // `--tree-child` stand-ins sit. Measuring a five-member tree across three
+    // levels (TUI → engine → helpers) is what makes this harness a whole-tree
+    // one: every member's CPU, RSS and descriptors are summed, and the roster
+    // names the roles so the record can say what was in the tree.
+    //
+    // Like the spawned-engine measurement, one starved start is not evidence
+    // the helpers are missing; start over and fail only when every attempt
+    // came up short.
+    let mut attempts = 0;
+    let (processes, cpu_ms, rss_kb, fds, roster, evidence) = loop {
+        attempts += 1;
+        let mut harness = Harness::spawn_with(
+            "helpers",
+            &[
+                ("MIAO_TUI_EMBEDDED", "0"),
+                ("MIAO_TUI_FAKE_TREE", "broker,lsp,worker"),
+            ],
+            None,
+        );
+        let (processes, cpu_ms, rss_kb, fds, roster) =
+            measure_tree(&harness, "full-tree", Duration::from_secs(3), 5);
+        if processes >= 5 || attempts == ATTEMPTS {
+            break (processes, cpu_ms, rss_kb, fds, roster, harness.describe());
+        }
+    };
+    for role in ["broker", "lsp", "worker"] {
+        assert!(
+            roster.contains(&format!(":{role}")),
+            "the tree on all {attempts} attempts never held a {role} helper: [{roster}]; {evidence}"
+        );
+    }
+    assert!(
+        processes >= 5,
+        "the tree never reached five members on all {attempts} attempts: {processes}; [{roster}]; {evidence}"
+    );
+    assert!(
+        cpu_ms < 3_000,
+        "a five-member tree used {cpu_ms} ms of CPU in three seconds while idle"
+    );
+    assert!(
+        rss_kb > 0 && rss_kb < 512 * 1024,
+        "the tree held {rss_kb} kB of memory"
+    );
+    assert!(fds > 0 && fds < 2048, "the tree held {fds} descriptors");
+}
+
+/// Consecutive windows over one settled run. The per-window triples are the
+/// curve the criterion asks to converge: a leak shows up as a slope across
+/// windows, not only as a level inside one.
+fn sample_windows(
+    harness: &Harness,
+    label: &str,
+    count: usize,
+    window: Duration,
+) -> Vec<(u128, u64, Option<usize>)> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !harness.ready() {
+        assert!(
+            Instant::now() < deadline,
+            "the fixture did not become ready; the measurement would describe a start-up, not a run"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    let (mut before, _) = sample(harness.pid);
+    let mut windows = Vec::new();
+    for index in 1..=count {
+        std::thread::sleep(window);
+        let (after, rss_kb) = sample(harness.pid);
+        let cpu_ms = after.saturating_sub(before);
+        before = after;
+        let fds = descriptors(harness.pid);
+        println!(
+            "PERF-04 {label} window {index}/{count}: cpu_ms={cpu_ms} over {}ms, rss_kb={rss_kb}, fds={}",
+            window.as_millis(),
+            fds.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
+        );
+        windows.push((cpu_ms, rss_kb, fds));
+    }
+    windows
+}
+
+#[test]
+fn an_idle_tui_s_windows_converge_instead_of_growing() {
+    let harness = Harness::spawn("idle-windows");
+    let windows = sample_windows(&harness, "idle", 3, Duration::from_secs(3));
+    let last = windows[2];
+    for (cpu_ms, rss_kb, fds) in &windows {
+        assert!(
+            *cpu_ms < 3_000,
+            "an idle TUI used {cpu_ms} ms of CPU in a three-second window, which is a busy loop rather than an idle wait"
+        );
+        assert!(
+            *rss_kb > 0 && *rss_kb < 512 * 1024,
+            "an idle TUI held {rss_kb} kB of memory"
+        );
+        if let Some(fds) = fds {
+            assert!(
+                *fds > 0 && *fds < 1024,
+                "an idle TUI held {fds} descriptors"
+            );
+        }
+    }
+    // Convergence is the trend, not the level: the third window must not cost
+    // more than the first, hold noticeably more memory, or hold more
+    // descriptors. The slack is what a shared runner's noise is allowed.
+    assert!(
+        last.0 <= windows[0].0 + 500,
+        "the idle curve escalated: window 1 used {} ms and window 3 used {} ms",
+        windows[0].0,
+        last.0
+    );
+    assert!(
+        last.1 <= windows[0].1 + 4 * 1024,
+        "the idle curve grew: window 1 held {} kB and window 3 held {} kB",
+        windows[0].1,
+        last.1
+    );
+    if let (Some(first), Some(third)) = (windows[0].2, last.2) {
+        assert!(
+            third <= first + 4,
+            "an idle TUI's descriptors grew across quiet windows: {first} -> {third}"
+        );
+    }
+}
+
+#[test]
+fn a_prolonged_stream_does_not_grow_the_process() {
+    // The criterion's streaming half: nine seconds across three windows while
+    // the fixture delivers a committed event every ten milliseconds, so the
+    // curve describes sustained painting rather than a first burst.
+    let harness = Harness::spawn_with("prolonged", &[("MIAO_TUI_FAKE_STREAM", "1")], Some("ses_a"));
+    let windows = sample_windows(&harness, "streaming", 3, Duration::from_secs(3));
+    let last = windows[2];
+    for (cpu_ms, rss_kb, fds) in &windows {
+        assert!(
+            *cpu_ms < 3_000,
+            "a streaming TUI used {cpu_ms} ms of CPU in a three-second window, which is a busy loop rather than a stream"
+        );
+        assert!(
+            *rss_kb > 0 && *rss_kb < 512 * 1024,
+            "a streaming TUI held {rss_kb} kB of memory"
+        );
+        if let Some(fds) = fds {
+            assert!(
+                *fds > 0 && *fds < 1024,
+                "a streaming TUI held {fds} descriptors"
+            );
+        }
+    }
+    assert!(
+        last.1 <= windows[0].1 + 8 * 1024,
+        "nine seconds of streaming grew the process: window 1 held {} kB and window 3 held {} kB",
+        windows[0].1,
+        last.1
+    );
+    if let (Some(first), Some(third)) = (windows[0].2, last.2) {
+        assert!(
+            third <= first + 4,
+            "a streaming TUI's descriptors grew across windows: {first} -> {third}"
+        );
+    }
 }
