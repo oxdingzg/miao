@@ -1733,7 +1733,7 @@ impl Tools {
                     .filter_map(|(field, spec)| {
                         let declared = spec["type"].as_str()?;
                         let value = input.get(field)?;
-                        (!agrees_with_schema(declared, value))
+                        (!Self::agrees_with_schema(declared, value))
                             .then(|| format!("{field} as a {declared}"))
                     })
                     .collect()
