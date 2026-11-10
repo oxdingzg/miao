@@ -4689,6 +4689,40 @@ fn emit_event(format: &str, kind: &str, session: &str, part: serde_json::Value) 
     println!("{}", event_line(kind, session, part));
 }
 
+/// The `step_finish` part one settled provider step emits: tokens and cost in
+/// the shape the TypeScript headless runner standardized, which the benchmark
+/// and other headless consumers read. An unpriced step keeps `cost` null so
+/// consumers report unknown rather than a fake zero.
+fn step_finish_part(data: &serde_json::Value) -> serde_json::Value {
+    let usage = data
+        .get("usage")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let token = |field: &str| {
+        usage
+            .get(field)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
+    serde_json::json!({
+        "type": "step_finish",
+        "model": data.get("model").cloned().unwrap_or(serde_json::Value::Null),
+        "cost": data
+            .get("cost")
+            .and_then(|cost| cost.get("amount"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "tokens": {
+            "input": token("inputTokens"),
+            "output": token("outputTokens"),
+            "reasoning": token("reasoningTokens"),
+            "cache": {
+                "read": token("cacheReadInputTokens"),
+            },
+        },
+    })
+}
+
 /// Product-tool definitions the host serves. These are the cross-session tools
 /// the engine calls back into the host for; without them a single binary has no
 /// way to reach other sessions or the operator.
@@ -4984,6 +5018,16 @@ async fn run_prompt(
                 );
                 let _ = client.approve(&session, response).await;
                 continue;
+            }
+            // One settled provider step with its tokens and money, in the
+            // shape headless consumers read (see `step_finish_part`).
+            if kind == "usage" {
+                emit_event(
+                    &target.format,
+                    "step_finish",
+                    &session,
+                    step_finish_part(&event.data),
+                );
             }
             // A failed provider turn produced no answer; waiting for the
             // deadline would hide the reason.
@@ -5889,6 +5933,40 @@ mod tests {
         assert_eq!(parsed["sessionID"], "ses_x");
         assert!(parsed["timestamp"].is_u64());
         assert_eq!(parsed["part"]["text"], "answer");
+    }
+
+    /// A settled provider step maps the engine's usage event into the
+    /// `step_finish` shape the TypeScript headless runner standardized; an
+    /// unpriced step keeps its cost null so consumers read unknown, not zero.
+    #[test]
+    fn a_usage_event_maps_to_the_step_finish_shape_headless_consumers_read() {
+        use super::step_finish_part;
+        let part = step_finish_part(&serde_json::json!({
+            "model": "glm-5.3-flash",
+            "route": "zhipuai-coding-plan/glm-5.3-flash",
+            "cost": { "amount": 0.01, "currency": "USD" },
+            "usage": {
+                "inputTokens": 12183,
+                "outputTokens": 154,
+                "cacheReadInputTokens": 12096,
+                "reasoningTokens": 122,
+            },
+        }));
+        assert_eq!(part["tokens"]["input"], 12183);
+        assert_eq!(part["tokens"]["output"], 154);
+        assert_eq!(part["tokens"]["cache"]["read"], 12096);
+        assert_eq!(part["tokens"]["reasoning"], 122);
+        assert_eq!(part["cost"], 0.01);
+        let unpriced = step_finish_part(&serde_json::json!({
+            "model": "glm-5.3-flash",
+            "usage": { "inputTokens": 10, "outputTokens": 5 },
+        }));
+        assert_eq!(
+            unpriced["cost"],
+            serde_json::Value::Null,
+            "unpriced stays unknown, not zero"
+        );
+        assert_eq!(unpriced["tokens"]["input"], 10);
     }
 
     #[test]
