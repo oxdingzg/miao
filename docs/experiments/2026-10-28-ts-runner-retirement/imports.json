@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "029ce9f92b4c61f3289c463897e096ab5b1a9f9c",
+  "sourceCommit": "2e2d428e8e5417a1d67c5b15e19ddc7e2c5df7d0",
   "method": "TypeScript AST: literal import/export declarations and literal dynamic imports in tracked packages/**/*.ts and tsx; @miao/core/* and relative module resolution. Self-namespace exports excluded. Source/verification classify by /src/ path. This is an import boundary inventory, not call-graph reachability or proof of runtime activation. Computed imports, require(), DI lookup and generated/third-party consumers require separate review.",
   "categories": {
     "runner": {
