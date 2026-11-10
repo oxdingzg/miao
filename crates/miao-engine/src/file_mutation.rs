@@ -53,7 +53,12 @@ struct EditWire {
     replace_all: bool,
 }
 impl EditWire {
-    fn normalize(self) -> Result<EditInput, ToolError> {
+    fn normalize(self, short_anchors: bool) -> Result<EditInput, ToolError> {
+        if !short_anchors && (self.anchor.is_some() || self.new_text.is_some()) {
+            return Err(ToolError::InvalidArgs(
+                "short anchors are disabled by the ablation switch; name the replaced text old_string and the replacement new_string".into(),
+            ));
+        }
         // Each side of the replacement may be named either way: `old_string` or
         // `anchor`, `new_string` or `new_text`. One name per side is one
         // replacement; naming a side twice is what makes the edit ambiguous.
@@ -98,7 +103,7 @@ pub(crate) enum Mutation {
     Edit(EditInput),
 }
 impl Mutation {
-    pub fn parse(name: &str, input: Value) -> Result<Self, ToolError> {
+    pub fn parse(name: &str, input: Value, short_anchors: bool) -> Result<Self, ToolError> {
         let mutation = match name {
             "write_file" => {
                 let mut input: WriteInput = serde_json::from_value(input)
@@ -109,7 +114,7 @@ impl Mutation {
             "edit_file" => Self::Edit(
                 serde_json::from_value::<EditWire>(input)
                     .map_err(|error| ToolError::InvalidArgs(error.to_string()))?
-                    .normalize()?,
+                    .normalize(short_anchors)?,
             ),
             _ => return Err(ToolError::Unsupported),
         };
@@ -228,6 +233,7 @@ pub(crate) fn apply(
     } else {
         expected
     };
+    let mut fuzzy: Option<String> = None;
     let text = match (&rebase, mutation) {
         (Some((replaced, _)), _) => replaced.clone(),
         (None, Mutation::Write(v)) => v.text,
@@ -235,13 +241,32 @@ pub(crate) fn apply(
             let text = String::from_utf8(original.as_ref().ok_or(ToolError::StaleFile)?.clone())
                 .map_err(|_| ToolError::InvalidFile)?;
             let count = text.matches(&v.old_string).count();
-            if count == 0 || (!v.replace_all && count != 1) {
-                return Err(ToolError::AmbiguousEdit);
-            }
-            if v.replace_all {
-                text.replace(&v.old_string, &v.new_string)
+            if count == 0 {
+                // The fingerprint matched, so the file is exactly what the
+                // model read; an absent old_string is a transcription slip,
+                // and a unique whitespace-insensitive target is recoverable
+                // without a re-read turn. Fuzzy never runs across drift: a
+                // digest mismatch is the rebase path's failure to refuse.
+                let regions = fuzzy_regions(&text, &v.old_string);
+                if regions.is_empty() {
+                    return Err(ToolError::AmbiguousEdit);
+                }
+                if !v.replace_all && regions.len() > 1 {
+                    return Err(ToolError::AmbiguousFuzzy(ambiguous_fuzzy_message(
+                        &regions,
+                        &v.old_string,
+                    )));
+                }
+                fuzzy = Some(fuzzy_note(&regions, &v.old_string));
+                replace_regions(&text, &regions, &v.new_string)
+            } else if count == 1 || v.replace_all {
+                if v.replace_all {
+                    text.replace(&v.old_string, &v.new_string)
+                } else {
+                    text.replacen(&v.old_string, &v.new_string, 1)
+                }
             } else {
-                text.replacen(&v.old_string, &v.new_string, 1)
+                return Err(ToolError::AmbiguousEdit);
             }
         }
     };
@@ -319,7 +344,113 @@ pub(crate) fn apply(
         result["note"] = json!(note);
         result["previous_sha256"] = json!(drift);
     }
+    if let Some(note) = fuzzy {
+        result["fuzzy"] = json!(true);
+        result["note"] = json!(note);
+    }
     Ok(result)
+}
+
+/// One whitespace-insensitive candidate for an absent old_string: a
+/// contiguous line window whose lines equal the needle's lines after
+/// trimming each line. `line` is the 1-based start, `span` the byte range
+/// to replace.
+struct FuzzyRegion {
+    line: usize,
+    span: std::ops::Range<usize>,
+}
+
+/// Contiguous line windows matching the needle ignoring leading and
+/// trailing whitespace per line. A needle whose every line trims empty
+/// matches nothing: it would match every blank stretch in the file.
+fn fuzzy_regions(text: &str, needle: &str) -> Vec<FuzzyRegion> {
+    let target: Vec<&str> = needle
+        .strip_suffix('\n')
+        .unwrap_or(needle)
+        .split('\n')
+        .collect();
+    if target.iter().all(|line| line.trim().is_empty()) {
+        return Vec::new();
+    }
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut regions = Vec::new();
+    for start in 0..lines.len().saturating_sub(target.len() - 1) {
+        let window = &lines[start..start + target.len()];
+        if window
+            .iter()
+            .zip(target.iter())
+            .all(|(line, want)| line.trim() == want.trim())
+        {
+            let byte_start = lines[..start].iter().map(|line| line.len() + 1).sum();
+            let width = window.iter().map(|line| line.len() + 1).sum::<usize>() - 1;
+            regions.push(FuzzyRegion {
+                line: start + 1,
+                span: byte_start..byte_start + width,
+            });
+        }
+    }
+    regions
+}
+
+fn replace_regions(text: &str, regions: &[FuzzyRegion], replacement: &str) -> String {
+    let mut output = text.to_owned();
+    // Right to left, so earlier byte spans stay valid.
+    for region in regions.iter().rev() {
+        output.replace_range(region.span.clone(), replacement);
+    }
+    output
+}
+
+fn needle_lines(needle: &str) -> usize {
+    needle
+        .strip_suffix('\n')
+        .unwrap_or(needle)
+        .split('\n')
+        .count()
+}
+
+fn render_region(region: &FuzzyRegion, lines: usize) -> String {
+    let end = region.line + lines - 1;
+    if lines == 1 {
+        format!("{}", region.line)
+    } else {
+        format!("{}-{}", region.line, end)
+    }
+}
+
+fn ambiguous_fuzzy_message(regions: &[FuzzyRegion], needle: &str) -> String {
+    let lines = needle_lines(needle);
+    let ranges = regions
+        .iter()
+        .map(|region| render_region(region, lines))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "old_string is absent; {} whitespace-insensitive candidate region{} at line{} {ranges}; pass more surrounding lines or replace_all=true",
+        regions.len(),
+        if regions.len() == 1 { "" } else { "s" },
+        if regions.len() == 1 { "" } else { "s" },
+    )
+}
+
+fn fuzzy_note(regions: &[FuzzyRegion], needle: &str) -> String {
+    let lines = needle_lines(needle);
+    let ranges = regions
+        .iter()
+        .map(|region| render_region(region, lines))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if regions.len() == 1 {
+        format!(
+            "old_string did not occur exactly; the unique whitespace-insensitive match at line {ranges} was replaced. Leading and trailing whitespace per line was ignored when matching."
+        )
+    } else {
+        format!(
+            "old_string did not occur exactly; {} whitespace-insensitive matches at line{} {ranges} were all replaced. Leading and trailing whitespace per line was ignored when matching.",
+            regions.len(),
+            if regions.len() == 1 { "" } else { "s" },
+        )
+    }
 }
 
 /// Existing files and mutation results may be much larger than a single tool
@@ -381,6 +512,7 @@ mod tests {
                 "new_string":"return table[key]",
                 "expected_sha256": digest(body.as_bytes()),
             }),
+            true,
         )
         .unwrap();
         let applied = apply(&root, Path::new("registry.ts"), mutation, None).unwrap();
@@ -406,6 +538,7 @@ mod tests {
                 "new_string":"锚点 🇨🇳",
                 "expected_sha256": digest(body.as_bytes()),
             }),
+            true,
         )
         .unwrap();
         let applied = apply(&root, Path::new("note.md"), mutation, None).unwrap();
@@ -415,5 +548,152 @@ mod tests {
         assert_eq!(written, expected.as_bytes());
         assert!(written.starts_with(prefix.as_bytes()));
         assert!(written.ends_with(suffix.as_bytes()));
+    }
+
+    #[test]
+    fn a_unique_whitespace_drifted_target_is_recovered_and_explained() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = "fn kept() {\n    work();\n}\nfn tail() {}\n";
+        std::fs::write(dir.path().join("src.rs"), body).unwrap();
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        // The model transcribed the target with a tab, so the needle is not
+        // an exact substring and only the whitespace-insensitive match lands.
+        let mutation = Mutation::parse(
+            "edit_file",
+            json!({
+                "path":"src.rs",
+                "old_string":"\twork();",
+                "new_string":"work(1);",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+            true,
+        )
+        .unwrap();
+        let applied = apply(&root, Path::new("src.rs"), mutation, None).unwrap();
+        assert_eq!(applied["fuzzy"], json!(true), "tool result: {applied}");
+        assert!(applied["note"]
+            .as_str()
+            .unwrap()
+            .contains("whitespace-insensitive"));
+        let written = std::fs::read_to_string(dir.path().join("src.rs")).unwrap();
+        assert_eq!(
+            written, "fn kept() {\nwork(1);\n}\nfn tail() {}\n",
+            "matching ignores per-line whitespace; the replacement does not re-indent"
+        );
+    }
+
+    #[test]
+    fn an_ambiguous_fuzzy_target_is_refused_with_candidate_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = "if a {\n    ok()\n}\nif b {\n\tok()\n}\n";
+        std::fs::write(dir.path().join("src.rs"), body).unwrap();
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let mutation = Mutation::parse(
+            "edit_file",
+            json!({
+                "path":"src.rs",
+                "old_string":"  ok()  ",
+                "new_string":"ok(1)",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+            true,
+        )
+        .unwrap();
+        let error = apply(&root, Path::new("src.rs"), mutation, None).unwrap_err();
+        let ToolError::AmbiguousFuzzy(message) = error else {
+            panic!("expected an ambiguous fuzzy refusal, got {error}");
+        };
+        assert!(message.contains("lines 2, 5"), "message: {message}");
+        assert!(message.contains("replace_all"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("src.rs")).unwrap(),
+            body,
+            "a refused edit must not touch the file"
+        );
+    }
+
+    #[test]
+    fn an_exact_match_never_goes_fuzzy() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = "alpha\nbeta\n";
+        std::fs::write(dir.path().join("f.txt"), body).unwrap();
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let mutation = Mutation::parse(
+            "edit_file",
+            json!({
+                "path":"f.txt",
+                "old_string":"beta",
+                "new_string":"BETA",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+            true,
+        )
+        .unwrap();
+        let applied = apply(&root, Path::new("f.txt"), mutation, None).unwrap();
+        assert!(applied.get("fuzzy").is_none(), "tool result: {applied}");
+    }
+
+    #[test]
+    fn fuzzy_is_inapplicable_across_drift() {
+        // A digest mismatch is the rebase path's failure to refuse: fuzzy must
+        // not paper over drift, even when the target would match uniquely.
+        let dir = tempfile::tempdir().unwrap();
+        let body = "alpha\nbeta\n";
+        let drifted = "alpha\n beta \n";
+        std::fs::write(dir.path().join("f.txt"), body).unwrap();
+        let root = Dir::open_ambient_dir(dir.path(), cap_std::ambient_authority()).unwrap();
+        let mutation = Mutation::parse(
+            "edit_file",
+            json!({
+                "path":"f.txt",
+                "old_string":"beta",
+                "new_string":"BETA",
+                "expected_sha256": digest(body.as_bytes()),
+            }),
+            true,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("f.txt"), drifted).unwrap();
+        let error = apply(&root, Path::new("f.txt"), mutation, None).unwrap_err();
+        assert!(matches!(error, ToolError::StaleFile), "got {error}");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("f.txt")).unwrap(),
+            drifted,
+            "a refused edit must not touch the file"
+        );
+    }
+
+    #[test]
+    fn fuzzy_regions_find_unique_and_multiple_targets() {
+        let text = "one\n  two  \nthree\n\ttwo\n";
+        let regions = fuzzy_regions(text, "two");
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].line, 2);
+        assert_eq!(regions[1].line, 4);
+        let replaced = replace_regions(text, &regions, "TWO");
+        assert_eq!(replaced, "one\nTWO\nthree\nTWO\n");
+        // Trimming makes every whitespace spelling of a line equivalent.
+        assert_eq!(fuzzy_regions(text, "  two  ").len(), 2);
+    }
+
+    #[test]
+    fn fuzzy_regions_normalize_a_trailing_newline_needle() {
+        let text = "alpha\nbeta\ngamma\n";
+        let regions = fuzzy_regions(text, "beta\n");
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].line, 2);
+        let replaced = replace_regions(text, &regions, "B");
+        assert_eq!(replaced, "alpha\nB\ngamma\n");
+    }
+
+    #[test]
+    fn fuzzy_regions_reject_blank_and_offcontent_targets() {
+        assert!(fuzzy_regions("a\n\nb\n", "\n\n").is_empty());
+        assert!(fuzzy_regions("alpha\nbeta\n", "alpha\nBETA\n").is_empty());
+        // Multi-byte lines keep byte spans on char boundaries.
+        let text = "标题\n    中文行    \n尾\n";
+        let regions = fuzzy_regions(text, "中文行");
+        assert_eq!(regions.len(), 1);
+        assert_eq!(replace_regions(text, &regions, "改"), "标题\n改\n尾\n");
     }
 }

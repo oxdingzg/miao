@@ -6,12 +6,14 @@ use std::process::Command;
 #[test]
 fn engine_flags_the_runtime_reads_are_accepted_options() {
     let dir = tempfile::tempdir().unwrap();
-    let cases: [&[&str]; 6] = [
+    let cases: [&[&str]; 8] = [
         &["--lsp-diagnostics", "off"],
         &["--lsp-config", "/nonexistent/lsp.json"],
         &["--prompt-cache", "on"],
         &["--verify-command", "true"],
         &["--edit-recovery", "off"],
+        &["--short-anchors", "off"],
+        &["--batch-edit", "off"],
         // Automatic context management is opt-in through this flag, which was
         // missing from the whitelist until it was measured.
         &[
