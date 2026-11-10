@@ -3729,6 +3729,11 @@ async fn execute(
         // [`crate::history::restore_note`]). Request-scoped: one note only,
         // and the closing user prompt stays last.
         if inner.restore_pending.lock().await.remove(session) {
+            // The compaction may have dropped this session's earlier read
+            // deliveries out of the live context, so a stub pointing at one
+            // would strand the model: deliver re-reads in full until the
+            // file is seen again (TOOL-01 read ledger).
+            inner.tools.reset_read_ledger(session);
             let insert_at = match history.last() {
                 Some(last) if last.role == "user" => history.len() - 1,
                 _ => history.len(),
@@ -4809,6 +4814,8 @@ command: None,
                                         };
                                     inner
                                         .tools
+                                        .clone()
+                                        .with_read_scope(session)
                                         .execute_prepared_with_progress(
                                             prepared,
                                             &policy,
@@ -8326,6 +8333,8 @@ async fn execute_read_batch(
             };
             let result = inner
                 .tools
+                .clone()
+                .with_read_scope(session)
                 .execute_prepared(tool, policy, cancel, Some(&ask))
                 .await;
             in_flight.fetch_sub(1, Ordering::Relaxed);

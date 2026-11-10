@@ -485,6 +485,8 @@ async fn discover_skills(
                 continue;
             }
             let data = match tools
+                .clone()
+                .with_read_scope(crate::tools::PROBE_READ_SCOPE)
                 .execute_prepared(prepared, policy, cancel.child_token(), None)
                 .await
             {
@@ -651,7 +653,7 @@ pub(crate) async fn assemble_for_agent(
                 // recorded and skipped: the same assembly runs on every turn of
                 // the Session, so propagating it here made one oversized file
                 // fail all of them.
-                let data=match tools.execute_prepared(prepared,policy,cancel.child_token(),None).await{
+                let data=match tools.clone().with_read_scope(crate::tools::PROBE_READ_SCOPE).execute_prepared(prepared,policy,cancel.child_token(),None).await{
                     Ok(data)=>data,
                     Err(ToolError::Interrupted)=>return Err(ToolError::Interrupted),
                     Err(ToolError::TooLarge(_))=>{
@@ -911,6 +913,8 @@ async fn append_read_sources(
                     None
                 } else {
                     match tools
+                        .clone()
+                        .with_read_scope(crate::tools::PROBE_READ_SCOPE)
                         .execute_prepared(prepared, policy, cancel.child_token(), None)
                         .await
                     {

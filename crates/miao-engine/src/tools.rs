@@ -74,6 +74,49 @@ struct ReadInput {
 /// whole-file byte bound, so one window cannot flood the context.
 const MAX_READ_LINES: usize = 2000;
 
+/// What a delivered read looked like: the request form, normalized so
+/// `{"offset":2}` and `{"offset":2,"limit":2000}` are the same window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadForm {
+    Whole,
+    Window { offset: usize, limit: usize },
+}
+
+struct ReadDelivery {
+    form: ReadForm,
+    fingerprint: String,
+}
+
+/// One session's delivered reads (TOOL-01): what each path delivered, in
+/// which form, at which fingerprint. An exact re-request of unchanged
+/// content is a duplicate delivery and is answered with the fingerprint
+/// instead of paying the payload again; a different window, or changed
+/// content, always delivers -- that is the way back when an earlier read
+/// left the context. The totals are the measurement behind "no repeated
+/// full-file reads": reads, duplicates, and the bytes each side of that
+/// line cost.
+#[derive(Default)]
+struct SessionReads {
+    deliveries: std::collections::HashMap<String, Vec<ReadDelivery>>,
+    reads: usize,
+    duplicate_reads: usize,
+    bytes_delivered: u64,
+    bytes_saved: u64,
+}
+
+/// Keyed by session: a runtime's tools serve every session in the process,
+/// so dedup must never match one session's re-read against another
+/// session's delivery.
+#[derive(Default)]
+struct ReadLedger {
+    sessions: std::collections::HashMap<String, SessionReads>,
+}
+
+/// The scope context assembly probes with: its reads repeat every turn and
+/// exist to build the prompt, not for the model, so they never record and
+/// never stub. The NUL prefix cannot collide with a session id.
+pub const PROBE_READ_SCOPE: &str = "\0context-probes";
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SkillInput {
@@ -230,6 +273,10 @@ pub struct Tools {
     references: Arc<StdRwLock<Arc<ReferenceScope>>>,
     hooks: Arc<StdRwLock<Arc<Vec<crate::hooks::Hook>>>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
+    read_ledger: Arc<std::sync::Mutex<ReadLedger>>,
+    /// Which session's deliveries this clone reads and records. Empty is the
+    /// direct-caller scope; the runtime scopes every model-driven call.
+    read_scope: String,
     edit_recovery: bool,
     short_anchors: bool,
     batch_edit: bool,
@@ -323,6 +370,8 @@ impl Tools {
             references: Arc::new(StdRwLock::new(Arc::new(ReferenceScope::default()))),
             hooks: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
+            read_ledger: Arc::new(std::sync::Mutex::new(ReadLedger::default())),
+            read_scope: String::new(),
             edit_recovery: true,
             short_anchors: true,
             batch_edit: true,
@@ -332,6 +381,54 @@ impl Tools {
             mcp_disclosure_allowlist: std::collections::BTreeSet::new(),
             product_tools: Arc::new(StdRwLock::new(Vec::new())),
         })
+    }
+
+    /// The read ledger's totals for this clone's scope: how many reads ran,
+    /// how many were duplicates of unchanged content, and the payload bytes
+    /// each side of that line cost, plus the unique deliveries per path.
+    pub fn read_ledger(&self) -> Value {
+        let ledger = self
+            .read_ledger
+            .lock()
+            .unwrap_or_else(|held| held.into_inner());
+        let empty = SessionReads::default();
+        let session = ledger
+            .sessions
+            .get(self.read_scope.as_str())
+            .unwrap_or(&empty);
+        let paths = session
+            .deliveries
+            .iter()
+            .map(|(path, deliveries)| (path.clone(), json!(deliveries.len())))
+            .collect::<serde_json::Map<String, Value>>();
+        json!({
+            "reads": session.reads,
+            "duplicate_reads": session.duplicate_reads,
+            "bytes_delivered": session.bytes_delivered,
+            "bytes_saved": session.bytes_saved,
+            "paths": paths,
+        })
+    }
+
+    /// Scope this clone's ledger to one session: duplicate-delivery
+    /// detection is per session, never across sessions sharing a runtime.
+    pub fn with_read_scope(mut self, session: &str) -> Self {
+        self.read_scope = session.to_owned();
+        self
+    }
+
+    /// The session's context was compacted, so its earlier deliveries may
+    /// have left the live context: stop stubbing re-reads until the file is
+    /// delivered again. A compaction happens mid-task, so the measurement
+    /// totals stay; only the delivery memory goes.
+    pub fn reset_read_ledger(&self, session: &str) {
+        let mut ledger = self
+            .read_ledger
+            .lock()
+            .unwrap_or_else(|held| held.into_inner());
+        if let Some(session) = ledger.sessions.get_mut(session) {
+            session.deliveries.clear();
+        }
     }
 
     /// The capability gates as one snapshot, so a reader never mixes two
@@ -2580,9 +2677,9 @@ impl Tools {
                             });
                         }
                     }
+                    let offset = input.offset.unwrap_or(1);
+                    let limit = input.limit.unwrap_or(MAX_READ_LINES).min(MAX_READ_LINES);
                     let (visible, window) = if ranged {
-                        let offset = input.offset.unwrap_or(1);
-                        let limit = input.limit.unwrap_or(MAX_READ_LINES).min(MAX_READ_LINES);
                         let total = text.lines().count();
                         let mut window = String::new();
                         let mut lines = 0usize;
@@ -2619,6 +2716,69 @@ impl Tools {
                         if let Ok(mut snapshots) = self.edit_snapshots.lock() {
                             snapshots.register(path.to_string_lossy().into_owned(), text.clone());
                         }
+                    }
+                    // Minimal necessary reads (TOOL-01): an exact re-request
+                    // of unchanged content is a duplicate delivery, so the
+                    // fingerprint answers instead of the payload. A different
+                    // window, or changed content, always delivers.
+                    let form = if ranged {
+                        ReadForm::Window { offset, limit }
+                    } else {
+                        ReadForm::Whole
+                    };
+                    let delivered = if ranged { visible.len() } else { text.len() };
+                    let earlier = if self.read_scope == PROBE_READ_SCOPE {
+                        // Context assembly re-probes the same instruction
+                        // files every turn; those reads are not the model's
+                        // and must always carry their payload.
+                        None
+                    } else {
+                        let mut ledger = self
+                            .read_ledger
+                            .lock()
+                            .unwrap_or_else(|held| held.into_inner());
+                        let session = ledger.sessions.entry(self.read_scope.clone()).or_default();
+                        let key = path.to_string_lossy().into_owned();
+                        let found = session.deliveries.get_mut(&key).and_then(|history| {
+                            history.iter().position(|delivery| {
+                                delivery.form == form && delivery.fingerprint == sha256
+                            })
+                        });
+                        match found {
+                            Some(position) => {
+                                session.reads += 1;
+                                session.duplicate_reads += 1;
+                                session.bytes_saved += delivered as u64;
+                                Some(position + 1)
+                            }
+                            None => {
+                                session.reads += 1;
+                                session.bytes_delivered += delivered as u64;
+                                session
+                                    .deliveries
+                                    .entry(key)
+                                    .or_default()
+                                    .push(ReadDelivery {
+                                        form,
+                                        fingerprint: sha256.clone(),
+                                    });
+                                None
+                            }
+                        }
+                    };
+                    if let Some(read) = earlier {
+                        let note = format!(
+                            "read {read} already delivered exactly these bytes for {} and the file has not changed since; use that result, or request a different offset/limit window if it left the context",
+                            input.path
+                        );
+                        return Ok(json!({
+                            "path": input.path,
+                            "sha256": sha256,
+                            "unchanged": true,
+                            "read": read,
+                            "bytes_saved": delivered,
+                            "note": note,
+                        }));
                     }
                     if ranged {
                         let mut result = json!({"text": visible, "sha256": sha256});
