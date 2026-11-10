@@ -262,7 +262,7 @@ fn stopping_every_job_asks_first_and_shows_the_true_state_after() {
         harness.screen()
     );
     assert!(
-        harness.wait_for("build log tail", Duration::from_secs(30)),
+        harness.wait_for("build ok", Duration::from_secs(30)),
         "the stopped job's recent output never rendered:\n{}",
         harness.screen()
     );

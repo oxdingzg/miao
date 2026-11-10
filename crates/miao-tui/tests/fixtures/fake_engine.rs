@@ -495,7 +495,7 @@ fn main() {
                     &mut out,
                     json!({"id":id,"result":{
                         "jobs":[
-                            {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":if build == "running" {""} else {"build log tail"}},
+                            {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":if build == "running" {""} else {"build ok"}},
                             {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":"deploy ok"}
                         ],
                         "subagents":[
@@ -518,7 +518,7 @@ fn main() {
                 // A stopped job kept what it produced, so the preview answer
                 // names the same tail the list row already carried.
                 let result = if phase == "stopped" {
-                    json!({"stdout":"build log tail"})
+                    json!({"stdout":"build ok"})
                 } else {
                     json!(null)
                 };
