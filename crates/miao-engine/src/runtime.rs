@@ -3938,6 +3938,32 @@ async fn execute(
                 if cancel.is_cancelled() {
                     return Ok(());
                 }
+                // A payload past the byte budget kills the stream before any
+                // call exists to settle. Pause the drain the way the correction
+                // budget does — the Session stays usable and the transcript
+                // says why — instead of failing the run on a payload the next
+                // prompt can regenerate smaller.
+                if matches!(&error, ProviderError::Stream(text) if text == crate::tool_input::BUDGET_ERROR)
+                {
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "tool.input_oversize",
+                            json!({"run_id":run,"step":step}),
+                        )
+                        .await?;
+                    inner
+                        .store
+                        .inject(
+                            session,
+                            &format!("oversize-{run}"),
+                            "Stopped: the model streamed tool arguments beyond the input byte budget. Send a message to continue.",
+                            "engine",
+                        )
+                        .await?;
+                    return Ok(());
+                }
                 // A stopped loop is a non-retryable failure, not a transport
                 // problem: the same request would loop again. Keep what the
                 // user already saw durable, but dispatch no tool call from it.

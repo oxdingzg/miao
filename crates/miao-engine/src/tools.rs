@@ -1688,16 +1688,33 @@ impl Tools {
     /// A settled rejection, in the model's own vocabulary. A bare "invalid
     /// tool input" leaves nothing to correct, so a model that dropped its
     /// arguments — glm-5.3-flash sends `{}` — resends the same call. Name the
-    /// required arguments it still has to supply when they are the reason.
+    /// required arguments it still has to supply when they are the reason, the
+    /// arguments whose declared type disagrees when those are, and the tool
+    /// itself when the catalog does not know it at all.
     pub fn rejection(&self, name: &str, input: &Value, error: &ToolError) -> String {
+        // A name the catalog does not know is the model's to correct, and a
+        // bare "tool is not available" gives it nothing to correct with. An
+        // advertised name that fails for a capability reason keeps its own
+        // error, so only the truly unregistered wording changes.
+        // Bind the catalog: the schema borrow below has to outlive this
+        // statement, and `definitions()` returns an owned Vec.
+        let definitions = self.definitions();
+        if matches!(error, ToolError::Unsupported)
+            && !definitions.iter().any(|tool| tool.name == name)
+        {
+            return format!(
+                "Unknown tool: {name}. This call was not executed. Call one of the available tools instead; do not repeat completed operations."
+            );
+        }
+        let schema = definitions
+            .iter()
+            .find(|tool| tool.name == name)
+            .map(|tool| &tool.input_schema);
         let ToolError::InvalidInput = error else {
             return error.to_string();
         };
-        let missing: Vec<String> = self
-            .definitions()
-            .iter()
-            .find(|tool| tool.name == name)
-            .and_then(|tool| tool.input_schema["required"].as_array())
+        let missing: Vec<String> = schema
+            .and_then(|schema| schema["required"].as_array())
             .map(|required| {
                 required
                     .iter()
@@ -1707,10 +1724,44 @@ impl Tools {
                     .collect()
             })
             .unwrap_or_default();
-        if missing.is_empty() {
-            return error.to_string();
+        if !missing.is_empty() {
+            return format!("invalid tool input: {name} requires {}", missing.join(", "));
         }
-        format!("invalid tool input: {name} requires {}", missing.join(", "))
+        let mismatched: Vec<String> = schema
+            .and_then(|schema| schema["properties"].as_object())
+            .map(|properties| {
+                properties
+                    .iter()
+                    .filter_map(|(field, spec)| {
+                        let declared = spec["type"].as_str()?;
+                        let value = input.get(field)?;
+                        (!Self::agrees_with_schema(declared, value))
+                            .then(|| format!("{field} as a {declared}"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !mismatched.is_empty() {
+            return format!(
+                "invalid tool input: {name} expects {}",
+                mismatched.join(", ")
+            );
+        }
+        error.to_string()
+    }
+
+    /// Whether a value fits the simple type a schema declares for it. Schemas
+    /// here declare one type per property, so there is no union to satisfy.
+    fn agrees_with_schema(declared: &str, value: &Value) -> bool {
+        match declared {
+            "string" => value.is_string(),
+            "boolean" => value.is_boolean(),
+            "number" => value.is_number(),
+            "integer" => value.is_i64() || value.is_u64(),
+            "array" => value.is_array(),
+            "object" => value.is_object(),
+            _ => true,
+        }
     }
 
     pub(crate) async fn execute_background(

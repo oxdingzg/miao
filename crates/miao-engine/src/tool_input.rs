@@ -3,6 +3,10 @@ use serde_json::Value;
 use std::{collections::BTreeMap, time::Duration};
 use tokio::time::Instant;
 
+/// The single rejection a size overflow reports. The runtime matches this
+/// exact text to stop the drain gracefully instead of failing the run on it.
+pub(crate) const BUDGET_ERROR: &str = "tool input exceeds byte budget";
+
 /// Size and per-call argument inactivity budgets, independent of unrelated wire traffic.
 pub(crate) struct ToolInputBudget {
     max_bytes: usize,
@@ -68,9 +72,7 @@ impl ToolInputBudget {
 
     fn size(&self, bytes: usize) -> Result<(), ProviderError> {
         if bytes > self.max_bytes {
-            return Err(ProviderError::Stream(
-                "tool input exceeds byte budget".into(),
-            ));
+            return Err(ProviderError::Stream(BUDGET_ERROR.into()));
         }
         Ok(())
     }
