@@ -87,7 +87,10 @@ impl Budget {
                 "budget states no bound: set max_turns or wallclock_ms".into(),
             ));
         }
-        if self.max_turns.is_some_and(|turns| turns == 0 || turns > TURN_CEILING) {
+        if self
+            .max_turns
+            .is_some_and(|turns| turns == 0 || turns > TURN_CEILING)
+        {
             return Err(ToolError::InvalidArgs(format!(
                 "max_turns must be between 1 and {TURN_CEILING}"
             )));
@@ -166,10 +169,9 @@ impl Input {
                     || reference.offset > 64 * 1024 * 1024
             });
         let deny_invalid = parsed.deny_tools.len() > DENY_TOOL_LIMIT
-            || parsed
-                .deny_tools
-                .iter()
-                .any(|name| name.is_empty() || name.len() > MAX_TOOL_NAME || name.chars().any(char::is_control));
+            || parsed.deny_tools.iter().any(|name| {
+                name.is_empty() || name.len() > MAX_TOOL_NAME || name.chars().any(char::is_control)
+            });
         if parsed.agent.as_ref().is_some_and(|name| {
             name.is_empty() || name.len() > 128 || name.chars().any(char::is_control)
         }) || parsed.prompt.trim().is_empty()

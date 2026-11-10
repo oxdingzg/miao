@@ -159,14 +159,11 @@ fn last_user(request: &ModelRequest) -> String {
 
 fn has_result(request: &ModelRequest, call: &str) -> bool {
     request.messages.iter().any(|message| {
-        message
-            .content
-            .as_array()
-            .is_some_and(|parts| {
-                parts
-                    .iter()
-                    .any(|part| part["type"] == "tool_result" && part["tool_use_id"] == json!(call))
-            })
+        message.content.as_array().is_some_and(|parts| {
+            parts
+                .iter()
+                .any(|part| part["type"] == "tool_result" && part["tool_use_id"] == json!(call))
+        })
     })
 }
 
@@ -187,11 +184,12 @@ impl Provider for Bounded {
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         if last_user(&request).contains("loop until bounded") {
-            if request
-                .messages
-                .iter()
-                .any(|message| message.content.to_string().contains("MAXIMUM STEPS REACHED"))
-            {
+            if request.messages.iter().any(|message| {
+                message
+                    .content
+                    .to_string()
+                    .contains("MAXIMUM STEPS REACHED")
+            }) {
                 return Ok(text_reply("child summary"));
             }
             if self.child_sleep_ms > 0 {
@@ -234,11 +232,16 @@ async fn an_explicit_parent_budget_closes_the_child_at_the_stated_turn_allowance
     // The recorded grant, not the host default, is what closed the child.
     let history = store.history(&child).await.unwrap();
     assert!(
+        history.iter().any(|message| message
+            .content
+            .to_string()
+            .contains("delegated turn allowance")),
+        "the child transcript explains the explicit bound {}",
         history
             .iter()
-            .any(|message| message.content.to_string().contains("delegated turn allowance")),
-        "the child transcript explains the explicit bound {}",
-        history.iter().map(|m| m.content.to_string()).collect::<Vec<_>>().join("")
+            .map(|m| m.content.to_string())
+            .collect::<Vec<_>>()
+            .join("")
     );
     assert!(provider.child_turns.load(Ordering::SeqCst) <= 4);
 }
@@ -263,7 +266,11 @@ async fn an_explicit_wallclock_closes_the_child_at_the_stated_deadline() {
             .iter()
             .any(|message| message.content.to_string().contains("delegated time limit")),
         "the child transcript explains the deadline {}",
-        history.iter().map(|m| m.content.to_string()).collect::<Vec<_>>().join("")
+        history
+            .iter()
+            .map(|m| m.content.to_string())
+            .collect::<Vec<_>>()
+            .join("")
     );
 }
 
@@ -347,11 +354,7 @@ impl Provider for Denying {
     ) -> Result<Reply, ProviderError> {
         if last_user(&request).contains("loop until bounded") {
             let mut offered = self.offered.lock().unwrap();
-            *offered = request
-                .tools
-                .iter()
-                .map(|tool| tool.name.clone())
-                .collect();
+            *offered = request.tools.iter().map(|tool| tool.name.clone()).collect();
             return Ok(text_reply("child saw the surface"));
         }
         if !has_result(&request, "d1") {
@@ -498,7 +501,10 @@ async fn the_parents_goal_budget_caps_a_child_when_the_parent_states_none() {
         child_turns: AtomicUsize::new(0),
     });
     let (_dir, runtime, store) = harness(None, provider).await;
-    store.initialize("parent", "goal holder", "root").await.unwrap();
+    store
+        .initialize("parent", "goal holder", "root")
+        .await
+        .unwrap();
     store
         .update_state(
             "parent",
@@ -520,11 +526,16 @@ async fn the_parents_goal_budget_caps_a_child_when_the_parent_states_none() {
     assert_eq!(granted["source"], json!("goal"));
     let history = store.history(&child).await.unwrap();
     assert!(
+        history.iter().any(|message| message
+            .content
+            .to_string()
+            .contains("delegated turn allowance")),
+        "the inherited cap closed the child {}",
         history
             .iter()
-            .any(|message| message.content.to_string().contains("delegated turn allowance")),
-        "the inherited cap closed the child {}",
-        history.iter().map(|m| m.content.to_string()).collect::<Vec<_>>().join("")
+            .map(|m| m.content.to_string())
+            .collect::<Vec<_>>()
+            .join("")
     );
 }
 
@@ -546,11 +557,7 @@ impl Provider for Parked {
             return Err(ProviderError::Interrupted);
         }
         if !has_result(&request, "d1") {
-            return Ok(tool_reply(
-                "d1",
-                "task",
-                json!({"prompt": "hang quietly"}),
-            ));
+            return Ok(tool_reply("d1", "task", json!({"prompt": "hang quietly"})));
         }
         Ok(text_reply("parent done"))
     }
