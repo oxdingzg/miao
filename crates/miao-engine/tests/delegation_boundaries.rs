@@ -12,7 +12,6 @@ use miao_engine::{
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
-    state::Mutation,
     store::Store,
     tools::Tools,
 };
@@ -68,16 +67,19 @@ async fn harness(
     (dir, runtime, store)
 }
 
-async fn admit(store: &Store, prompt: &str) {
-    store
-        .admit(Input {
-            agent_references: Default::default(),
-            command: None,
-            session_id: "parent".into(),
-            input_id: "one".into(),
-            prompt: prompt.into(),
-            delivery: Delivery::Steer,
-        })
+async fn admit(runtime: &Runtime, prompt: &str) {
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: prompt.into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
         .await
         .unwrap();
 }
@@ -157,6 +159,17 @@ fn last_user(request: &ModelRequest) -> String {
         .to_string()
 }
 
+fn any_user(request: &ModelRequest, needle: &str) -> bool {
+    request.messages.iter().any(|message| {
+        message.role == "user"
+            && message.content.as_array().is_some_and(|parts| {
+                parts
+                    .iter()
+                    .any(|part| part["text"].as_str().is_some_and(|text| text.contains(needle)))
+            })
+    })
+}
+
 fn has_result(request: &ModelRequest, call: &str) -> bool {
     request.messages.iter().any(|message| {
         message.content.as_array().is_some_and(|parts| {
@@ -173,6 +186,7 @@ struct Bounded {
     budget: Option<Value>,
     child_sleep_ms: u64,
     child_turns: AtomicUsize,
+    seed_goal: bool,
 }
 
 #[async_trait]
@@ -202,6 +216,13 @@ impl Provider for Bounded {
                 json!({"command": format!("echo {turn}")}),
             ));
         }
+        if self.seed_goal && !has_result(&request, "g0") {
+            return Ok(tool_reply(
+                "g0",
+                "goal",
+                json!({"objective": "hold the line", "status": "active", "budget": {"iterations": 2}}),
+            ));
+        }
         if !has_result(&request, "d1") {
             let mut input = json!({"prompt": "loop until bounded"});
             if let Some(budget) = &self.budget {
@@ -219,9 +240,10 @@ async fn an_explicit_parent_budget_closes_the_child_at_the_stated_turn_allowance
         budget: Some(json!({"max_turns": 2})),
         child_sleep_ms: 0,
         child_turns: AtomicUsize::new(0),
+        seed_goal: false,
     });
     let (_dir, runtime, store) = harness(None, provider.clone()).await;
-    admit(&store, "delegate with a budget").await;
+    admit(&runtime, "delegate with a budget").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -252,9 +274,10 @@ async fn an_explicit_wallclock_closes_the_child_at_the_stated_deadline() {
         budget: Some(json!({"wallclock_ms": 400})),
         child_sleep_ms: 120,
         child_turns: AtomicUsize::new(0),
+        seed_goal: false,
     });
     let (_dir, runtime, store) = harness(None, provider.clone()).await;
-    admit(&store, "delegate under a deadline").await;
+    admit(&runtime, "delegate under a deadline").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -298,7 +321,7 @@ impl Provider for Refusing {
 async fn assert_refused(input: Value, needle: &str) {
     let provider = Arc::new(Refusing { input });
     let (_dir, runtime, store) = harness(None, provider).await;
-    admit(&store, "delegate a refused input").await;
+    admit(&runtime, "delegate a refused input").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let started = store
@@ -361,7 +384,7 @@ impl Provider for Denying {
             return Ok(tool_reply(
                 "d1",
                 "task",
-                json!({"prompt": "loop until bounded", "deny_tools": ["bash"]}),
+                json!({"prompt": "loop until bounded", "deny_tools": ["recall"]}),
             ));
         }
         Ok(text_reply("parent done"))
@@ -374,15 +397,15 @@ async fn deny_tools_narrow_the_child_surface() {
         offered: Mutex::new(Vec::new()),
     });
     let (_dir, runtime, store) = harness(None, provider.clone()).await;
-    admit(&store, "delegate without bash").await;
+    admit(&runtime, "delegate without bash").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
     let granted = boundary(&store, &child).await;
-    assert_eq!(granted["deny_tools"], json!(["bash"]));
+    assert_eq!(granted["deny_tools"], json!(["recall"]));
     let offered = provider.offered.lock().unwrap();
     assert!(offered.contains(&"read_file".to_string()), "{offered:?}");
-    assert!(!offered.contains(&"bash".to_string()), "{offered:?}");
+    assert!(!offered.contains(&"recall".to_string()), "{offered:?}");
     // A delegated child is a leaf: the delegation tools are gone either way.
     assert!(!offered.contains(&"task".to_string()), "{offered:?}");
 }
@@ -399,16 +422,24 @@ impl Provider for Redispatch {
         _: mpsc::Sender<Value>,
         token: CancellationToken,
     ) -> Result<Reply, ProviderError> {
-        let last = last_user(&request);
-        if last.contains("second pass") {
+        let parts: Vec<Value> = request
+            .messages
+            .iter()
+            .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
+            .collect();
+        // The engine interleaves reminder notes between tool results, so the
+        // flow is routed by markers anywhere in the user text, not by the
+        // newest one alone.
+        let parent = any_user(&request, "start the watch");
+        if !parent && any_user(&request, "second pass") {
             return Ok(text_reply("second report"));
         }
-        if last.contains("hang quietly") {
+        if !parent && any_user(&request, "hang quietly") {
             // The child parks until the engine cancels its run.
             token.cancelled().await;
             return Err(ProviderError::Interrupted);
         }
-        if last.contains("start the watch") {
+        if parent {
             if !has_result(&request, "watch") {
                 return Ok(tool_reply(
                     "watch",
@@ -427,10 +458,34 @@ impl Provider for Redispatch {
             if !has_result(&request, "stop") {
                 return Ok(tool_reply("stop", "task_cancel", json!({"id": "kid"})));
             }
-            if !has_result(&request, "final") {
-                // The settled child may be redispatched.
+            // The cancel reply returns before the ledger settles the child,
+            // so the redispatch may bounce once with the refusal; retry
+            // instead of racing the settle, and give up after eight bounces.
+            let tries = parts
+                .iter()
+                .filter(|part| {
+                    part["type"] == "tool_use"
+                        && part["name"] == "task"
+                        && part["id"]
+                            .as_str()
+                            .is_some_and(|id| id.starts_with("final"))
+                })
+                .count();
+            let refused = parts
+                .iter()
+                .rev()
+                .find(|part| {
+                    part["type"] == "tool_result"
+                        && part["tool_use_id"]
+                            .as_str()
+                            .is_some_and(|id| id.starts_with("final"))
+                })
+                .and_then(|part| part["content"].as_str())
+                .map(|text| text.contains("outcome is unknown"))
+                .unwrap_or(false);
+            if tries < 8 && (refused || tries == 0) {
                 return Ok(tool_reply(
-                    "final",
+                    &format!("final{}", tries + 1),
                     "task",
                     json!({"prompt": "second pass", "session_id": "kid"}),
                 ));
@@ -443,7 +498,7 @@ impl Provider for Redispatch {
 #[tokio::test]
 async fn a_running_child_refuses_redispatch_until_its_outcome_is_settled() {
     let (_dir, runtime, store) = harness(None, Arc::new(Redispatch)).await;
-    admit(&store, "start the watch").await;
+    admit(&runtime, "start the watch").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let transcript = store.history("parent").await.unwrap();
@@ -466,7 +521,9 @@ async fn a_running_child_refuses_redispatch_until_its_outcome_is_settled() {
         .into_iter()
         .filter(|event| event.kind == "subagent_start")
         .count();
-    assert_eq!(starts, 1, "one delegation, one adoptive redispatch");
+    // The background watch and the successful adoptive redispatch each
+    // record one start; the refused attempt records none.
+    assert_eq!(starts, 2, "one delegation, one adoptive redispatch");
     // The refusal path settled the first run before the second one ran.
     let child = delegated_child(&store, "parent").await;
     let cancelled = store
@@ -484,11 +541,12 @@ async fn an_explicit_budget_is_capped_by_what_the_delegating_turn_has_left() {
         budget: Some(json!({"max_turns": 50})),
         child_sleep_ms: 0,
         child_turns: AtomicUsize::new(0),
+        seed_goal: false,
     });
     // The parent holds four turns; the delegation spends one, so the child's
     // grant can never exceed the three the delegator may still spend.
     let (_dir, runtime, store) = harness(Some(4), provider).await;
-    admit(&store, "delegate greedily").await;
+    admit(&runtime, "delegate greedily").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -503,25 +561,10 @@ async fn the_parents_goal_budget_caps_a_child_when_the_parent_states_none() {
         budget: None,
         child_sleep_ms: 0,
         child_turns: AtomicUsize::new(0),
+        seed_goal: true,
     });
     let (_dir, runtime, store) = harness(None, provider).await;
-    store
-        .initialize("parent", "goal holder", "root")
-        .await
-        .unwrap();
-    store
-        .update_state(
-            "parent",
-            "seed-goal",
-            Mutation::parse(
-                "goal",
-                json!({"objective": "hold the line", "status": "active", "budget": {"iterations": 2}}),
-            )
-            .unwrap(),
-        )
-        .await
-        .unwrap();
-    admit(&store, "delegate under the goal").await;
+    admit(&runtime, "delegate under the goal").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -570,7 +613,7 @@ impl Provider for Parked {
 #[tokio::test]
 async fn cancelling_the_parent_run_settles_a_synchronously_waited_child() {
     let (_dir, runtime, store) = harness(None, Arc::new(Parked)).await;
-    admit(&store, "delegate and wait").await;
+    admit(&runtime, "delegate and wait").await;
     let child = delegated_child(&store, "parent").await;
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
