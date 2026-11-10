@@ -2629,30 +2629,30 @@ impl Tools {
                             .read_ledger
                             .lock()
                             .unwrap_or_else(|held| held.into_inner());
-                        let history = ledger
-                            .deliveries
-                            .entry(path.to_string_lossy().into_owned())
-                            .or_default();
-                        let earlier = history
-                            .iter()
-                            .position(|delivery| {
+                        let key = path.to_string_lossy().into_owned();
+                        let found = ledger.deliveries.get_mut(&key).and_then(|history| {
+                            history.iter().position(|delivery| {
                                 delivery.form == form && delivery.fingerprint == sha256
                             })
-                            .map(|position| position + 1);
-                        match earlier {
-                            Some(read) => {
+                        });
+                        match found {
+                            Some(position) => {
                                 ledger.reads += 1;
                                 ledger.duplicate_reads += 1;
                                 ledger.bytes_saved += delivered as u64;
-                                Some(read)
+                                Some(position + 1)
                             }
                             None => {
                                 ledger.reads += 1;
                                 ledger.bytes_delivered += delivered as u64;
-                                history.push(ReadDelivery {
-                                    form,
-                                    fingerprint: sha256.clone(),
-                                });
+                                ledger
+                                    .deliveries
+                                    .entry(key)
+                                    .or_default()
+                                    .push(ReadDelivery {
+                                        form,
+                                        fingerprint: sha256.clone(),
+                                    });
                                 None
                             }
                         }
