@@ -4485,6 +4485,9 @@ impl Store {
                 "SELECT seq,kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('usage','provider.started','provider.request','provider.attempt','provider.retry','tool.completed','role.provider.started','role.provider.completed','permission.approved','permission.saved_allowed','question.resolved','input.cancelled','input.edited','tool.input_error','tool.input_recovery.stopped','hook.completed') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
+            let mut last_usage_ms: Option<u64> = None;
+            let mut gaps_cold: Vec<u64> = Vec::new();
+            let mut gaps_read: Vec<u64> = Vec::new();
             while let Some(row) = rows.next()? {
                 let kind: String = row.get(1)?;
                 let data: Value = serde_json::from_str(&row.get::<_, String>(2)?)?;
@@ -4593,6 +4596,16 @@ impl Store {
                             turns += 1;
                         }
                         let usage = &data["usage"];
+                        let at = row.get::<_, Option<u64>>(3)?;
+                        if let (Some(at), Some(previous)) = (at, last_usage_ms) {
+                            let gap = at.saturating_sub(previous);
+                            if usage["cacheReadInputTokens"].as_u64().unwrap_or(0) == 0 {
+                                gaps_cold.push(gap);
+                            } else {
+                                gaps_read.push(gap);
+                            }
+                        }
+                        last_usage_ms = at.or(last_usage_ms);
                         provider_usage.observe(usage);
                         if usage["inputTokens"].as_u64().is_some_and(|input| {
                             usage["cacheReadInputTokens"].as_u64().unwrap_or(0)
@@ -4830,6 +4843,12 @@ impl Store {
                     "invalidBreakdowns":invalid_cache_rows,
                     "serverCacheState":"unknown",
                     "recommendations":cache_recommendations,
+                    "gaps": {
+                        "coldTurns": gaps_cold.len(),
+                        "readTurns": gaps_read.len(),
+                        "coldMedianMinutes": crate::usage::median_gap_minutes(&mut gaps_cold),
+                        "readMedianMinutes": crate::usage::median_gap_minutes(&mut gaps_read),
+                    },
                     "hitRatio": if turns + partial_turns > 0 && invalid_cache_rows == 0
                         && coverage["input"].as_u64() == Some(turns + partial_turns)
                         && coverage["cacheRead"].as_u64() == Some(turns + partial_turns) {
