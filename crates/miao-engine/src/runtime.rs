@@ -192,7 +192,7 @@ impl FairPool {
         self.shared.claim(owner);
         self.stats.settle(waited);
         Ok(FairPermit {
-            permit,
+            permit: Some(permit),
             shared: self.shared.clone(),
             owner: owner.to_owned(),
         })
@@ -214,7 +214,7 @@ impl FairPool {
 /// A held permit plus its owner, so dropping it returns both the fleet slot
 /// and the owner's share.
 struct FairPermit {
-    permit: tokio::sync::OwnedSemaphorePermit,
+    permit: Option<tokio::sync::OwnedSemaphorePermit>,
     shared: Arc<PoolShared>,
     owner: String,
 }
@@ -225,7 +225,7 @@ impl Drop for FairPermit {
         // The share comes back before the fleet slot: a woken waiter that
         // loses the fast path re-queues and takes the slot when this
         // explicitly taken permit drops.
-        drop(std::mem::take(&mut self.permit));
+        drop(self.permit.take());
     }
 }
 
