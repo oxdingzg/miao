@@ -61,7 +61,7 @@ fn input(prompt: &str) -> Input {
 async fn runtime(url: &str, dir: &std::path::Path) -> Runtime {
     Runtime::new(
         Store::open(dir.join("engine.db")).await.unwrap(),
-        Arc::new(OpenAIChat::new(url, "fixture".into(), "model".into()).unwrap())
+        Arc::new(OpenAIChat::new(url.to_owned(), "fixture".into(), "model".into()).unwrap())
             as Arc<dyn Provider>,
         Tools::new(dir).await.unwrap(),
     )

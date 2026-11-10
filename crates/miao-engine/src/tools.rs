@@ -1696,15 +1696,17 @@ impl Tools {
         // bare "tool is not available" gives it nothing to correct with. An
         // advertised name that fails for a capability reason keeps its own
         // error, so only the truly unregistered wording changes.
+        // Bind the catalog: the schema borrow below has to outlive this
+        // statement, and `definitions()` returns an owned Vec.
+        let definitions = self.definitions();
         if matches!(error, ToolError::Unsupported)
-            && !self.definitions().iter().any(|tool| tool.name == name)
+            && !definitions.iter().any(|tool| tool.name == name)
         {
             return format!(
                 "Unknown tool: {name}. This call was not executed. Call one of the available tools instead; do not repeat completed operations."
             );
         }
-        let schema = self
-            .definitions()
+        let schema = definitions
             .iter()
             .find(|tool| tool.name == name)
             .map(|tool| &tool.input_schema);
