@@ -239,6 +239,158 @@ mod cors_tests {
             Some(&HeaderValue::from_static("miao-engine-protocol"))
         );
     }
+
+    /// Every rejection on the command plane names a code and carries the
+    /// protocol tag: an unsupported client or a feature the plane does not
+    /// know must read as an explicit refusal, never as a silent empty
+    /// success. This is the G2 "unsupported features error clearly" proof.
+    #[tokio::test]
+    async fn the_rpc_plane_names_every_rejection_instead_of_degrading() {
+        use super::Host;
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use std::collections::HashMap;
+        use tokio::sync::Mutex;
+        use tower::ServiceExt;
+
+        struct Echo;
+        #[async_trait::async_trait]
+        impl crate::provider::Provider for Echo {
+            async fn stream(
+                &self,
+                _: crate::protocol::ModelRequest,
+                _: tokio::sync::mpsc::Sender<serde_json::Value>,
+                _: tokio_util::sync::CancellationToken,
+            ) -> Result<crate::provider::Reply, crate::provider::ProviderError> {
+                Ok(crate::provider::Reply {
+                    content: serde_json::json!([{ "type": "text", "text": "done" }]),
+                    usage: serde_json::json!({}),
+                    needs_tools: false,
+                })
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::store::Store::open(dir.path().join("engine.db"))
+            .await
+            .unwrap();
+        let runtime = crate::runtime::Runtime::new(
+            store,
+            std::sync::Arc::new(Echo),
+            crate::tools::Tools::new(dir.path()).await.unwrap(),
+        )
+        .await
+        .unwrap();
+        let state = std::sync::Arc::new(super::Shared {
+            host: Mutex::new(Host::new(runtime.clone())),
+            runtime,
+            token: "test-token".to_string(),
+            leases: Mutex::new(HashMap::new()),
+            stop: tokio_util::sync::CancellationToken::new(),
+        });
+        let app = axum::Router::new()
+            .route("/rpc", axum::routing::post(super::rpc))
+            .route("/version", axum::routing::get(super::version))
+            .with_state(state);
+
+        let body_code = |response: axum::response::Response| async move {
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let parsed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            parsed["error"]["code"].as_str().map(str::to_string)
+        };
+
+        // 1. No bearer token: the plane refuses before touching a Session.
+        let anonymous = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(body_code(anonymous).await.as_deref(), Some("unauthorized"));
+
+        // 2. A client speaking an unknown protocol revision is named, so an
+        // old window cannot half-drive a newer engine.
+        let wrong_protocol = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header("authorization", "Bearer test-token")
+                    .header(super::PROTOCOL_HEADER, "engine-http-999")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong_protocol.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body_code(wrong_protocol).await.as_deref(),
+            Some("unsupported_protocol")
+        );
+
+        // 3. A body that is not a typed request is refused, not guessed.
+        let malformed = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header("authorization", "Bearer test-token")
+                    .body(Body::from(r#"{"id":"x"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body_code(malformed).await.as_deref(),
+            Some("invalid_request")
+        );
+
+        // 4. A feature the plane does not know (no such command) is an
+        // explicit invalid_request, never an empty success.
+        let unknown_feature = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/rpc")
+                    .header("authorization", "Bearer test-token")
+                    .body(Body::from(r#"{"id":1,"command":{"type":"time_travel"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unknown_feature.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body_code(unknown_feature).await.as_deref(),
+            Some("invalid_request")
+        );
+
+        // 5. A supported endpoint answers, tagged with the revision it speaks.
+        let version = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/version")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(version.status(), StatusCode::OK);
+        assert_eq!(
+            version.headers().get(super::PROTOCOL_HEADER),
+            Some(&HeaderValue::from_static(super::PROTOCOL_VERSION))
+        );
+    }
 }
 
 /// Provider requests may carry base64 image attachments; match the engine's
