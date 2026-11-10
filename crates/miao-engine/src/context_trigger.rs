@@ -2,10 +2,11 @@
 //!
 //! The anchor is the engine's normalized per-turn usage: the last `usage`
 //! event's `inputTokens` (inclusive of cache read/write) plus `outputTokens`
-//! approximates what the next provider turn re-sends. Tokens are unknown until
-//! a provider turn reports them, so an unknown window or missing usage means
-//! no trigger; nothing is invented. Gate ②'s provider counting will replace
-//! the char estimate for messages that have not been counted yet.
+//! approximates what the next provider turn re-sends. A provider count is an
+//! input to the decision, never a precondition for it: the trigger stays armed
+//! on a window the host declares, and the messages a turn has not counted yet
+//! are estimated. Gate ②'s provider counting will replace the char estimate
+//! for messages that have not been counted yet.
 
 use crate::protocol::{Error, Message};
 use crate::store::Store;
@@ -14,10 +15,32 @@ use serde_json::{json, Value};
 use std::future::Future;
 use std::time::Duration;
 
+/// One gate decision that kept this checkpoint idle. It rides the run's progress
+/// channel for the host and, when `logged`, the engine's own log: "why did this
+/// Session grow without ever compacting" used to be answerable only by reading
+/// the gate code, because every rejection left the session untouched and silent.
+fn idle_gate<P: FnMut(Value)>(notify: &mut P, notice: Value, logged: bool) {
+    if logged {
+        let gate = notice["gate"].as_u64().unwrap_or_default();
+        let reason = notice["reason"].as_str().unwrap_or_default().to_owned();
+        let session = notice["session_id"].as_str().unwrap_or_default().to_owned();
+        crate::diagnostics::warn(
+            &format!("context gate {gate} kept the checkpoint idle: {reason}"),
+            &[
+                ("session", session),
+                ("reason", reason),
+                ("detail", notice.to_string()),
+            ],
+        );
+    }
+    notify(notice);
+}
+
 /// Explicit trigger configuration from the product layer.
 #[derive(Debug, Clone)]
 pub struct Budget {
-    /// Effective context window for the provider. Unknown keeps the trigger off.
+    /// Effective context window for the provider. Unknown leaves the explicit
+    /// headroom as the whole threshold.
     pub window: Option<u64>,
     /// Fraction of the window at which compaction triggers.
     pub ratio: f64,
@@ -29,24 +52,26 @@ impl Budget {
     /// The later of the explicit headroom and the configured window ratio. An
     /// unknown window degrades to the explicit headroom alone.
     pub fn threshold(&self) -> u64 {
-        let ratio_bound = self
-            .window
-            .map(|window| (window as f64 * self.ratio) as u64);
-        match ratio_bound {
-            Some(bound) => bound.max(self.headroom),
+        // A window this process never resolved stays a gap the runtime closes
+        // before it asks: it names the model that will answer and reads the
+        // host's window for it. Inventing a default window here would make the
+        // trigger disagree with the request bound, which only ever uses the
+        // window the endpoint or the host actually stated.
+        match self.window {
+            Some(window) => ((window as f64 * self.ratio) as u64).max(self.headroom),
             None => self.headroom,
         }
     }
 
     /// Whether the anchored context plus not-yet-counted messages crosses the
-    /// threshold. An unknown window never triggers.
+    /// threshold.
     pub fn should_compact(&self, context_tokens: Option<u64>, pending_tokens: u64) -> bool {
-        match context_tokens {
-            Some(context_tokens) if self.window.is_some() => {
-                context_tokens.saturating_add(pending_tokens) >= self.threshold()
-            }
-            _ => false,
-        }
+        // A missing provider count is zero known tokens, not a reason to keep
+        // the history whole: requiring the measurement is what turned a missing
+        // anchor into a permanent absence of compaction, so the Session grew to
+        // the hard limit with nothing scheduled to shrink it.
+        let known = context_tokens.unwrap_or(0);
+        known.saturating_add(pending_tokens) >= self.threshold()
     }
 }
 
@@ -222,6 +247,15 @@ where
         Some((context, counted_through)) => {
             let (pending, pending_chars) = store.pending_context(session, counted_through).await?;
             if pending.is_empty() && !forced {
+                idle_gate(
+                    notify,
+                    json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.skipped", "gate": 1,
+                        "reason": "nothing_pending", "context_tokens": context,
+                    }),
+                    true,
+                );
                 return Ok(false);
             }
             (
@@ -230,9 +264,44 @@ where
             )
         }
         None if forced => (0, 0),
-        None => return Ok(false),
+        // A Session with no marked usage report yet: the whole selected history
+        // is uncounted, which is a measurement this trigger may estimate, not a
+        // reason to leave the history whole until the endpoint refuses it. Gate
+        // ② still prefers the provider's count over the char estimate.
+        None => {
+            let (pending, pending_chars) = store.pending_context(session, 0).await?;
+            idle_gate(
+                notify,
+                json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.skipped", "gate": 1,
+                    "reason": "no_context_anchor",
+                    "messages": pending.len(), "chars": pending_chars,
+                }),
+                true,
+            );
+            (
+                0,
+                resolve_pending_tokens(count(pending).await, pending_chars as usize),
+            )
+        }
     };
+    let total = context.saturating_add(pending_tokens);
     if !forced && !budget.should_compact(Some(context), pending_tokens) {
+        // Below half the threshold nothing is near the wall, and one line per
+        // settled turn would bury the case somebody is investigating; the
+        // progress notice still goes out every time.
+        idle_gate(
+            notify,
+            json!({
+                "session_id": session, "run_id": run,
+                "kind": "compaction.skipped", "gate": 1,
+                "reason": "under_threshold",
+                "context_tokens": context, "pending_tokens": pending_tokens,
+                "threshold": budget.threshold(),
+            }),
+            total.saturating_mul(2) >= budget.threshold(),
+        );
         return Ok(false);
     }
     // Gate ⑤ runs after the size is known: a tripped breaker may open a
@@ -240,8 +309,16 @@ where
     // Checking it before the anchor made the trip permanent for the rest of the
     // Session, so a summarizer that failed once could never compact again and the
     // history grew until the endpoint refused every request.
-    if !breaker.allows_at(context.saturating_add(pending_tokens)) {
-        notify(channel("compaction.skipped"));
+    if !breaker.allows_at(total) {
+        idle_gate(
+            notify,
+            json!({
+                "session_id": session, "run_id": run,
+                "kind": "compaction.skipped", "gate": 5, "reason": "breaker_open",
+                "context_tokens": context, "pending_tokens": pending_tokens,
+            }),
+            true,
+        );
         return Ok(false);
     }
     // The summary covers the warm prefix the next turn would re-send, which is
@@ -252,6 +329,15 @@ where
         None => store.selected_history(session).await?,
     };
     if messages.is_empty() {
+        idle_gate(
+            notify,
+            json!({
+                "session_id": session, "run_id": run,
+                "kind": "compaction.skipped", "gate": 1,
+                "reason": "no_selected_history",
+            }),
+            true,
+        );
         return Ok(false);
     }
     let plan = plan_summary(messages.len(), per_pass);
@@ -1213,21 +1299,38 @@ mod tests {
     }
 
     #[test]
-    fn unknown_window_or_usage_never_triggers() {
-        let budget = Budget {
-            window: None,
-            ratio: 0.8,
-            headroom: 1,
-        };
-        assert!(!budget.should_compact(Some(1_000_000), 0));
-        assert!(!budget.should_compact(None, 0));
+    fn a_missing_provider_count_is_an_estimate_not_a_veto() {
         let budget = Budget {
             window: Some(1_000),
             ratio: 0.8,
             headroom: 100,
         };
+        // Nothing counted yet: the pending estimate alone decides, so a Session
+        // whose provider reports no usage still compacts instead of growing to
+        // the hard limit with the trigger idle.
+        assert!(!budget.should_compact(None, 799));
+        assert!(budget.should_compact(None, 800));
         assert!(!budget.should_compact(Some(700), 50));
         assert!(budget.should_compact(Some(700), 100));
+    }
+
+    #[test]
+    fn an_unknown_window_plans_against_the_explicit_headroom() {
+        let budget = Budget {
+            window: None,
+            ratio: 0.8,
+            headroom: 50_000,
+        };
+        assert_eq!(budget.threshold(), 50_000);
+        assert!(!budget.should_compact(None, 49_999));
+        assert!(budget.should_compact(None, 50_000));
+        let budget = Budget {
+            window: None,
+            ratio: 0.8,
+            headroom: 1,
+        };
+        assert!(!budget.should_compact(None, 0));
+        assert!(budget.should_compact(None, 1));
     }
 
     #[test]

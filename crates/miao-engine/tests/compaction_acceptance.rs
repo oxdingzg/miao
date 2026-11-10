@@ -8,7 +8,7 @@ use miao_engine::{
     events::Lifecycle,
     permission::{Config, Policy},
     protocol::{Delivery, Input, ModelRequest},
-    provider::{CountTokens, Provider, ProviderError, Reply},
+    provider::{CountTokens, Identity, Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -70,6 +70,13 @@ impl Provider for Fixture {
     async fn count_tokens(&self, _: &ModelRequest) -> CountTokens {
         self.counts.fetch_add(1, Ordering::SeqCst);
         CountTokens::Counted(1_000)
+    }
+
+    fn identity(&self) -> Option<Identity> {
+        Some(Identity {
+            protocol: "openai-chat".into(),
+            model: "fixture-window-model".into(),
+        })
     }
 }
 
@@ -196,6 +203,64 @@ async fn a_crossed_limit_compacts_in_one_call_and_the_next_turn_starts_from_it()
         .filter(|event| event.kind == "history.compacted")
         .count();
     assert_eq!(compactions, 2, "one checkpoint per crossed turn");
+}
+
+#[tokio::test]
+async fn a_session_on_the_default_model_compacts_from_its_declared_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Fixture {
+        summaries: AtomicUsize::new(0),
+        counts: AtomicUsize::new(0),
+        main_messages: std::sync::Mutex::new(Vec::new()),
+    });
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config::default()).unwrap(),
+    )
+    .await
+    .unwrap();
+    // Nothing sets `--context-limits` for this process, and the Session states no
+    // model: it runs on the engine's default model, which is the ordinary case.
+    // The only window available is the one the host declares for that model.
+    std::env::set_var("MIAO_TEST_ROUTE_WINDOW_KEY", "fixture-key");
+    let manifest = dir.path().join("routes.json");
+    std::fs::write(
+        &manifest,
+        r#"[{"id":"main","provider":"openai-chat","model":"fixture-window-model","endpoint":"http://127.0.0.1:1","credential":{"type":"environment","key":"MIAO_TEST_ROUTE_WINDOW_KEY"},"primary":true,"limit":{"context":128000,"output":8192}}]"#,
+    )
+    .unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let (_, limits) = miao_engine::model_routes::load(
+        &manifest,
+        &workspace,
+        provider.clone() as Arc<dyn Provider>,
+    )
+    .await
+    .unwrap();
+    runtime.set_route_limits(limits).await;
+
+    drain(&runtime, &store, "one", 1).await;
+
+    assert_eq!(
+        provider.summaries.load(Ordering::SeqCst),
+        1,
+        "a Session on the engine's default model compacts from its declared window"
+    );
+    let kinds: Vec<String> = store
+        .events("s", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|event| event.kind)
+        .collect();
+    assert!(
+        kinds.iter().any(|kind| kind == "history.compacted"),
+        "{kinds:?}"
+    );
 }
 
 #[tokio::test]

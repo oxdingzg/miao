@@ -9,7 +9,7 @@ use crate::{
     protocol::{
         Admission, Attachment, Delivery, Error, Input, ModelRequest, PeerReceipt, PeerWake,
     },
-    provider::{Provider, ProviderError},
+    provider::{Identity, Provider, ProviderError},
     store::{RuntimeLease, SessionLease, Store},
     tool_replay::ToolReplay,
     tools::{Prepared, ToolError, Tools},
@@ -198,6 +198,21 @@ fn resolve_limits(
         .or(learned)
 }
 
+/// The model a turn is served by, for every decision keyed by model id: the
+/// Session's own binding when it stated one, otherwise the identity the provider
+/// reports. A Session on the engine's default model states no binding at all,
+/// which is the ordinary case, and window resolution is keyed by model id — so
+/// leaving it unnamed skipped both the declared and the catalog window and left
+/// automatic compaction off for exactly those Sessions.
+fn served_model(
+    binding: Option<&crate::session_model::Binding>,
+    served: Option<Identity>,
+) -> Option<String> {
+    binding
+        .map(|binding| binding.model.clone())
+        .or_else(|| served.map(|identity| identity.model))
+}
+
 /// The request budget a known window leaves: the window minus the room this step
 /// needs for its own content, the pruning protection, and the summary reserve.
 /// Trimming to the raw window leaves the shortened request at exactly the
@@ -258,7 +273,9 @@ impl Inner {
     /// default model's window; a Session on any other model used to run with no
     /// trigger at all until the endpoint refused it. Once the endpoint states its
     /// window, that window is a usable budget with the same formula the product
-    /// uses for the default model.
+    /// uses for the default model. Every lookup is keyed by the model id, so a
+    /// Session that stated no binding of its own must still name the model it is
+    /// served by; otherwise none of the three sources resolves.
     async fn learned_limits(&self, model: Option<&str>) -> Option<ContextLimits> {
         Some(window_limits(self.learned_window_for(model).await?))
     }
@@ -3216,16 +3233,16 @@ async fn execute(
         // operator override, then the Session model's declared capacity, then
         // a refusal-learned window - so bounding and compaction cannot
         // disagree about what fits.
-        let model = binding.as_ref().map(|binding| binding.model.as_str());
+        let model = served_model(binding.as_ref(), provider.identity());
         let declared = inner
             .route_limits
             .lock()
             .await
-            .context_limit_for(model.unwrap_or_default());
+            .context_limit_for(model.as_deref().unwrap_or_default());
         let known = match &*inner.context.lock().await {
             Some(limits) if limits.window > 0 => Some((limits.window, limits.headroom, false)),
             _ => {
-                let learned = inner.learned_window_for(model).await;
+                let learned = inner.learned_window_for(model.as_deref()).await;
                 declared
                     .map(|window| (window, window_limits(window).headroom, false))
                     .or_else(|| {
@@ -4504,19 +4521,23 @@ command: None,
         };
         // Which window this Session plans against, most specific first: the
         // operator's explicit `engine.context_limits`, the window the product
-        // declares for the Session's own model, then one the endpoint stated when
-        // it refused this history. `--context-limits` alone cannot carry the last
-        // two: the engine is one process per Location, so it describes the default
-        // model, and a Session on any other model used to run with no trigger at
+        // declares for the model this Session is served by, then one the endpoint
+        // stated when it refused this history. `--context-limits` alone cannot
+        // carry the last two: the engine is one process per Location, so it
+        // describes the default model, and a Session on any other model used to
+        // run with no trigger at
         // all until the endpoint refused it.
         let configured = inner.context.lock().await.clone();
-        let model = binding.as_ref().map(|binding| binding.model.as_str());
+        // The identity that produced this reply, not the one the request was
+        // sent with: a primary/secondary route reports which of the two answered,
+        // and the window must be that model's.
+        let model = served_model(binding.as_ref(), provider.reply_identity(&reply));
         let declared = inner
             .route_limits
             .lock()
             .await
-            .context_limit_for(model.unwrap_or_default());
-        let learned = inner.learned_limits(model).await;
+            .context_limit_for(model.as_deref().unwrap_or_default());
+        let learned = inner.learned_limits(model.as_deref()).await;
         let limits = resolve_limits(configured, declared, learned).or_else(|| {
             requested
                 .is_some()
