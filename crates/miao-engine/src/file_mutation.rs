@@ -667,7 +667,7 @@ mod tests {
         assert_eq!(regions.len(), 2);
         assert_eq!(regions[0].line, 2);
         assert_eq!(regions[1].line, 4);
-        let replaced = replace_regions(&text, &regions, "TWO");
+        let replaced = replace_regions(text, &regions, "TWO");
         assert_eq!(replaced, "one\nTWO\nthree\nTWO\n");
         // Trimming makes every whitespace spelling of a line equivalent.
         assert_eq!(fuzzy_regions(text, "  two  ").len(), 2);
@@ -679,7 +679,7 @@ mod tests {
         let regions = fuzzy_regions(text, "beta\n");
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].line, 2);
-        let replaced = replace_regions(&text, &regions, "B");
+        let replaced = replace_regions(text, &regions, "B");
         assert_eq!(replaced, "alpha\nB\ngamma\n");
     }
 
@@ -691,6 +691,6 @@ mod tests {
         let text = "标题\n    中文行    \n尾\n";
         let regions = fuzzy_regions(text, "中文行");
         assert_eq!(regions.len(), 1);
-        assert_eq!(replace_regions(&text, &regions, "改"), "标题\n改\n尾\n");
+        assert_eq!(replace_regions(text, &regions, "改"), "标题\n改\n尾\n");
     }
 }
