@@ -6222,9 +6222,7 @@ mod tests {
         shell.set_running_tool(Some(label));
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).expect("terminal");
-        terminal
-            .draw(|frame| shell.render(frame))
-            .expect("draw");
+        terminal.draw(|frame| shell.render(frame)).expect("draw");
         let rows = (0..24)
             .map(|y| {
                 (0..120)
