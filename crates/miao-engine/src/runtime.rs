@@ -5457,7 +5457,16 @@ command: None,
                     result.get("error").is_none() && result["exit_code"].as_i64() == Some(0);
                 let cancelled = cancel.is_cancelled();
                 let accepted = command_passed && source_stable && task_stable && !cancelled;
-                let receipt = inner.store.record(session,"verification.completed",json!({"run_id":run,"attempt":verification_failures+1,"command":command,"started_at":started_at,"completed_at":now_ms(),"source_before":source_before,"source_after":source_after,"source_stable":source_stable,"task_before":task_before,"task_after":task_after,"task_stable":task_stable,"command_passed":command_passed,"accepted":accepted,"cancelled":cancelled,"result":result})).await?;
+                // The receipt carries the review state a reviewer reads: it
+                // is derived from this run's executed checks, never from the
+                // model's account of them.
+                let review = crate::verification::Review::of(
+                    command_passed,
+                    accepted,
+                    cancelled,
+                    verification_failures,
+                );
+                let receipt = inner.store.record(session,"verification.completed",json!({"review":review.snapshot(),"run_id":run,"attempt":verification_failures+1,"command":command,"started_at":started_at,"completed_at":now_ms(),"source_before":source_before,"source_after":source_after,"source_stable":source_stable,"task_before":task_before,"task_after":task_after,"task_stable":task_stable,"command_passed":command_passed,"accepted":accepted,"cancelled":cancelled,"result":result})).await?;
                 if cancel.is_cancelled() {
                     return Ok(());
                 }

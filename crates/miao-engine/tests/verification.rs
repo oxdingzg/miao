@@ -137,6 +137,14 @@ async fn a_failing_completion_check_continues_once_then_closes_with_a_classifica
     assert!(events
         .iter()
         .any(|(kind, data)| kind == "loop.stopped" && data["reason"] == "verification-failed"));
+    // Both attempts ran the check and both failed: each receipt is a recorded
+    // finding rather than an unverified silence.
+    let reviews: Vec<&str> = events
+        .iter()
+        .filter(|(kind, _)| kind == "verification.completed")
+        .map(|(_, data)| data["review"]["state"].as_str().unwrap())
+        .collect();
+    assert_eq!(reviews, vec!["found", "found"]);
     // The repair prompt carries the bounded output of the failed command.
     let history = serde_json::to_string(&store.history("s").await.unwrap()).unwrap();
     assert!(history.contains("The completion check failed"), "{history}");
@@ -158,6 +166,8 @@ async fn a_passing_completion_check_lets_the_run_finish() {
     assert_eq!(receipt.1["command"], "echo verification-ok");
     assert_eq!(receipt.1["result"]["exit_code"], 0);
     assert_eq!(receipt.1["accepted"], true);
+    // A first attempt that passes is verified, not merely accepted.
+    assert_eq!(receipt.1["review"]["state"], "verified");
     assert_eq!(
         receipt.1["source_after"]["coverage"],
         "native-write-targets"
@@ -186,6 +196,58 @@ impl Provider for Writer {
         }
         Quiet.stream(request, progress, cancel).await
     }
+}
+
+/// Answers text-only, then writes the file the completion check looks for on
+/// its second call, so the same check can fail once and pass after a repair.
+struct Fixer(std::sync::atomic::AtomicUsize);
+#[async_trait]
+impl Provider for Fixer {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+            return Ok(Reply {
+                needs_tools: true,
+                usage: json!({}),
+                content: json!([{"type":"tool_use","id":"fix","name":"write_file","input":{"path":"ok.txt","text":"ok","expected_sha256":null}}]),
+            });
+        }
+        Ok(Reply {
+            needs_tools: false,
+            content: json!([{"type":"text","text":"done"}]),
+            usage: json!({}),
+        })
+    }
+}
+
+/// The state a closed loop produces: the check found a defect, the repair made
+/// it pass, and the receipt says "fixed" rather than a second bare "passed".
+#[tokio::test]
+async fn a_failed_check_then_a_repair_is_reviewed_as_fixed() {
+    let dir = tempfile::tempdir().unwrap();
+    let command = if cfg!(windows) {
+        "if exist ok.txt (exit 0) else (exit 1)"
+    } else {
+        "test -f ok.txt"
+    };
+    let fixer = Arc::new(Fixer(std::sync::atomic::AtomicUsize::new(0)));
+    let (runtime, store) = launch(dir.path(), command, fixer).await;
+    assert_eq!(reason(&store).await, "completed");
+    let events = store.events("s", 0, 300).await.unwrap();
+    let states: Vec<&str> = events
+        .iter()
+        .filter(|event| event.kind == "verification.completed")
+        .map(|event| event.data["review"]["state"].as_str().unwrap())
+        .collect();
+    assert_eq!(states, vec!["found", "fixed"], "{states:?}");
+    assert!(events
+        .iter()
+        .any(|event| event.kind == "verification.passed"));
+    runtime.shutdown().await;
 }
 
 #[tokio::test]
@@ -222,6 +284,9 @@ async fn cancellation_records_an_unaccepted_receipt_without_admitting_a_repair_p
         .unwrap();
     assert_eq!(receipt.data["accepted"], false);
     assert_eq!(receipt.data["cancelled"], true);
+    // A cancelled check proves nothing about the source, so the review state
+    // says so instead of leaving a bare boolean to be read either way.
+    assert_eq!(receipt.data["review"]["state"], "unverified");
     assert_eq!(
         events
             .iter()
