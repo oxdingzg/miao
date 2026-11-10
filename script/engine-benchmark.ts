@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Cost/quality benchmark for the TypeScript and Rust (native) engines over a
- * representative task set.
+ * Cost/quality benchmark for the product engine over a representative task
+ * set, with the 2026-11-01 two-arm protocol still available for a dual-engine
+ * binary.
  *
  * Each task gets a fresh workspace per cell; the same prompts run through
- * `miao run --format json` once per engine (rust placement requires
- * MIAO_ENGINE_STORAGE, TypeScript is the default without it). Metrics come
- * from the streamed events - per-step cost and token counts - so no
- * database is queried and both runtimes are measured identically.
+ * `miao run --format json` once per engine (the "rust" arm sets
+ * MIAO_ENGINE_STORAGE, the other arms use the default placement). Metrics
+ * come from the streamed events - per-step cost and token counts - so no
+ * database is queried and all arms are measured identically.
  *
  * Task families cover the acceptance axes: single-file bug fix, feature,
  * cross-file refactor, multi-file consistency, a mid-run kill + resume
@@ -15,10 +16,15 @@
  * request whose correct outcome is a refusal.
  *
  * Usage:
- *   bun script/engine-benchmark.ts --binary miao-dev [--models a/b,c/d]
- *       [--tasks bugfix,feature] [--engines ts,rust] [--repeat 1]
+ *   bun script/engine-benchmark.ts --binary miao [--models a/b,c/d]
+ *       [--tasks bugfix,feature] [--engines product] [--repeat 1]
  *       [--storage ~/.local/share/miao/bench-storage] [--out report.md]
  *       [--data docs/experiments/<round>/]
+ *
+ * Engines: the binary is the single Rust product, so the default arm is
+ * "product" — the binary's own default placement. "ts"/"rust" keep the
+ * 2026-11-01 two-arm baseline protocol runnable against a dual-engine
+ * binary; on a rust-only binary both collapse to the same engine.
  *
  * Billing: provider cache hits make raw `input` incomparable across engines,
  * so every figure reports `billed-in = input + cacheRead` for BOTH runtimes
@@ -32,6 +38,8 @@
 import { chmod, mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+
+type Engine = "product" | "ts" | "rust"
 
 type Task = {
   id: string
@@ -511,7 +519,7 @@ const segmentsFor = (task: Task): Segment[] => {
 
 const runCell = async (
   task: Task,
-  engine: "ts" | "rust",
+  engine: Engine,
   options: { binary: string; model?: string; storage: string },
 ): Promise<Cell> => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), `bench-${task.id}-${engine}-`))
@@ -615,9 +623,14 @@ const budget = parse.number("--budget", 0)
 const storage = parse.string("--storage") ?? path.join(os.tmpdir(), "miao-bench-storage")
 const out = parse.string("--out")
 const data = parse.string("--data")
+/// "product" is the default placement of the given binary — the only arm that
+/// exists now that the binary is the Rust product. "ts"/"rust" survive for the
+/// 2026-11-01 two-arm baseline protocol, where the same flags selected
+/// placement on a dual-engine binary; on a rust-only binary they collapse to
+/// the same engine and must not be read as a TypeScript comparison.
 const engines = parse
-  .list("--engines", ["ts", "rust"])
-  .filter((engine): engine is "ts" | "rust" => engine === "ts" || engine === "rust")
+  .list("--engines", ["product"])
+  .filter((engine): engine is Engine => engine === "product" || engine === "ts" || engine === "rust")
 const wanted = parse.list(
   "--tasks",
   TASKS.map((task) => task.id),
@@ -628,7 +641,7 @@ const activeModels = models.length > 0 ? models : ["(configured default)"]
 type Attempt = {
   model: string
   task: string
-  engine: "ts" | "rust"
+  engine: Engine
   attempt: number
   ok: boolean
   turns: number
