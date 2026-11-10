@@ -139,16 +139,28 @@ impl Drop for Harness {
     }
 }
 
-fn sample(pid: u32) -> (u64, Option<usize>) {
+/// Cumulative CPU milliseconds, resident kilobytes and open descriptors for
+/// one process. The criterion asks for all three across the switches, so the
+/// sample carries the CPU time too rather than inferring it from wall clock.
+fn sample(pid: u32) -> (u128, u64, Option<usize>) {
     let output = Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid.to_string()])
+        .args(["-o", "time=", "-o", "rss=", "-p", &pid.to_string()])
         .output()
         .expect("run ps");
-    let rss = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u64>()
-        .unwrap_or(0);
-    (rss, descriptors(pid))
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut fields = text.split_whitespace();
+    let time = fields.next().unwrap_or("0:00");
+    let rss = fields.next().and_then(|value| value.parse::<u64>().ok());
+    (cpu_millis(time), rss.unwrap_or(0), descriptors(pid))
+}
+
+/// `ps` prints `M:SS.ss` on macOS and `HH:MM:SS` on Linux; reading the parts
+/// from the left with a base of sixty handles both.
+fn cpu_millis(spec: &str) -> u128 {
+    let seconds = spec.split(':').fold(0.0, |total, part| {
+        total * 60.0 + part.parse::<f64>().unwrap_or(0.0)
+    });
+    (seconds * 1000.0) as u128
 }
 
 fn descriptors(pid: u32) -> Option<usize> {
@@ -189,7 +201,8 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
     );
     // Let the first frames settle so the baseline is not start-up cost.
     std::thread::sleep(Duration::from_secs(1));
-    let (rss_before, fds_before) = sample(harness.pid);
+    let (cpu_before, rss_before, fds_before) = sample(harness.pid);
+    let mut rss_peak = rss_before;
 
     let mut opened = 0;
     for index in 0..SWITCHES {
@@ -217,9 +230,13 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
         );
         opened += 1;
         if opened % 25 == 0 {
-            let (rss, fds) = sample(harness.pid);
+            let (cpu, rss, fds) = sample(harness.pid);
+            if rss > rss_peak {
+                rss_peak = rss;
+            }
             println!(
-                "PERF-04 switches={opened} rss_kb={rss} fds={}",
+                "PERF-04 switches={opened} cpu_ms={} rss_kb={rss} fds={}",
+                cpu.saturating_sub(cpu_before),
                 fds.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
             );
         }
@@ -227,13 +244,19 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
     // Give teardown a moment before the closing sample, so an in-flight release
     // cannot read as a leak.
     std::thread::sleep(Duration::from_secs(1));
-    let (rss_after, fds_after) = sample(harness.pid);
+    let (cpu_after, rss_after, fds_after) = sample(harness.pid);
     println!(
-        "PERF-04 switch curve: {opened} switches, rss_kb {rss_before} -> {rss_after}, fds {} -> {}",
+        "PERF-04 switch curve: {opened} switches, cpu_ms={}, rss_kb {rss_before} -> {rss_after}, fds {} -> {}",
+        cpu_after.saturating_sub(cpu_before),
         fds_before.map_or_else(|| "unavailable".to_string(), |count| count.to_string()),
         fds_after.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
     );
 
+    let cpu_used = cpu_after.saturating_sub(cpu_before);
+    assert!(
+        cpu_used < 60_000,
+        "a hundred switches used {cpu_used} ms of CPU, which is a busy loop rather than a switch curve"
+    );
     let growth = rss_after.saturating_sub(rss_before);
     assert!(
         growth < 8 * 1024,
@@ -245,4 +268,19 @@ fn a_hundred_session_switches_do_not_grow_the_process() {
             "a hundred switches left {before} -> {after} open descriptors"
         );
     }
+
+    // The criterion's leak half: at rest the process returns to its high-water
+    // mark instead of climbing past it. A leak per switch would put the final
+    // sample above every checkpoint; a healthy one holds or drops once the
+    // teardown has settled.
+    std::thread::sleep(Duration::from_secs(3));
+    let (_, rss_recheck, fds_recheck) = sample(harness.pid);
+    println!(
+        "PERF-04 switch settle: rss_kb={rss_recheck} (peak {rss_peak}), fds={}",
+        fds_recheck.map_or_else(|| "unavailable".to_string(), |count| count.to_string())
+    );
+    assert!(
+        rss_recheck <= rss_peak + 1024,
+        "after a hundred switches the process kept climbing at rest: checkpoint peak {rss_peak} kB, settled at {rss_recheck} kB"
+    );
 }
