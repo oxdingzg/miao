@@ -16,6 +16,10 @@ use std::sync::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+/// Serializes the tests that tune the no-progress floor through the process
+/// environment; parallel set/remove would race each other.
+static NO_PROGRESS_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 struct Script {
     calls: AtomicUsize,
     progress: bool,
@@ -209,9 +213,14 @@ async fn continues_independent_work_without_a_human_prompt_then_idles_with_locke
 
 #[tokio::test]
 async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop_budget() {
+    let _env = NO_PROGRESS_ENV_LOCK.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     setup(&store, "active", true, true, dir.path()).await;
+    // The no-progress pause requires the stall to persist past the
+    // configurable floor (MIAO_NO_PROGRESS_MIN_SECS, default 120s); this
+    // test pins the immediate-pause behaviour with the floor disabled.
+    std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let provider = Arc::new(Script {
         calls: AtomicUsize::new(0),
         progress: false,
@@ -227,6 +236,7 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
     .unwrap();
     runtime.resume("s").await.unwrap();
     finished(&store).await;
+    std::env::remove_var("MIAO_NO_PROGRESS_MIN_SECS");
     assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
     assert!(store
         .events("s", 0, 500)
@@ -487,6 +497,8 @@ async fn runnable_todos_keep_draining_without_any_goal() {
 
 #[tokio::test]
 async fn stalled_todos_pause_the_loop_without_any_goal() {
+    let _env = NO_PROGRESS_ENV_LOCK.lock().await;
+    std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     seed_work(&store, true, dir.path()).await;
@@ -520,6 +532,8 @@ async fn stalled_todos_pause_the_loop_without_any_goal() {
 /// 3524 continuations, instead of stopping after two idling replies.
 #[tokio::test]
 async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the_run() {
+    let _env = NO_PROGRESS_ENV_LOCK.lock().await;
+    std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).unwrap();
