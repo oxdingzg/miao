@@ -8,7 +8,6 @@ import { Database } from "../src/database/database"
 import { EventV2 } from "../src/event"
 import { LocationServiceMap } from "../src/location-services"
 import { SessionExecution } from "../src/session/execution"
-import { SessionExecutionLocal } from "../src/session/execution/local"
 import { SessionOwnership } from "../src/session/ownership"
 import { SessionSchema } from "../src/session/schema"
 import { SessionStore } from "../src/session/store"
@@ -183,7 +182,7 @@ test("a wakeup for a session owned by another window is advisory, not a conflict
       LayerNode.group([Database.node, EventV2.node, LocationServiceMap.node, SessionStore.node, SessionExecution.node]),
       [
         [Database.node, Database.sharedLayerFromPath(storage)],
-        [SessionExecution.node, SessionExecutionLocal.node],
+        [SessionExecution.node, SessionExecution.noopLayer],
       ],
     )
     await Effect.runPromise(
