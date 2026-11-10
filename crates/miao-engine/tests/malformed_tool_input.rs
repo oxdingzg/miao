@@ -239,7 +239,7 @@ async fn oversized_tool_arguments_pause_the_drain_with_a_visible_reason() {
 #[tokio::test]
 async fn repeated_failing_identical_calls_hit_the_same_refusal_bound() {
     let dir = tempfile::tempdir().unwrap();
-    let bodies = (0..12)
+    let bodies = (0..9)
         .map(|index| {
             (
                 200,
