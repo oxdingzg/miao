@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "8caccb41452f87afa0944e2a9e869745325fe5d6",
+  "sourceCommit": "bfb0c944e58aedc9d06ed32ef44df73d7e8c7221",
   "method": "TypeScript AST: literal import/export declarations and literal dynamic imports in tracked packages/**/*.ts and tsx; @miao/core/* and relative module resolution. Self-namespace exports excluded. Source/verification classify by /src/ path. This is an import boundary inventory, not call-graph reachability or proof of runtime activation. Computed imports, require(), DI lookup and generated/third-party consumers require separate review.",
   "categories": {
     "runner": {
@@ -7,11 +7,11 @@
       "verificationEdges": 15
     },
     "execution": {
-      "sourceEdges": 22,
-      "verificationEdges": 30
+      "sourceEdges": 19,
+      "verificationEdges": 29
     },
     "scheduling": {
-      "sourceEdges": 17,
+      "sourceEdges": 16,
       "verificationEdges": 10
     },
     "inbox": {
@@ -23,7 +23,7 @@
       "verificationEdges": 66
     },
     "placement": {
-      "sourceEdges": 25,
+      "sourceEdges": 23,
       "verificationEdges": 16
     }
   },
@@ -422,36 +422,6 @@
     },
     {
       "category": "execution",
-      "file": "packages/miao/src/cli/cli-runtime.ts",
-      "line": 23,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "execution",
-      "file": "packages/miao/src/cli/cli-runtime.ts",
-      "line": 24,
-      "target": "packages/core/src/session/execution/local.ts",
-      "specifier": "@miao/core/session/execution/local",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "execution",
-      "file": "packages/miao/src/cli/cmd/session.ts",
-      "line": 6,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "execution",
       "file": "packages/miao/src/engine/native-engine.ts",
       "line": 73,
       "target": "packages/core/src/session/execution.ts",
@@ -473,7 +443,7 @@
     {
       "category": "execution",
       "file": "packages/miao/src/runtime/host.ts",
-      "line": 69,
+      "line": 68,
       "target": "packages/core/src/session/execution.ts",
       "specifier": "@miao/core/session/execution",
       "kind": "dynamic-import",
@@ -483,7 +453,7 @@
     {
       "category": "execution",
       "file": "packages/miao/src/runtime/host.ts",
-      "line": 70,
+      "line": 69,
       "target": "packages/core/src/session/execution/local.ts",
       "specifier": "@miao/core/session/execution/local",
       "kind": "dynamic-import",
@@ -509,16 +479,6 @@
       "kind": "import",
       "typeOnly": false,
       "scope": "source"
-    },
-    {
-      "category": "execution",
-      "file": "packages/miao/test/cli/session-cmd.test.ts",
-      "line": 9,
-      "target": "packages/core/src/session/execution.ts",
-      "specifier": "@miao/core/session/execution",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "verification"
     },
     {
       "category": "execution",
@@ -2512,26 +2472,6 @@
     },
     {
       "category": "placement",
-      "file": "packages/miao/src/cli/cmd/session.ts",
-      "line": 34,
-      "target": "packages/core/src/session/engine-placement.ts",
-      "specifier": "@miao/core/session/engine-placement",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "placement",
-      "file": "packages/miao/src/cli/cmd/tui.ts",
-      "line": 442,
-      "target": "packages/core/src/session/engine-placement.ts",
-      "specifier": "@miao/core/session/engine-placement",
-      "kind": "dynamic-import",
-      "typeOnly": false,
-      "scope": "source"
-    },
-    {
-      "category": "placement",
       "file": "packages/miao/src/engine/admission.ts",
       "line": 5,
       "target": "packages/core/src/session/engine-placement.ts",
@@ -3179,16 +3119,6 @@
       "kind": "import",
       "typeOnly": false,
       "scope": "verification"
-    },
-    {
-      "category": "scheduling",
-      "file": "packages/miao/src/cli/cli-runtime.ts",
-      "line": 22,
-      "target": "packages/core/src/session/schedule.ts",
-      "specifier": "@miao/core/session/schedule",
-      "kind": "import",
-      "typeOnly": false,
-      "scope": "source"
     },
     {
       "category": "scheduling",
