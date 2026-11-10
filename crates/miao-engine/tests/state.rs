@@ -485,6 +485,12 @@ async fn provider_receives_dependency_ready_context_without_unlocking_serial_wor
         .await
         .unwrap();
     let request = receive.recv().await.unwrap();
+    // The state note in the request is what this test asserts, not how the loop
+    // ends: with an independent todo still runnable the drain keeps continuing
+    // after the reply, and the no-progress pause now waits out its stall floor
+    // instead of stopping within the first two turns. Stop the turn the capture
+    // came from, then let the run close, so the wait does not depend on pacing.
+    runtime.cancel("s").await.unwrap();
     finished(&store, 1).await;
     let text = request
         .messages
