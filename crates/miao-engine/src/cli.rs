@@ -59,9 +59,8 @@ fn stored_credential(
     // keep working, so the account the store calls `default` answers; only an
     // integration whose accounts are all named is genuinely ambiguous.
     candidates.sort_by(|left, right| {
-        let rank = |credential: &crate::credential::Metadata| {
-            u8::from(credential.label != "default")
-        };
+        let rank =
+            |credential: &crate::credential::Metadata| u8::from(credential.label != "default");
         rank(left)
             .cmp(&rank(right))
             .then_with(|| left.id.cmp(&right.id))

@@ -2609,7 +2609,12 @@ fn model_routes_with(
     let mut routes = routes.unwrap_or_default();
     let requested = match requested.is_empty() {
         true => merged_config(layers)
-            .and_then(|parsed| parsed.get("model").and_then(|value| value.as_str()).map(str::to_string))
+            .and_then(|parsed| {
+                parsed
+                    .get("model")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            })
             .unwrap_or_default(),
         false => requested.to_string(),
     };
@@ -5840,9 +5845,9 @@ mod tests {
         anchored_sessions, carry_uncommitted_changes, config_layers, config_layers_with, db_backup,
         db_file_bytes, db_read_only, db_report, db_vacuum, default_db, engine_argv_with,
         event_line, git_worktree_main_checkout, launch, lsp_servers, mcp_servers, merged_config,
-        model_routes, model_routes_with, parsed_session_location, plugin_entries, project_copy_apply,
-        project_copy_plan, retention_plan, serve_database, settle_primary, strip_comments,
-        tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
+        model_routes, model_routes_with, parsed_session_location, plugin_entries,
+        project_copy_apply, project_copy_plan, retention_plan, serve_database, settle_primary,
+        strip_comments, tree_bytes, uninstall_targets, worktree_remove_apply, worktree_remove_plan,
         write_routes_manifest,
     };
     use std::sync::{Mutex, MutexGuard};
@@ -6109,8 +6114,8 @@ mod tests {
                  \"models\": { \"deepseek\": {} } } } }",
         );
         let database = credential_fixture(&dir, &["vendor", "mirror"]);
-        let routes = model_routes_with(std::slice::from_ref(&dir), "", Some(&database))
-            .expect("derives");
+        let routes =
+            model_routes_with(std::slice::from_ref(&dir), "", Some(&database)).expect("derives");
         assert_eq!(routes.len(), 2);
         let ids: Vec<&str> = routes
             .iter()
@@ -6143,8 +6148,8 @@ mod tests {
                  \"models\": { \"deepseek\": {}, \"other\": {} } } } }",
         );
         let database = credential_fixture(&dir, &["vendor"]);
-        let routes = model_routes_with(std::slice::from_ref(&dir), "", Some(&database))
-            .expect("derives");
+        let routes =
+            model_routes_with(std::slice::from_ref(&dir), "", Some(&database)).expect("derives");
         let primary = routes
             .iter()
             .find(|route| route["primary"] == true)
@@ -6270,7 +6275,9 @@ mod tests {
         );
         let layers = std::slice::from_ref(&dir);
         assert!(
-            model_routes_with(layers, "", None).expect("derives").is_empty(),
+            model_routes_with(layers, "", None)
+                .expect("derives")
+                .is_empty(),
             "no key anywhere routes nothing"
         );
         std::env::set_var("FIXTURE_ENV_API_KEY", "sk-env");

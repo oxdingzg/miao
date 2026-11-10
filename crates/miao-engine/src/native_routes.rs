@@ -931,7 +931,10 @@ mod tests {
             manifest[1]["account"]["label"], "work",
             "the account list is built from this metadata"
         );
-        assert_eq!(manifest[0]["primary"], true, "the chosen route stays default");
+        assert_eq!(
+            manifest[0]["primary"], true,
+            "the chosen route stays default"
+        );
         // Deleting every key takes their routes with them.
         crate::credential::remove_key(&database, "vendor", None).expect("removes");
         refresh_routes(&path, &sources, Some(&database)).expect("prunes");
