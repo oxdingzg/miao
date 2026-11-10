@@ -20,12 +20,12 @@ use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc, RwLock as StdRwLock,
     },
 };
 use tokio::io::AsyncBufReadExt;
-use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Semaphore};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Notify, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
@@ -46,6 +46,184 @@ const MAX_IDENTICAL_REFUSALS: u32 = 3;
 /// approval prompts can hold a turn for minutes without writing anything
 /// durable, and a client cannot tell that from a dead engine.
 const TOOL_WAIT_NOTICE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Fleet-wide bounds for the shared execution pools. This engine process hosts
+/// every Session of a workspace, so these are cross-Session caps: drains cap
+/// concurrent provider turns, jobs cap background tool processes, subagents
+/// cap delegated child Sessions. Terminals and LSP servers carry registry
+/// bounds of their own (`crate::terminal`, `crate::lsp`).
+const DRAIN_SLOTS: usize = 8;
+const JOB_SLOTS: usize = 4;
+const JOBS_PER_SESSION: usize = 2;
+const SUBAGENT_SLOTS: usize = crate::subagent::CONCURRENCY_LIMIT;
+
+/// Queue accounting for one pool: how many calls are waiting, how many were
+/// admitted, and how long admission took. The observable half of the bounds —
+/// a stress run reads it back through `resources` instead of instrumenting
+/// the caller.
+#[derive(Default)]
+struct PoolStats {
+    queued: AtomicU64,
+    admitted: AtomicU64,
+    queue_wait_total_ms: AtomicU64,
+    queue_wait_max_ms: AtomicU64,
+}
+
+impl PoolStats {
+    fn begin(&self) {
+        self.queued.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn settle(&self, waited: std::time::Instant) {
+        let ms = waited.elapsed().as_millis() as u64;
+        self.queued.fetch_sub(1, Ordering::Relaxed);
+        self.admitted.fetch_add(1, Ordering::Relaxed);
+        self.queue_wait_total_ms.fetch_add(ms, Ordering::Relaxed);
+        self.queue_wait_max_ms.fetch_max(ms, Ordering::Relaxed);
+    }
+
+    fn abandon(&self) {
+        self.queued.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// The per-owner half of a fair pool: who holds how many permits, and the
+/// wakeup every share-gated waiter sleeps on.
+struct PoolShared {
+    per_owner: usize,
+    held: std::sync::Mutex<HashMap<String, usize>>,
+    released: Notify,
+}
+
+impl PoolShared {
+    fn share_free(&self, owner: &str) -> bool {
+        self.held.lock().unwrap().get(owner).copied().unwrap_or(0) < self.per_owner
+    }
+
+    fn claim(&self, owner: &str) {
+        *self
+            .held
+            .lock()
+            .unwrap()
+            .entry(owner.to_owned())
+            .or_insert(0) += 1;
+    }
+
+    fn release(&self, owner: &str) {
+        {
+            let mut held = self.held.lock().unwrap();
+            if let Some(count) = held.get_mut(owner) {
+                *count -= 1;
+                if *count == 0 {
+                    held.remove(owner);
+                }
+            }
+        }
+        self.released.notify_waiters();
+    }
+}
+
+/// One shared permit pool with a per-owner fair share. The semaphore caps the
+/// fleet; the share stops one Session from holding every permit while the
+/// other Sessions of this process queue behind it. Queueing, not rejection:
+/// the hard fleet limits (the jobs registry cap, the terminal registry)
+/// reject, a fair share only delays.
+struct FairPool {
+    limit: usize,
+    global: Arc<Semaphore>,
+    shared: Arc<PoolShared>,
+    stats: PoolStats,
+}
+
+impl FairPool {
+    fn new(limit: usize, per_owner: usize) -> Self {
+        Self {
+            limit,
+            global: Arc::new(Semaphore::new(limit)),
+            shared: Arc::new(PoolShared {
+                per_owner,
+                held: std::sync::Mutex::new(HashMap::new()),
+                released: Notify::new(),
+            }),
+            stats: PoolStats::default(),
+        }
+    }
+
+    /// One permit, or cancellation. A call from a Session already at its
+    /// share waits for one of that Session's own permits to come back;
+    /// otherwise it queues on the fleet semaphore, whose waiters are served
+    /// FIFO. Both waits observe `cancel`.
+    async fn acquire(&self, owner: &str, cancel: &CancellationToken) -> Result<FairPermit, ()> {
+        let waited = std::time::Instant::now();
+        self.stats.begin();
+        let permit = loop {
+            if !self.shared.share_free(owner) {
+                // Registering the wakeup before re-reading the share closes
+                // the race with a concurrent release: the release flips the
+                // share under the same lock it notifies after.
+                let notified = self.shared.released.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if !self.shared.share_free(owner) {
+                    tokio::select! {
+                        _ = cancel.cancelled() => { self.stats.abandon(); return Err(()); }
+                        _ = &mut notified => {}
+                    }
+                }
+                continue;
+            }
+            let slot = match self.global.clone().try_acquire_owned() {
+                Ok(slot) => slot,
+                Err(_) => {
+                    tokio::select! {
+                        _ = cancel.cancelled() => { self.stats.abandon(); return Err(()); }
+                        slot = self.global.clone().acquire_owned() => slot
+                            .map_err(|_| self.stats.abandon())?,
+                    }
+                }
+            };
+            // The grant may race our own share filling up; a closed share
+            // hands the slot back and falls through to the share wait.
+            if self.shared.share_free(owner) {
+                break slot;
+            }
+            drop(slot);
+        };
+        self.shared.claim(owner);
+        self.stats.settle(waited);
+        Ok(FairPermit {
+            permit,
+            shared: self.shared.clone(),
+            owner: owner.to_owned(),
+        })
+    }
+
+    fn snapshot(&self) -> Value {
+        json!({
+            "limit": self.limit,
+            "per_session": self.shared.per_owner,
+            "active": self.limit.saturating_sub(self.global.available_permits()),
+            "queued": self.stats.queued.load(Ordering::Relaxed),
+            "admitted": self.stats.admitted.load(Ordering::Relaxed),
+            "queue_wait_total_ms": self.stats.queue_wait_total_ms.load(Ordering::Relaxed),
+            "queue_wait_max_ms": self.stats.queue_wait_max_ms.load(Ordering::Relaxed),
+        })
+    }
+}
+
+/// A held permit plus its owner, so dropping it returns both the fleet slot
+/// and the owner's share.
+struct FairPermit {
+    permit: tokio::sync::OwnedSemaphorePermit,
+    shared: Arc<PoolShared>,
+    owner: String,
+}
+
+impl Drop for FairPermit {
+    fn drop(&mut self) {
+        self.shared.release(&self.owner);
+    }
+}
 
 #[derive(Clone)]
 pub struct Runtime {
@@ -84,9 +262,10 @@ struct Inner {
     credential_db: std::sync::OnceLock<Option<std::path::PathBuf>>,
     timers: Mutex<HashMap<String, Background>>,
     crons: Mutex<HashMap<String, Background>>,
-    job_slots: Arc<Semaphore>,
+    job_pool: FairPool,
     slots: Arc<Semaphore>,
-    subagent_slots: Arc<Semaphore>,
+    drain_stats: PoolStats,
+    subagent_pool: FairPool,
     started: Mutex<std::collections::HashSet<String>>,
     /// Sessions with a drain in this process. The timer heartbeat must not claim
     /// one: claiming advances the epoch and would fence the active drain.
@@ -528,9 +707,10 @@ impl Runtime {
                 credential_db: std::sync::OnceLock::new(),
                 timers: Mutex::new(HashMap::new()),
                 crons: Mutex::new(HashMap::new()),
-                job_slots: Arc::new(Semaphore::new(2)),
-                slots: Arc::new(Semaphore::new(8)),
-                subagent_slots: Arc::new(Semaphore::new(crate::subagent::CONCURRENCY_LIMIT)),
+                job_pool: FairPool::new(JOB_SLOTS, JOBS_PER_SESSION),
+                slots: Arc::new(Semaphore::new(DRAIN_SLOTS)),
+                drain_stats: PoolStats::default(),
+                subagent_pool: FairPool::new(SUBAGENT_SLOTS, crate::subagent::PER_SESSION_LIMIT),
                 started: Mutex::new(std::collections::HashSet::new()),
                 draining: std::sync::Mutex::new(std::collections::HashSet::new()),
                 stop: CancellationToken::new(),
@@ -1252,6 +1432,32 @@ impl Runtime {
             .lock()
             .map(|draining| !draining.is_empty())
             .unwrap_or(false)
+    }
+
+    /// The fleet-wide resource bounds and what they are doing right now:
+    /// every shared pool's limit, the per-Session fair share, and the queue
+    /// accounting a stress run reads.
+    pub async fn resources(&self) -> Value {
+        let inner = &self.inner;
+        let terminals = inner.terminals.lock().await;
+        json!({
+            "drains": {
+                "limit": DRAIN_SLOTS,
+                "active": DRAIN_SLOTS.saturating_sub(inner.slots.available_permits()),
+                "queued": inner.drain_stats.queued.load(Ordering::Relaxed),
+                "admitted": inner.drain_stats.admitted.load(Ordering::Relaxed),
+                "queue_wait_total_ms": inner.drain_stats.queue_wait_total_ms.load(Ordering::Relaxed),
+                "queue_wait_max_ms": inner.drain_stats.queue_wait_max_ms.load(Ordering::Relaxed),
+            },
+            "jobs": inner.job_pool.snapshot(),
+            "subagents": inner.subagent_pool.snapshot(),
+            "terminals": {
+                "limit": crate::terminal::GLOBAL_LIMIT,
+                "per_session": crate::terminal::PER_SESSION_LIMIT,
+                "active": terminals.len(),
+            },
+            "lsp": {"limit": crate::lsp::SERVER_LIMIT},
+        })
     }
 
     /// Re-derive the sections this build can reload and apply them in place.
@@ -2652,9 +2858,17 @@ async fn drain(
     force: bool,
     cancel: CancellationToken,
 ) -> Result<(), Error> {
+    inner.drain_stats.begin();
+    let waited = std::time::Instant::now();
     let _slot = tokio::select! {
-        _=cancel.cancelled()=>return Ok(()),
-        permit=inner.slots.clone().acquire_owned()=>permit.map_err(|_|Error::Closed)?,
+        _=cancel.cancelled()=>{
+            inner.drain_stats.abandon();
+            return Ok(());
+        }
+        permit=inner.slots.clone().acquire_owned()=>{
+            inner.drain_stats.settle(waited);
+            permit.map_err(|_|Error::Closed)?
+        }
     };
     if let Ok(mut draining) = inner.draining.lock() {
         draining.insert(session.clone());
@@ -6463,11 +6677,11 @@ async fn delegate(
         current = ancestor;
     }
 
-    let permit = tokio::select! {
-        _ = cancel.cancelled() => return Err(ToolError::Interrupted),
-        permit = inner.subagent_slots.clone().acquire_owned() => permit
-            .map_err(|_| ToolError::External("subagent scheduler unavailable".into()))?,
-    };
+    let permit = inner
+        .subagent_pool
+        .acquire(parent, &cancel)
+        .await
+        .map_err(|_| ToolError::Interrupted)?;
 
     let child = task
         .session_id
@@ -6607,7 +6821,7 @@ async fn finish_delegation(
     call: &str,
     child: &str,
     admitted_seq: u64,
-    permit: tokio::sync::OwnedSemaphorePermit,
+    permit: FairPermit,
     cancel: CancellationToken,
 ) -> Result<String, ToolError> {
     let mut reason = "completed";
@@ -7606,7 +7820,7 @@ async fn background(
     prepared: Prepared,
     cancel: CancellationToken,
 ) -> Result<(), Error> {
-    let permit = tokio::select! {_=cancel.cancelled()=>None,slot=inner.job_slots.clone().acquire_owned()=>Some(slot.map_err(|_|Error::Closed)?)};
+    let permit = inner.job_pool.acquire(session, &cancel).await.ok();
     let Some(_permit) = permit else {
         finish_background_job(
             &inner,

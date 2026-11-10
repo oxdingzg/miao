@@ -6,6 +6,10 @@ use serde_json::Value;
 /// and concurrency are capped and its prompt is bounded.
 pub const DEPTH_LIMIT: u32 = 4;
 pub const CONCURRENCY_LIMIT: usize = 4;
+/// A Session's share of the fleet-wide subagent pool. A parent at its share
+/// waits for one of its own children to come back instead of taking another
+/// child while other Sessions of this engine process wait.
+pub const PER_SESSION_LIMIT: usize = 2;
 /// The host policy sets no provider-turn cutoff for the operator's own Session,
 /// which is right: an operator can interrupt and can ask for more. A delegated
 /// child has neither, so a prompt that never converges runs for hours with

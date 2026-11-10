@@ -85,6 +85,10 @@ const DIAGNOSTICS_WAIT: Duration = Duration::from_secs(10);
 /// empty push before reporting the empty set as final.
 const DIAGNOSTICS_SETTLE: Duration = Duration::from_secs(5);
 
+/// One engine process serves every Session of a workspace, so the configured
+/// LSP servers are a fleet-wide bound: each one spawns a child process.
+pub const SERVER_LIMIT: usize = 8;
+
 struct Client {
     read: BufReader<Box<dyn AsyncRead + Unpin + Send>>,
     write: Box<dyn AsyncWrite + Unpin + Send>,
@@ -379,7 +383,7 @@ struct Plan {
 
 impl Plan {
     fn new(configs: Vec<Config>) -> Result<Self, Error> {
-        if configs.len() > 8 {
+        if configs.len() > SERVER_LIMIT {
             return Err(Error::Invalid("LSP server limit".into()));
         }
         let mut by_extension = BTreeMap::new();
