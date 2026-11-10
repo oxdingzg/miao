@@ -160,6 +160,16 @@ impl Drop for RuntimeLease {
     }
 }
 
+/// Facts about a run that stopped early, read back from the journal it wrote. A
+/// run that never committed an assistant reply is indistinguishable from a dead
+/// engine in the transcript, so the note that explains it needs both answers:
+/// whether anything was shown, and what the provider did before the stop.
+pub(crate) struct RunInterruption {
+    pub replied: bool,
+    pub attempts: u64,
+    pub last_failure: Option<String>,
+}
+
 impl Store {
     /// Read committed catalog facts without migrations, leases, or a Runtime.
     pub async fn open_reader(path: impl AsRef<Path>) -> Result<Self, Error> {
@@ -1107,6 +1117,44 @@ impl Store {
                     |row| row.get(0),
                 )
                 .optional()?)
+        })
+        .await
+    }
+
+    /// What an interrupted run left in the journal: whether the operator saw any
+    /// assistant reply from it, and how its provider attempts fared before the
+    /// stop. An interruption that produced nothing is the one that reads like the
+    /// engine died, so the note explaining it is written from these facts.
+    pub(crate) async fn run_interruption(
+        &self,
+        session: &str,
+        run: &str,
+    ) -> Result<RunInterruption, Error> {
+        let (session, run) = (session.to_owned(), run.to_owned());
+        self.call(move |conn| {
+            let replied: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='assistant.identity' AND json_extract(data,'$.run_id')=?2)",
+                params![session, run],
+                |row| row.get(0),
+            )?;
+            let attempts: u64 = conn.query_row(
+                "SELECT COUNT(*) FROM engine_event WHERE session_id=?1 AND kind='provider.retry' AND json_extract(data,'$.run_id')=?2",
+                params![session, run],
+                |row| row.get(0),
+            )?;
+            let last_failure: Option<String> = conn
+                .query_row(
+                    "SELECT json_extract(data,'$.reason') FROM engine_event WHERE session_id=?1 AND kind IN ('provider.retry','provider.failed') AND json_extract(data,'$.run_id')=?2 ORDER BY seq DESC LIMIT 1",
+                    params![session, run],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .flatten();
+            Ok(RunInterruption {
+                replied,
+                attempts,
+                last_failure,
+            })
         })
         .await
     }
