@@ -5164,11 +5164,28 @@ command: None,
                     _ => goal_stalled_since.or_else(|| Some(std::time::Instant::now())),
                 };
                 goal_signature = Some(signature);
-                // A text-only reply while background jobs are still pending is
-                // a yield, not a stall: the model subscribed to those jobs and
-                // has nothing to do until they finish. Finishing a job admits
-                // an input that wakes this loop, so stopping the drain here
+                // A text-only reply while background jobs or background
+                // subagent tasks are still pending is a yield, not a stall:
+                // the model subscribed to that work and has nothing to do
+                // until it finishes. Completion admits an input that wakes
+                // this loop (jobs in `finish_job_tx`, subagent tasks in the
+                // background delegation watcher), so stopping the drain here
                 // parks the session without handing it back to the operator.
+                // A no-progress pause needs the stall to have persisted, not
+                // just two fast turns: operators legitimately wait minutes on
+                // background work with an unchanged todo list. Seconds-level
+                // windows misfired on orchestration sessions (see #2824); the
+                // floor is operator-tunable for tests and embedded hosts.
+                let min_no_progress_secs = match std::env::var("MIAO_NO_PROGRESS_MIN_SECS")
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+                {
+                    Some(secs) => secs,
+                    None => 120,
+                };
+                let waited = goal_stalled_since
+                    .map(|since| since.elapsed().as_secs())
+                    .unwrap_or(0);
                 let waiting_jobs: Vec<String> = inner
                     .store
                     .jobs(session)
@@ -5186,11 +5203,19 @@ command: None,
                     })
                     .filter_map(|job| job["id"].as_str().map(str::to_owned))
                     .collect();
+                let waiting_tasks: Vec<String> = inner
+                    .store
+                    .subagents(session)
+                    .await?
+                    .into_iter()
+                    .filter(|task| task["status"] == "running")
+                    .filter_map(|task| task["id"].as_str().map(str::to_owned))
+                    .collect();
                 let reason = if allowance == Some(0) {
                     Some("budget")
-                } else if !waiting_jobs.is_empty() {
+                } else if !waiting_jobs.is_empty() || !waiting_tasks.is_empty() {
                     Some("waiting")
-                } else if goal_stalls >= 2 {
+                } else if goal_stalls >= 2 && waited >= min_no_progress_secs {
                     Some("no-progress")
                 } else {
                     None
@@ -5211,9 +5236,6 @@ command: None,
                     // Say what the loop was waiting on, for how long, and what
                     // happens now. A pause that only reports "no progress" reads
                     // like a background failure the operator has to diagnose.
-                    let waited = goal_stalled_since
-                        .map(|since| since.elapsed().as_secs())
-                        .unwrap_or(0);
                     let pause = match reason {
                         "budget" => format!(
                             "Task paused: the provider turn limit ({} turns) is used up after {} continuation turns. Nothing is running now and it will not resume on its own. Send a message to continue with a fresh allowance.",
