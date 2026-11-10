@@ -201,7 +201,7 @@ async fn a_session_at_its_share_leaves_free_slots_to_other_sessions() {
     .await
     .expect("the peer's job runs without waiting for the hog");
     let still_queued = store
-        .job("hog", &queued["job_id"].as_str().unwrap())
+        .job("hog", queued["job_id"].as_str().unwrap())
         .await
         .unwrap()
         .unwrap();
