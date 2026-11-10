@@ -131,7 +131,11 @@ struct Inner {
     config_generation: Mutex<u64>,
     /// Task-specific verification command run before a run may finish.
     verification: Mutex<Option<String>>,
-    breaker: Mutex<context_trigger::Breaker>,
+    /// Gate ⑤'s failure streak, per Session. One Session whose summarizer a
+    /// provider keeps refusing must not disable automatic compaction for every
+    /// other Session in the same Location, and the size a half-open attempt
+    /// compares against has to be the size that Session failed at.
+    breakers: Mutex<std::collections::HashMap<String, context_trigger::Breaker>>,
     /// Windows the endpoint itself stated when it refused a request. A Session
     /// whose model is not the engine's default has no configured window, so the
     /// first refusal is the only place its real ceiling appears; learning it
@@ -233,13 +237,26 @@ fn request_budget(window: u64, headroom: u64) -> u64 {
 /// hard ceiling and can never shed size again. A provider count that still reads
 /// under the window is not proof it fits either: the count is the provider's, but
 /// what is added to it is a local estimate over the turns appended since.
+///
+/// `summarizer_unavailable` adds the one case a refusal is too late to answer:
+/// the Session's own summarizer has already been refused `threshold` times, so
+/// the planned shrink cannot run, and once the trigger's threshold is crossed the
+/// history is past the point where compaction was supposed to act. Waiting for
+/// the endpoint to refuse a request that no longer fits costs the turn, so the
+/// deterministic shrink — the newest work plus the operator's prompt — is the
+/// only protection left. Below the threshold nothing is claimed: a Session that
+/// merely has a broken summarizer keeps its history whole.
 fn bound_budget(
     window: u64,
     headroom: u64,
     refused_before: bool,
     counted: Option<u64>,
+    summarizer_unavailable: bool,
+    threshold: u64,
 ) -> Option<u64> {
-    let over = refused_before || counted.is_some_and(|counted| counted > window);
+    let over = refused_before
+        || counted.is_some_and(|counted| counted > window)
+        || (summarizer_unavailable && counted.is_some_and(|counted| counted >= threshold));
     over.then(|| request_budget(window, headroom))
 }
 
@@ -281,6 +298,40 @@ impl Inner {
     /// served by; otherwise none of the three sources resolves.
     async fn learned_limits(&self, model: Option<&str>) -> Option<ContextLimits> {
         Some(window_limits(self.learned_window_for(model).await?))
+    }
+
+    /// Gate ⑤'s breaker for one Session, taken out of the map for the duration
+    /// of an attempt so no lock is held across the summarizer. An engine serves
+    /// every Session in a Location, so the streak a failing summarizer builds
+    /// belongs to the Session it failed for.
+    async fn take_breaker(&self, session: &str) -> context_trigger::Breaker {
+        self.breakers
+            .lock()
+            .await
+            .remove(session)
+            .unwrap_or_else(|| context_trigger::Breaker::new(3))
+    }
+
+    /// Put a breaker back after the attempt. A clean one is dropped instead of
+    /// kept, so the map never accumulates an entry per Session the engine has
+    /// compacted at some point.
+    async fn keep_breaker(&self, session: &str, breaker: context_trigger::Breaker) {
+        let mut breakers = self.breakers.lock().await;
+        if breaker.idle() {
+            breakers.remove(session);
+            return;
+        }
+        breakers.insert(session.to_owned(), breaker);
+    }
+
+    /// Whether this Session's summarizer is currently known to be failing, which
+    /// is what makes the deterministic shrink the only shrink left.
+    async fn summarizer_unavailable(&self, session: &str) -> bool {
+        self.breakers
+            .lock()
+            .await
+            .get(session)
+            .is_some_and(|breaker| !breaker.allows())
     }
 
     /// The base policy a turn starts from. Callers hold the returned `Arc` for
@@ -551,7 +602,7 @@ impl Runtime {
                 policy_origin: Mutex::new(None),
                 config_generation: Mutex::new(1),
                 verification: Mutex::new(None),
-                breaker: Mutex::new(crate::context_trigger::Breaker::new(3)),
+                breakers: Mutex::new(std::collections::HashMap::new()),
                 learned_window: Mutex::new(std::collections::BTreeMap::new()),
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
                 pressure_notified: Mutex::new(std::collections::HashMap::new()),
@@ -1531,10 +1582,11 @@ impl Runtime {
     }
 
     /// An explicit operator `compact` is the automatic trigger's breaker reset:
-    /// it clears the failure streak so a repaired summarizer gets a fresh try
-    /// instead of staying off until the process restarts.
-    pub async fn reset_compaction_breaker(&self) {
-        self.inner.breaker.lock().await.reset();
+    /// it clears this Session's failure streak so a repaired summarizer gets a
+    /// fresh try instead of staying off until the process restarts. It is scoped
+    /// to one Session because that is whose summarizer was refused.
+    pub async fn reset_compaction_breaker(&self, session: &str) {
+        self.inner.breakers.lock().await.remove(session);
     }
 
     /// Record a host-resolved agent for this Session's subsequent turns.
@@ -3261,20 +3313,22 @@ async fn execute(
             .lock()
             .await
             .context_limit_for(model.as_deref().unwrap_or_default());
-        let known = match &*inner.context.lock().await {
-            Some(limits) if limits.window > 0 => Some((limits.window, limits.headroom, false)),
-            _ => {
-                let learned = inner.learned_window_for(model.as_deref()).await;
-                declared
-                    .map(|window| (window, window_limits(window).headroom, false))
-                    .or_else(|| {
-                        learned.map(|window| (window, window_limits(window).headroom, true))
-                    })
-            }
-        };
+        // The same effective limits the compaction trigger plans against, so
+        // bounding and compaction cannot disagree about what fits. A window of
+        // zero states nothing and falls through to the next source.
+        let configured = inner
+            .context
+            .lock()
+            .await
+            .clone()
+            .filter(|limits| limits.window > 0);
+        // A window the endpoint stated, or one the shipped catalog declares, is a
+        // cap this process may impose on its own; nothing else is.
+        let refused_before = configured.is_none() && declared.is_none();
+        let learned = inner.learned_limits(model.as_deref()).await;
         let mut pressure = None;
-        let bound = match known {
-            Some((window, headroom, refused_before)) => {
+        let bound = match resolve_limits(configured, declared, learned) {
+            Some(limits) => {
                 let counted = match inner.store.context_anchor(session).await? {
                     Some((counted, through)) => {
                         let (_, pending_chars) =
@@ -3287,9 +3341,16 @@ async fn execute(
                     }
                     None => None,
                 };
-                pressure = counted.map(|counted| (window, counted));
-                bound_budget(window, headroom, refused_before, counted)
-                    .map(|budget| (window, budget))
+                pressure = counted.map(|counted| (limits.window, counted));
+                bound_budget(
+                    limits.window,
+                    limits.headroom,
+                    refused_before,
+                    counted,
+                    inner.summarizer_unavailable(session).await,
+                    limits.budget().threshold(),
+                )
+                .map(|budget| (limits.window, budget))
             }
             None => None,
         };
@@ -4563,7 +4624,12 @@ command: None,
         // describes the default model, and a Session on any other model used to
         // run with no trigger at
         // all until the endpoint refused it.
-        let configured = inner.context.lock().await.clone();
+        let configured = inner
+            .context
+            .lock()
+            .await
+            .clone()
+            .filter(|limits| limits.window > 0);
         // The identity that produced this reply, not the one the request was
         // sent with: a primary/secondary route reports which of the two answered,
         // and the window must be that model's.
@@ -4574,7 +4640,21 @@ command: None,
             .await
             .context_limit_for(model.as_deref().unwrap_or_default());
         let learned = inner.learned_limits(model.as_deref()).await;
-        let limits = resolve_limits(configured, declared, learned).or_else(|| {
+        let limits = resolve_limits(configured, declared, learned);
+        if limits.is_none() && closed_answer && requested.is_none() {
+            // Nothing states this Session's window, so there is nothing to plan
+            // against and automatic compaction cannot run for it. Name the model:
+            // the fix is an operator `engine.context_limits`, or a provider that
+            // reports an identity, and neither is guessable from silence.
+            crate::diagnostics::warn(
+                "automatic compaction is off: no context window resolved",
+                &[
+                    ("session", session.to_owned()),
+                    ("model", model.unwrap_or_else(|| "*".into())),
+                ],
+            );
+        }
+        let limits = limits.or_else(|| {
             requested
                 .is_some()
                 .then(crate::context_trigger::ContextLimits::operator_requested)
@@ -4657,8 +4737,10 @@ command: None,
                         .await
                 })
             };
-            let mut breaker = inner.breaker.lock().await;
+            // Permissions are resolved before the breaker is taken: an early
+            // return here must not drop a Session's failure streak.
             let permissions = permission_profile(inner, &policy).await?;
+            let mut breaker = inner.take_breaker(session).await;
             let mut prefix = || {
                 let provider = Arc::clone(&prefix_provider);
                 let store = inner.store.clone();
@@ -4713,6 +4795,7 @@ command: None,
             )
             .await
             .unwrap_or(false);
+            inner.keep_breaker(session, breaker).await;
             if compacted {
                 // The next provider request rides the restore budget note.
                 inner
@@ -8048,20 +8131,51 @@ mod window_tests {
         // The endpoint refused this history, and the only count available is a
         // local estimate that reads under the window. That must still bound:
         // nothing else can shrink a Session whose recent requests were all refused.
-        let budget = bound_budget(1_048_576, 62_048, true, Some(1_046_000));
+        let budget = bound_budget(1_048_576, 62_048, true, Some(1_046_000), false, 900_000);
         assert_eq!(budget, Some(1_048_576 - 62_048));
     }
 
     #[test]
     fn a_count_over_the_window_bounds_the_request_without_a_refusal() {
-        let budget = bound_budget(1_000_000, 20_000, false, Some(1_000_001));
+        let budget = bound_budget(1_000_000, 20_000, false, Some(1_000_001), false, 900_000);
         assert_eq!(budget, Some(980_000));
     }
 
     #[test]
     fn a_request_that_fits_and_was_never_refused_is_left_alone() {
-        assert_eq!(bound_budget(1_000_000, 20_000, false, Some(500_000)), None);
-        assert_eq!(bound_budget(1_000_000, 20_000, false, None), None);
+        assert_eq!(
+            bound_budget(1_000_000, 20_000, false, Some(500_000), false, 900_000),
+            None
+        );
+        assert_eq!(
+            bound_budget(1_000_000, 20_000, false, None, false, 900_000),
+            None
+        );
+    }
+
+    #[test]
+    fn a_tripped_summarizer_bounds_the_request_once_the_trigger_threshold_is_crossed() {
+        // The summarizer was refused three times, so the planned shrink cannot
+        // run. Past the trigger threshold the deterministic bound is the only
+        // protection left; waiting for the endpoint to refuse costs the turn.
+        assert_eq!(
+            bound_budget(1_000_000, 62_048, false, Some(900_000), true, 900_000),
+            Some(1_000_000 - 62_048)
+        );
+    }
+
+    #[test]
+    fn a_tripped_summarizer_below_the_threshold_leaves_a_fitting_request_alone() {
+        // A broken summarizer is not a reason to shorten a Session that is
+        // nowhere near its window.
+        assert_eq!(
+            bound_budget(1_000_000, 62_048, false, Some(120_000), true, 900_000),
+            None
+        );
+        assert_eq!(
+            bound_budget(1_000_000, 62_048, false, None, true, 900_000),
+            None
+        );
     }
 
     #[test]
