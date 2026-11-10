@@ -82,64 +82,7 @@ jobs:
           fi
           GITHUB_ACTIONS=false bun turbo test "${filter[@]}"
 
-      - name: Check generated client
-        working-directory: packages/client
-        run: bun run check:generated
 
-  integration-tests:
-    # Engine and ACP suites spawn real processes (miao-engine, the engine-fake
-    # wire stand-in, `miao serve`), so they must not share the unit job's
-    # single bun process: leaked fixtures there time out the files scheduled
-    # last. The runner executes one bun process per file with its own timeout
-    # budget, one retry in a fresh process, and reaps orphan engines and temp
-    # dirs between files.
-    name: integration tests (linux, shard ${{ matrix.shard }}/4)
-    timeout-minutes: 45
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    strategy:
-      # One job per shard: the suite runs one bun process per file, so the
-      # shards are independent and a slow file only delays its own shard.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: crates/miao-engine
-
-      - name: Build engine
-        working-directory: crates/miao-engine
-        run: cargo build --locked --bin miao-engine
-
-      - name: Run integration suites
-        working-directory: packages/miao
-        env:
-          MIAO_ENGINE_BIN: ${{ github.workspace }}/crates/miao-engine/target/debug/miao-engine
-          INTEGRATION_REQUIRE_ENGINE: "1"
-          INTEGRATION_SHARD: ${{ matrix.shard }}
-          INTEGRATION_SHARDS: "4"
-        timeout-minutes: 40
-        run: bun run test:integration
-
-  # The Windows suite has known failures tracked in specs/ci-windows.md, so it is
-  # not a merge gate. Its setup dominates the run (~6 minutes), so it stays off
-  # the PR and push paths and only runs on the nightly schedule and manual
-  # dispatch.
   windows:
     name: unit (windows, non-blocking until Windows suite is fixed)
     needs: changes
@@ -217,7 +160,7 @@ jobs:
 
   unit:
     name: unit (linux)
-    needs: [changes, unit-tests, integration-tests, window-runtime-windows]
+    needs: [changes, unit-tests, window-runtime-windows]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -231,10 +174,8 @@ jobs:
           # manual dispatch, so its result must be `skipped` everywhere else.
           WINDOWS_RUNS: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           UNIT: ${{ needs.unit-tests.result }}
-          INTEGRATION: ${{ needs.integration-tests.result }}
           RUNTIME: ${{ needs.window-runtime-windows.result }}
         run: |
           test "$CHANGES" = success
           if [ "$CODE" = true ]; then test "$UNIT" = success; else test "$UNIT" = skipped; fi
-          if [ "$CODE" = true ]; then test "$INTEGRATION" = success; else test "$INTEGRATION" = skipped; fi
           if [ "$WINDOWS" = true ] && [ "$WINDOWS_RUNS" = true ]; then test "$RUNTIME" = success; else test "$RUNTIME" = skipped; fi

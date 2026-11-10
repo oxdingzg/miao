@@ -29,7 +29,7 @@ if (process.argv.includes("--native-cli")) {
   await $`rm -rf dist`
   const { archives } = await buildNativeArchives({
     ...PRODUCT,
-    licenses: [path.resolve(dir, "../../LICENSE")],
+    licenses: [path.resolve(dir, "LICENSE")],
     env: { MIAO_VERSION: Script.version },
     // The installer keeps a build under `--build-id` before it trusts the file,
     // so the artifact this pipeline uploads has to answer it, not just --version.
@@ -118,7 +118,7 @@ async function buildNativeArchives(spec: {
 }): Promise<{ archives: string[]; bins: Record<string, string> }> {
   const os = hostOs()
   if (!os) return { archives: [], bins: {} }
-  const crate = path.resolve(dir, "../../crates", spec.crate)
+  const crate = path.resolve(dir, "crates", spec.crate)
   const suffix = process.platform === "win32" ? ".exe" : ""
   const archives: string[] = []
   const bins: Record<string, string> = {}

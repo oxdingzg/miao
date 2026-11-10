@@ -1,5 +1,0 @@
-{
-  "$schema": "https://mtty.dev/miao/config.json",
-  "model": "example/demo",
-  "snapshot": false
-}

@@ -27,6 +27,7 @@
     "jose": "6.2.12"
   },
   "devDependencies": {
+    "@miao/core": "workspace:*",
     "@playwright/test": "catalog:",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
