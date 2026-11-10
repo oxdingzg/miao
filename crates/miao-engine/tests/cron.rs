@@ -361,3 +361,111 @@ async fn cron_and_wakeup_share_one_capacity_budget() {
         .iter()
         .all(|cron| cron["state"] == "cancelled"));
 }
+#[tokio::test]
+async fn edit_retargets_the_armed_pattern_and_keeps_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, provider) = setup(dir.path(), false, true, false).await;
+    let original = store.crons("s").await.unwrap().remove(0);
+    let id = original["cron_id"].as_str().unwrap().to_owned();
+    // Move the tick past the original one; the pattern edit is the only
+    // thing that may move the next occurrence, so a fire here proves the swap.
+    let edited = format!("{} * * * *", (Local::now().minute() + 5) % 60);
+    let change = cron::Change::parse(json!({"id": id, "cron": edited})).unwrap();
+    let data = runtime.edit_cron("s", change).await.unwrap();
+    assert_eq!(data["cron_id"].as_str(), Some(id.as_str()));
+    assert_eq!(data["input"]["prompt"], json!("cron-fire"));
+    let listed = store.crons("s").await.unwrap().remove(0);
+    assert_eq!(listed["input"]["cron"], json!(edited));
+    assert_eq!(listed["cron"], json!(edited));
+    assert_eq!(listed["pattern"], json!(edited));
+    assert_eq!(listed["session_id"], json!("s"));
+    assert!(listed["timezone"].is_string());
+    assert_eq!(listed["first_occurrence_ms"], data["first_occurrence_ms"]);
+    assert_eq!(listed["next_occurrence_ms"], data["first_occurrence_ms"]);
+    assert_eq!(listed["state"], "scheduled");
+    // The wait follows the edited window instead of assuming it sits a fixed
+    // few minutes out: a wrapped minute would otherwise flake once an hour.
+    let first = data["first_occurrence_ms"].as_u64().unwrap();
+    let wait = (first.saturating_sub(Local::now().timestamp_millis() as u64) / 1000) + 10;
+    advance(wait).await;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.fired.notified(),
+    )
+    .await
+    .unwrap();
+    runtime.shutdown().await;
+    let events = store.events("s", 0, 100).await.unwrap();
+    let fired = events
+        .iter()
+        .filter(|event| event.kind == "cron.fired")
+        .collect::<Vec<_>>();
+    assert_eq!(fired.len(), 1);
+    assert_eq!(fired[0].data["occurrence_ms"], data["first_occurrence_ms"]);
+    assert!(events.iter().any(|event| event.kind == "cron.updated"));
+}
+#[tokio::test]
+async fn edit_refuses_fieldless_resolved_and_invalid_changes() {
+    for (input, ok) in [
+        (json!({"id": "ok-1", "prompt": "next"}), true),
+        (json!({"id": "ok-1"}), false),
+        (json!({"id": "a b", "prompt": "x"}), false),
+        (json!({"id": "ok-1", "unknown": 1}), false),
+        (json!({"id": "ok-1", "prompt": " "}), false),
+        (json!({"id": "ok-1", "prompt": ""}), false),
+    ] {
+        assert_eq!(cron::Change::parse(input).is_ok(), ok);
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _provider) = setup(dir.path(), false, true, false).await;
+    let id = store.crons("s").await.unwrap().remove(0)["cron_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(runtime
+        .edit_cron(
+            "s",
+            cron::Change::parse(json!({"id": "missing", "prompt": "x"})).unwrap()
+        )
+        .await
+        .is_err());
+    assert!(runtime
+        .edit_cron(
+            "s",
+            cron::Change::parse(json!({"id": id, "cron": "@daily"})).unwrap()
+        )
+        .await
+        .is_err());
+    assert!(runtime.cancel_cron("s", &id).await.unwrap());
+    assert!(runtime
+        .edit_cron(
+            "s",
+            cron::Change::parse(json!({"id": id, "prompt": "late"})).unwrap()
+        )
+        .await
+        .is_err());
+    runtime.shutdown().await;
+}
+#[tokio::test]
+async fn restart_adoption_rearms_the_edited_definition() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _provider) = setup(dir.path(), false, true, false).await;
+    let original = store.crons("s").await.unwrap().remove(0);
+    let id = original["cron_id"].as_str().unwrap().to_owned();
+    let edited = format!("{} * * * *", (Local::now().minute() + 7) % 60);
+    runtime
+        .edit_cron(
+            "s",
+            cron::Change::parse(json!({"id": id, "cron": edited})).unwrap(),
+        )
+        .await
+        .unwrap();
+    let listed = store.crons("s").await.unwrap().remove(0);
+    // Adoption reads scheduled + latest update, never the original window.
+    let rearmed = store.recover_crons().await.unwrap();
+    let entry = rearmed.iter().find(|entry| entry.0 == "s").unwrap();
+    assert_eq!(entry.1, id);
+    assert_eq!(entry.2, edited);
+    assert_eq!(entry.4, listed["first_occurrence_ms"].as_u64().unwrap());
+    runtime.shutdown().await;
+}

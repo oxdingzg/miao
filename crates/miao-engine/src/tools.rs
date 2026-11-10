@@ -1322,6 +1322,10 @@ impl Tools {
                 crate::cron::Input::parse(input.clone())?;
                 ".".into()
             }
+            "cron_edit" if self.cron_enabled() => {
+                crate::cron::Change::parse(input.clone())?;
+                ".".into()
+            }
             "cron_delete" if self.cron_enabled() => {
                 crate::cron::Selector::parse(input.clone())?;
                 ".".into()
@@ -1334,6 +1338,10 @@ impl Tools {
             }
             "schedule_wakeup" if self.wakeup_enabled() => {
                 crate::wakeup::Input::parse(input.clone())?;
+                ".".into()
+            }
+            "wakeup_edit" if self.wakeup_enabled() => {
+                crate::wakeup::Change::parse(input.clone())?;
                 ".".into()
             }
             "cancel_wakeup" if self.wakeup_enabled() => {
@@ -1508,12 +1516,22 @@ impl Tools {
                 "@session/cron/{}",
                 crate::cron::Selector::parse(input.clone())?.id
             )
+        } else if name == "cron_edit" {
+            format!(
+                "@session/cron/{}",
+                crate::cron::Change::parse(input.clone())?.id
+            )
         } else if name == "schedule_wakeup" {
             "@session/wakeup".into()
         } else if name == "cancel_wakeup" {
             format!(
                 "@session/wakeup/{}",
                 crate::wakeup::Selector::parse(input.clone())?.timer_id
+            )
+        } else if name == "wakeup_edit" {
+            format!(
+                "@session/wakeup/{}",
+                crate::wakeup::Change::parse(input.clone())?.timer_id
             )
         } else if name == "question" {
             "@session/question".into()
@@ -1558,9 +1576,9 @@ impl Tools {
         } else {
             parts.join("/")
         };
-        let access = if name == "cron_create" {
+        let access = if name == "cron_create" || name == "cron_edit" {
             Access::Cron
-        } else if name == "schedule_wakeup" {
+        } else if name == "schedule_wakeup" || name == "wakeup_edit" {
             Access::Schedule
         } else if matches!(
             name,
@@ -2186,12 +2204,14 @@ impl Tools {
         if self.wakeup_enabled() {
             definitions.extend([
                 ToolDefinition{name:"schedule_wakeup".into(),description:"Schedule one prompt for this Session in 60..3600 seconds. Default delivery=queue. Survives turn cancel, but timers stop on process shutdown/restart. Durable admission is atomic at fire; no automatic timer replay.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","delaySeconds"],"additionalProperties":false})},
+                ToolDefinition{name:"wakeup_edit".into(),description:"Edit one of this Session's pending wakeups in place: absent fields keep their value, the timer id stays stable, and the due time is recomputed from the edited delay. A fired timer has already admitted its prompt and cannot be edited.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"},"prompt":{"type":"string","minLength":1,"maxLength":8192},"delaySeconds":{"type":"integer","minimum":60,"maximum":3600},"delivery":{"type":"string","enum":["queue","steer"]}},"required":["timer_id"],"additionalProperties":false})},
                 ToolDefinition{name:"cancel_wakeup".into(),description:"Cancel this Session's pending wakeup. A fired timer has already admitted its prompt and cannot be cancelled by this operation.".into(),input_schema:json!({"type":"object","properties":{"timer_id":{"type":"string"}},"required":["timer_id"],"additionalProperties":false})},
             ]);
         }
         if self.cron_enabled() {
             definitions.extend([
                 ToolDefinition{name:"cron_create".into(),description:"Schedule prompts for this Session using a numeric standard 5-field local-time cron expression. Process lifetime only, max seven days. Default recurring=true and delivery=queue. Missed ticks are not replayed; pending inputs coalesce.".into(),input_schema:json!({"type":"object","properties":{"prompt":{"type":"string","minLength":1,"maxLength":8192},"cron":{"type":"string","maxLength":256},"recurring":{"type":"boolean","default":true},"delivery":{"type":"string","enum":["queue","steer"],"default":"queue"}},"required":["prompt","cron"],"additionalProperties":false})},
+                ToolDefinition{name:"cron_edit".into(),description:"Edit one of this Session's cron schedules in place: absent fields keep their value, the id and its fired/skipped history stay stable, and the next occurrence is recomputed from the edited pattern. Resolved schedules cannot be edited.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string"},"prompt":{"type":"string","minLength":1,"maxLength":8192},"cron":{"type":"string","maxLength":256},"recurring":{"type":"boolean"},"delivery":{"type":"string","enum":["queue","steer"]}},"required":["id"],"additionalProperties":false})},
                 ToolDefinition{name:"cron_list".into(),description:"List this Session's recent cron schedules, next occurrence, fired/skipped counts and terminal state.".into(),input_schema:json!({"type":"object","properties":{},"additionalProperties":false})},
                 ToolDefinition{name:"cron_delete".into(),description:"Cancel future occurrences of this Session's cron schedule. Already admitted prompts remain durable.".into(),input_schema:json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false})},
             ]);

@@ -51,6 +51,49 @@ impl Selector {
         Ok(selector)
     }
 }
+/// A partial edit of an existing timer: fields left absent keep their
+/// scheduled value, and the id stays stable so its fired history keeps its
+/// owner. The merged result is validated as a whole `Input`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Change {
+    pub timer_id: String,
+    pub prompt: Option<String>,
+    #[serde(rename = "delaySeconds")]
+    pub delay_seconds: Option<u64>,
+    pub delivery: Option<Delivery>,
+}
+impl Change {
+    pub fn parse(value: Value) -> Result<Self, ToolError> {
+        let change: Self = serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
+        let changed = [
+            change.prompt.is_some(),
+            change.delay_seconds.is_some(),
+            change.delivery.is_some(),
+        ]
+        .iter()
+        .filter(|present| **present)
+        .count();
+        if change.timer_id.is_empty()
+            || change.timer_id.len() > 64
+            || !change
+                .timer_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            || changed == 0
+            || change
+                .prompt
+                .as_ref()
+                .is_some_and(|prompt| prompt.trim().is_empty() || prompt.len() > 8192)
+            || change
+                .delay_seconds
+                .is_some_and(|delay| !(60..=3600).contains(&delay))
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Ok(change)
+    }
+}
 impl Store {
     pub(crate) async fn create_wakeup(
         &self,
@@ -81,8 +124,28 @@ impl Store {
             let original:Value=serde_json::from_str(&original.ok_or_else(||Error::Invalid("wakeup requires its dispatched intent".into()))?)?;
             let normalized=Input::parse(original["input"].clone()).map_err(|_|Error::Invalid("invalid wakeup intent".into()))?;
             if serde_json::to_value(normalized)?!=input{return Err(Error::Conflict);}
-            let data=json!({"timer_id":uuid::Uuid::new_v4().to_string(),"request_key":key,"location":location,"input":input,"due_at_ms":now_ms().saturating_add(input["delaySeconds"].as_u64().unwrap_or(0)*1000),"state":"scheduled"});
+            let data=json!({"timer_id":uuid::Uuid::new_v4().to_string(),"request_key":key,"location":location,"input":input,"due_at_ms":now_ms().saturating_add(input["delaySeconds"].as_u64().unwrap_or(0)*1000),"timezone":crate::cron::timezone_label(),"state":"scheduled"});
             append(&tx,&session,"wakeup.scheduled",data.clone())?;tx.commit()?;Ok(data)
+        }).await
+    }
+    /// An edit appends one `wakeup.updated` overlay in a transaction: the id
+    /// and its history survive, only the definition readers overlay moves.
+    pub(crate) async fn edit_wakeup(
+        &self,
+        session: &str,
+        id: &str,
+        input: Input,
+        due_at_ms: u64,
+    ) -> Result<(), Error> {
+        let (session, id) = (session.to_owned(), id.to_owned());
+        let input = serde_json::to_value(input)?;
+        self.call(move|conn|{
+            let tx=crate::store::write_tx(conn)?;
+            if resolution(&tx,&session,&id)?.is_some(){return Err(Error::Conflict);}
+            let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='wakeup.scheduled' AND json_extract(data,'$.timer_id')=?2)",params![session,id],|row|row.get(0))?;
+            if !exists{return Err(Error::Invalid("wakeup not found in this Session".into()));}
+            append(&tx,&session,"wakeup.updated",json!({"timer_id":id,"input":input,"due_at_ms":due_at_ms,"timezone":crate::cron::timezone_label()}))?;
+            tx.commit()?;Ok(())
         }).await
     }
     /// Firing and durable prompt admission are one atomic commit. This does not
@@ -97,7 +160,8 @@ impl Store {
             let tx=crate::store::write_tx(conn)?;
             if resolution(&tx,&session,&id)?.is_some(){return Ok(None);}
             let data:Option<String>=tx.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.scheduled' AND json_extract(data,'$.timer_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
-            let data:Value=serde_json::from_str(&data.ok_or_else(||Error::Invalid("wakeup not found in this Session".into()))?)?;
+            let mut data:Value=serde_json::from_str(&data.ok_or_else(||Error::Invalid("wakeup not found in this Session".into()))?)?;
+            overlay(&tx,&session,&id,&mut data)?;
             let input=Input::parse(data["input"].clone()).map_err(|_|Error::Invalid("invalid wakeup input".into()))?;
             let prompt=Prompt{agent_references:Default::default(),command:None,session_id:session.clone(),input_id:format!("wakeup/{id}"),prompt:input.prompt,delivery:input.delivery};
             let location=data["location"].as_str().ok_or_else(||Error::Invalid("timer Location missing".into()))?;
@@ -128,7 +192,7 @@ impl Store {
         self.call(move|conn|{
             let mut stmt=conn.prepare("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.scheduled' ORDER BY seq DESC LIMIT 100")?;
             let rows=stmt.query_map([&session],|row|row.get::<_,String>(0))?;
-            rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?;if let Some(resolved)=resolution(conn,&session,id)?{data["state"]=resolved["state"].clone();data["result"]=resolved;}Ok(data)}).collect()
+            rows.map(|row|{let mut data:Value=serde_json::from_str(&row?)?;let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?.to_owned();overlay(conn,&session,&id,&mut data)?;data["session_id"]=json!(session);if let Some(resolved)=resolution(conn,&session,&id)?{data["state"]=resolved["state"].clone();data["result"]=resolved;}Ok(data)}).collect()
         }).await
     }
     /// Restart adoption: unresolved timers switch ownership to this process
@@ -141,8 +205,9 @@ impl Store {
             if timers.len()>64{return Err(Error::Invalid("wakeup recovery budget exceeded".into()));}
             let mut rearm=Vec::new();
             for (session,data) in timers{
-                let data:Value=serde_json::from_str(&data)?;
+                let mut data:Value=serde_json::from_str(&data)?;
                 let id=data["timer_id"].as_str().ok_or_else(||Error::Invalid("timer id missing".into()))?.to_owned();
+                overlay(&tx,&session,&id,&mut data)?;
                 let adopted:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM engine_event WHERE session_id=?1 AND kind='wakeup.adopted' AND json_extract(data,'$.timer_id')=?2)",params![&session,&id],|row|row.get(0))?;
                 if !adopted{append(&tx,&session,"wakeup.adopted",json!({"timer_id":id,"recovered":true}))?;}
                 rearm.push((session,id,data["due_at_ms"].as_u64().unwrap_or(0)));
@@ -154,6 +219,24 @@ impl Store {
         self.adopt_wakeups().await.map(|_| ())
     }
 }
+/// Every reader of a timer definition overlays the latest `wakeup.updated`
+/// first, so one edit moves the definition for all of them at once.
+fn overlay(conn: &Connection, session: &str, id: &str, data: &mut Value) -> Result<(), Error> {
+    let updated: Option<String> = conn
+        .query_row(
+            "SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.updated' AND json_extract(data,'$.timer_id')=?2 ORDER BY seq DESC LIMIT 1",
+            params![session, id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(updated) = updated {
+        let updated: Value = serde_json::from_str(&updated)?;
+        for field in ["input", "due_at_ms", "timezone"] {
+            data[field] = updated[field].clone();
+        }
+    }
+    Ok(())
+}
 fn resolution(conn: &Connection, session: &str, id: &str) -> Result<Option<Value>, Error> {
     let data:Option<String>=conn.query_row("SELECT data FROM engine_event WHERE session_id=?1 AND kind='wakeup.resolved' AND json_extract(data,'$.timer_id')=?2 ORDER BY seq DESC LIMIT 1",params![session,id],|row|row.get(0)).optional()?;
     data.map(|data| serde_json::from_str(&data).map_err(Error::from))
@@ -164,7 +247,15 @@ pub(crate) fn pending(conn: &Connection, session: &str) -> Result<Vec<Value>, Er
     let mut stmt=conn.prepare("SELECT q.data FROM engine_event q WHERE q.session_id=?1 AND q.kind='wakeup.scheduled' AND NOT EXISTS(SELECT 1 FROM engine_event r WHERE r.session_id=q.session_id AND r.kind='wakeup.resolved' AND json_extract(r.data,'$.timer_id')=json_extract(q.data,'$.timer_id')) ORDER BY q.seq DESC LIMIT 65")?;
     let rows = stmt.query_map([session], |row| row.get::<_, String>(0))?;
     let pending = rows
-        .map(|row| serde_json::from_str(&row?).map_err(Error::from))
+        .map(|row| {
+            let mut data: Value = serde_json::from_str(&row?)?;
+            let id = data["timer_id"]
+                .as_str()
+                .ok_or_else(|| Error::Invalid("timer id missing".into()))?
+                .to_owned();
+            overlay(conn, session, &id, &mut data)?;
+            Ok(data)
+        })
         .collect::<Result<Vec<Value>, Error>>()?;
     if pending.len() > 64 {
         return Err(Error::Invalid("pending timer budget exceeded".into()));
