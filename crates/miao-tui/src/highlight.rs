@@ -1,373 +1,243 @@
-//! Line-oriented syntax highlighting for fenced code blocks.
+//! Line-oriented syntax highlighting for fenced code blocks and diff bodies.
 //!
-//! The transcript is a reading surface for code the model wrote, and a block in
-//! one color is harder to read than the same text in an editor. There is no
-//! grammar engine here: a fence's info string selects one of a few language
-//! families, and a small scanner colors comments, strings, numbers, and
-//! keywords. Anything it does not recognize keeps the plain text style, so the
-//! worst case is the old single-color block and an unknown language is never
-//! guessed at.
+//! The grammars are TextMate definitions: the Sublime defaults plus the extra
+//! set bat carries, bundled by `two-face` and read through `syntect`. That is
+//! the grammar family the editor's shiki pipeline resolves, so a Rust `impl`,
+//! a Java `public`, and a C++ `#include` are coloured by their own language
+//! rather than by one table standing in for several of them.
+//!
+//! A grammar reports scopes, not colours. Every scope stack is folded onto the
+//! theme's nine `syntax*` tokens here, so code reads the same as in the rest of
+//! miao and a theme switch recolours it. An info string no grammar claims keeps
+//! the plain text colour, which is the old single-colour block.
+
+use std::str::FromStr;
+use std::sync::OnceLock;
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
+use syntect::highlighting::ScopeSelectors;
+use syntect::parsing::{ParseState, Scope, ScopeStack, SyntaxReference, SyntaxSet};
 
-use crate::theme::{Palette, Syntax};
+use crate::theme::Palette;
 
-/// Languages that share a comment syntax and a keyword set. `None` — an info
-/// string outside the table below — renders the block in one color.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Family {
-    /// `//` and `/* */` comments, where `'` is a character literal and `&'a` is
-    /// a lifetime rather than a quote.
-    Rust,
-    /// `//` and `/* */` comments: TS/JS, C-family, Go, Java, Swift.
-    CLike,
-    /// `#` comments: Python, Ruby, TOML, YAML, INI.
-    Hash,
-    /// `#` comments with shell control keywords.
-    Shell,
-    /// No comments, `true`/`false`/`null` keywords.
-    Json,
+/// Every bundled grammar, loaded once on the first fenced block or diff row: a
+/// session that shows no code never pays for the tables.
+fn syntaxes() -> &'static SyntaxSet {
+    static SET: OnceLock<SyntaxSet> = OnceLock::new();
+    SET.get_or_init(two_face::syntax::extra_no_newlines)
 }
 
-fn family(info: &str) -> Option<Family> {
+/// The grammar an info string names, or `None` when nothing claims it.
+///
+/// `find_syntax_by_token` takes a file extension or a case-insensitive name,
+/// which covers both a fence (`rust`, `cpp`) and a diff row's file path
+/// (`main.rs`, `Main.java`).
+fn find(info: &str) -> Option<&'static SyntaxReference> {
     // A fence can carry attributes after the language (`rust,no_run`), so only
     // the leading word names the language.
     let language = info
-        .split(|c: char| !c.is_ascii_alphanumeric() && c != '+')
-        .next()?
-        .to_ascii_lowercase();
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '+' && c != '#' && c != '-')
+        .next()?;
+    if language.is_empty() {
+        return None;
+    }
+    let set = syntaxes();
+    set.find_syntax_by_token(language)
+        .or_else(|| alias(language).and_then(|name| set.find_syntax_by_name(name)))
+}
+
+/// A fence token whose grammar the bundled set names differently, or that reads
+/// as a variant of one it has: `jsx` is JavaScript to a TextMate grammar, and
+/// JSON5 is JSON. Nothing here invents a grammar the set does not carry —
+/// PowerShell, for one, has none and renders plain.
+fn alias(language: &str) -> Option<&'static str> {
+    let language = language.to_ascii_lowercase();
     Some(match language.as_str() {
-        "rust" | "rs" => Family::Rust,
-        "c" | "h" | "cpp" | "c++" | "cc" | "java" | "csharp" | "cs" | "go" | "golang" | "ts"
-        | "tsx" | "typescript" | "js" | "jsx" | "javascript" | "swift" | "kotlin" | "kt"
-        | "scala" | "php" | "dart" => Family::CLike,
-        "py" | "python" | "rb" | "ruby" | "toml" | "yaml" | "yml" | "ini" => Family::Hash,
-        "sh" | "bash" | "zsh" | "shell" | "console" => Family::Shell,
-        "json" | "jsonc" => Family::Json,
+        "jsx" | "mjs" | "cjs" => "JavaScript",
+        "jsonc" | "json5" | "jsonl" => "JSON",
+        "mts" | "cts" => "TypeScript",
         _ => return None,
     })
 }
 
-const C_LIKE: &[&str] = &[
-    "as",
-    "async",
-    "await",
-    "break",
-    "case",
-    "catch",
-    "class",
-    "const",
-    "continue",
-    "crate",
-    "default",
-    "defer",
-    "do",
-    "dyn",
-    "else",
-    "enum",
-    "extends",
-    "extern",
-    "false",
-    "finally",
-    "fn",
-    "for",
-    "from",
-    "func",
-    "function",
-    "go",
-    "if",
-    "impl",
-    "implements",
-    "import",
-    "in",
-    "instanceof",
-    "interface",
-    "let",
-    "loop",
-    "map",
-    "match",
-    "mod",
-    "move",
-    "mut",
-    "new",
-    "null",
-    "package",
-    "private",
-    "pub",
-    "public",
-    "range",
-    "ref",
-    "return",
-    "self",
-    "static",
-    "struct",
-    "super",
-    "switch",
-    "this",
-    "throw",
-    "trait",
-    "true",
-    "try",
-    "type",
-    "typeof",
-    "undefined",
-    "unsafe",
-    "use",
-    "var",
-    "void",
-    "where",
-    "while",
-    "yield",
-];
+/// One class of code token. A grammar's scopes say which class a run of code is;
+/// the theme says what that class looks like.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Token {
+    Text,
+    Comment,
+    Keyword,
+    Function,
+    Variable,
+    String,
+    Number,
+    Kind,
+    Operator,
+    Punctuation,
+}
 
-const HASH: &[&str] = &[
-    "and", "as", "async", "await", "break", "class", "continue", "def", "del", "elif", "else",
-    "except", "False", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda",
-    "None", "not", "or", "pass", "raise", "return", "self", "True", "try", "while", "with",
-    "yield",
-];
+/// The scope selectors that fold a grammar onto [`Token`], parsed once.
+struct Rules {
+    comment: ScopeSelectors,
+    string: ScopeSelectors,
+    constant: ScopeSelectors,
+    operator: ScopeSelectors,
+    keyword: ScopeSelectors,
+    kind: ScopeSelectors,
+    function: ScopeSelectors,
+    variable: ScopeSelectors,
+    punctuation: ScopeSelectors,
+}
 
-const SHELL: &[&str] = &[
-    "case", "do", "done", "elif", "else", "esac", "export", "fi", "for", "function", "if", "in",
-    "local", "return", "set", "source", "then", "until", "while",
-];
+fn rules() -> &'static Rules {
+    static RULES: OnceLock<Rules> = OnceLock::new();
+    RULES.get_or_init(Rules::bundled)
+}
 
-const JSON: &[&str] = &["false", "null", "true"];
+impl Rules {
+    fn bundled() -> Self {
+        let selector =
+            |spec: &str| ScopeSelectors::from_str(spec).expect("built-in scope selectors parse");
+        Self {
+            // A comment's `//` or `#` markers are definition punctuation, but a
+            // reader sees them as part of the comment.
+            comment: selector("comment, punctuation.definition.comment"),
+            string: selector("string, constant.character.escape, punctuation.definition.string"),
+            // Literals such as `true`, `null`, and `None` are constants in the
+            // TextMate scopes; the product paints constants with the number hue.
+            constant: selector("constant, support.constant"),
+            operator: selector("keyword.operator"),
+            keyword: selector("keyword, storage"),
+            kind: selector(
+                "entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, \
+                 entity.name.trait, entity.name.union, entity.name.interface, entity.name.tag, \
+                 entity.name.namespace, entity.other.inherited-class, support.type, \
+                 support.class, support.other",
+            ),
+            function: selector(
+                "entity.name.function, entity.name.function.macro, support.function, \
+                 variable.function, meta.function-call",
+            ),
+            variable: selector("variable, variable.parameter, variable.other"),
+            punctuation: selector("punctuation"),
+        }
+    }
 
-fn keywords(family: Family) -> &'static [&'static str] {
-    match family {
-        Family::Rust | Family::CLike => C_LIKE,
-        Family::Hash => HASH,
-        Family::Shell => SHELL,
-        Family::Json => JSON,
+    /// The class of the innermost scope that names one. Deeper scopes win, so a
+    /// string inside a call is a string and not the call's scope.
+    fn token(&self, stack: &[Scope]) -> Token {
+        let hit = |selector: &ScopeSelectors| selector.does_match(stack).is_some();
+        if hit(&self.comment) {
+            return Token::Comment;
+        }
+        if hit(&self.string) {
+            return Token::String;
+        }
+        if hit(&self.constant) {
+            return Token::Number;
+        }
+        // `keyword.operator` is also a `keyword`, so it has to be asked first.
+        if hit(&self.operator) {
+            return Token::Operator;
+        }
+        if hit(&self.keyword) {
+            return Token::Keyword;
+        }
+        if hit(&self.kind) {
+            return Token::Kind;
+        }
+        if hit(&self.function) {
+            return Token::Function;
+        }
+        if hit(&self.variable) {
+            return Token::Variable;
+        }
+        if hit(&self.punctuation) {
+            return Token::Punctuation;
+        }
+        Token::Text
     }
 }
 
-fn uses_slash_comments(family: Family) -> bool {
-    matches!(family, Family::Rust | Family::CLike)
-}
-
-/// Colors one fenced block, carrying block-comment state across its lines.
+/// Colors one fenced block or diff body, carrying the grammar's state (an open
+/// block comment, a multi-line string) across its lines.
 pub struct Highlighter {
-    family: Option<Family>,
-    block_comment: bool,
-    syntax: Syntax,
+    parse: Option<ParseState>,
+    scopes: ScopeStack,
     palette: Palette,
 }
 
 impl Highlighter {
     pub fn new(info: &str, palette: Palette) -> Self {
         Self {
-            family: family(info),
-            block_comment: false,
-            syntax: palette.syntax(),
+            parse: find(info).map(ParseState::new),
+            scopes: ScopeStack::new(),
             palette,
         }
     }
 
     /// Split one body line into styled spans. Concatenating the spans always
-    /// reproduces the input line, so nothing the scanner misreads is lost.
+    /// reproduces the input line, so nothing a grammar misreads is lost.
     pub fn line(&mut self, text: &str) -> Vec<Span<'static>> {
-        let Some(family) = self.family else {
-            return vec![Span::styled(text.to_string(), self.text())];
+        let Some(parse) = self.parse.as_mut() else {
+            return vec![Span::styled(text.to_string(), self.plain())];
         };
-        let keywords = keywords(family);
+        let Ok(ops) = parse.parse_line(text, syntaxes()) else {
+            return vec![Span::styled(text.to_string(), self.plain())];
+        };
         let mut spans = Vec::new();
-        // Start of the run of text that has not been assigned a style yet.
-        let mut plain = 0;
-        let mut index = 0;
-        while index < text.len() {
-            let rest = &text[index..];
-            if self.block_comment {
-                match rest.find("*/") {
-                    Some(end) => {
-                        let stop = index + end + 2;
-                        self.push(&mut spans, &text[index..stop], self.comment());
-                        index = stop;
-                        plain = index;
-                        self.block_comment = false;
-                    }
-                    None => {
-                        self.push(&mut spans, rest, self.comment());
-                        return spans;
-                    }
-                }
-                continue;
+        let mut start = 0;
+        for (index, op) in ops {
+            if index > start {
+                self.push(&mut spans, &text[start..index]);
+                start = index;
             }
-            let Some(c) = rest.chars().next() else {
-                break;
-            };
-            let width = c.len_utf8();
-            match c {
-                '/' if rest.starts_with("//") && uses_slash_comments(family) => {
-                    self.push(&mut spans, &text[plain..index], self.text());
-                    self.push(&mut spans, rest, self.comment());
-                    return spans;
-                }
-                '/' if rest.starts_with("/*") && uses_slash_comments(family) => {
-                    self.push(&mut spans, &text[plain..index], self.text());
-                    self.push(&mut spans, "/*", self.comment());
-                    self.block_comment = true;
-                    index += 2;
-                    plain = index;
-                }
-                '#' if matches!(family, Family::Hash | Family::Shell) => {
-                    self.push(&mut spans, &text[plain..index], self.text());
-                    self.push(&mut spans, rest, self.comment());
-                    return spans;
-                }
-                // In Rust `'` opens a character literal far less often than it
-                // marks a lifetime (`&'a str`), so an unpaired quote is left as
-                // text instead of coloring the rest of the line.
-                '\'' if family == Family::Rust => {
-                    let Some(stop) = rust_char_end(text, index) else {
-                        index += width;
-                        continue;
-                    };
-                    self.push(&mut spans, &text[plain..index], self.text());
-                    self.push(&mut spans, &text[index..stop], self.string());
-                    index = stop;
-                    plain = index;
-                }
-                '\'' | '"' | '`' => {
-                    // An unterminated quote runs to the end of its own line
-                    // rather than leaking the string color onto later lines.
-                    let stop = quote_end(text, index, c).unwrap_or(text.len());
-                    self.push(&mut spans, &text[plain..index], self.text());
-                    self.push(&mut spans, &text[index..stop], self.string());
-                    index = stop;
-                    plain = index;
-                }
-                c if c.is_ascii_digit() => {
-                    let stop = number_end(text, index);
-                    self.push(&mut spans, &text[plain..index], self.text());
-                    self.push(&mut spans, &text[index..stop], self.number());
-                    index = stop;
-                    plain = index;
-                }
-                c if c.is_ascii_alphabetic() || c == '_' => {
-                    let stop = identifier_end(text, index);
-                    if keywords.contains(&&text[index..stop]) {
-                        self.push(&mut spans, &text[plain..index], self.text());
-                        self.push(&mut spans, &text[index..stop], self.keyword());
-                        plain = stop;
-                    }
-                    index = stop;
-                }
-                _ => index += width,
+            // A stack that refuses an operation cannot classify the rest of the
+            // line, and a wrong colour is worse than none: paint the tail in the
+            // plain text colour.
+            if self.scopes.apply(&op).is_err() {
+                self.push(&mut spans, &text[start..]);
+                return spans;
             }
         }
-        self.push(&mut spans, &text[plain..], self.text());
+        self.push(&mut spans, &text[start..]);
         spans
     }
 
-    fn text(&self) -> Style {
-        Style::new().fg(self.palette.text)
-    }
-
-    fn comment(&self) -> Style {
-        // The product paints comments in the same weak colour as keywords, so
-        // the italic is what keeps a comment readable as prose next to code.
-        Style::new()
-            .fg(self.syntax.comment)
-            .add_modifier(Modifier::ITALIC)
-    }
-
-    fn string(&self) -> Style {
-        Style::new().fg(self.syntax.string)
-    }
-
-    fn number(&self) -> Style {
-        Style::new().fg(self.syntax.number)
-    }
-
-    fn keyword(&self) -> Style {
-        Style::new().fg(self.syntax.keyword)
-    }
-
-    fn push(&self, spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
+    fn push(&self, spans: &mut Vec<Span<'static>>, text: &str) {
         if text.is_empty() {
             return;
         }
-        spans.push(Span::styled(text.to_string(), style));
+        let style = self.style(rules().token(self.scopes.as_slice()));
+        match spans.last_mut() {
+            Some(span) if span.style == style => span.content.to_mut().push_str(text),
+            _ => spans.push(Span::styled(text.to_string(), style)),
+        }
     }
-}
 
-/// End of the quoted run starting at `start`, or `None` when it is unterminated.
-/// A backslash escapes the next character, so `"a\"b"` stays one string.
-fn quote_end(text: &str, start: usize, quote: char) -> Option<usize> {
-    let mut index = start + quote.len_utf8();
-    let mut escaped = false;
-    while index < text.len() {
-        let c = text[index..].chars().next().expect("char boundary");
-        index += c.len_utf8();
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if c == '\\' {
-            escaped = true;
-            continue;
-        }
-        if c == quote {
-            return Some(index);
-        }
+    fn plain(&self) -> Style {
+        Style::new().fg(self.palette.text)
     }
-    None
-}
 
-/// End of a Rust character literal: one character or one escape between
-/// quotes. Anything else — `&'a str`, `'static`, an apostrophe in prose — is not
-/// a literal, and `''` is not one either.
-fn rust_char_end(text: &str, start: usize) -> Option<usize> {
-    let mut index = start + 1;
-    let first = text[index..].chars().next()?;
-    if first == '\'' {
-        return None;
-    }
-    index += first.len_utf8();
-    if first == '\\' {
-        let kind = text[index..].chars().next()?;
-        index += kind.len_utf8();
-        index += match kind {
-            'x' => 2,
-            'u' => text[index..].find('}')? + 1,
-            _ => 0,
-        };
-    }
-    if index >= text.len() {
-        return None;
-    }
-    text[index..].starts_with('\'').then_some(index + 1)
-}
-
-fn number_end(text: &str, start: usize) -> usize {
-    let mut index = start;
-    while index < text.len() {
-        let c = text[index..].chars().next().expect("char boundary");
-        // Digits, hex letters, exponents, float points, and separators all stay
-        // in one run; anything else ends it.
-        if c.is_ascii_alphanumeric() || c == '.' || c == '_' {
-            index += c.len_utf8();
-            continue;
+    fn style(&self, token: Token) -> Style {
+        let syntax = self.palette.syntax;
+        match token {
+            Token::Text => self.plain(),
+            // Italic is what keeps a comment readable as prose next to code.
+            Token::Comment => Style::new()
+                .fg(syntax.comment)
+                .add_modifier(Modifier::ITALIC),
+            Token::Keyword => Style::new().fg(syntax.keyword),
+            Token::Function => Style::new().fg(syntax.function),
+            Token::Variable => Style::new().fg(syntax.variable),
+            Token::String => Style::new().fg(syntax.string),
+            Token::Number => Style::new().fg(syntax.number),
+            Token::Kind => Style::new().fg(syntax.kind),
+            Token::Operator => Style::new().fg(syntax.operator),
+            Token::Punctuation => Style::new().fg(syntax.punctuation),
         }
-        break;
     }
-    index
-}
-
-fn identifier_end(text: &str, start: usize) -> usize {
-    let mut index = start;
-    while index < text.len() {
-        let c = text[index..].chars().next().expect("char boundary");
-        if c.is_ascii_alphanumeric() || c == '_' {
-            index += c.len_utf8();
-            continue;
-        }
-        break;
-    }
-    index
 }
 
 #[cfg(test)]
@@ -392,9 +262,7 @@ mod tests {
             .collect()
     }
 
-    /// Spans in one colour, split by the italic that marks a comment: the
-    /// product gives comments and keywords the same weak colour, so only the
-    /// modifier tells them apart.
+    /// Spans in one colour, split by the italic that marks a comment.
     fn colored_comment(spans: &[Span<'_>], color: Color) -> Vec<String> {
         spans
             .iter()
@@ -416,19 +284,136 @@ mod tests {
     }
 
     #[test]
+    fn the_bundled_grammars_cover_the_languages_the_transcript_shows() {
+        for language in [
+            "rs",
+            "rust",
+            "java",
+            "cpp",
+            "c++",
+            "c",
+            "h",
+            "cs",
+            "go",
+            "ts",
+            "tsx",
+            "js",
+            "jsx",
+            "py",
+            "rb",
+            "php",
+            "swift",
+            "kt",
+            "scala",
+            "dart",
+            "lua",
+            "sh",
+            "bash",
+            "zsh",
+            "toml",
+            "yaml",
+            "yml",
+            "ini",
+            "json",
+            "jsonc",
+            "sql",
+            "html",
+            "css",
+            "scss",
+            "xml",
+            "md",
+            "dockerfile",
+            "makefile",
+            "ex",
+            "exs",
+            "hs",
+            "ml",
+            "clj",
+            "r",
+            "pl",
+            "vue",
+            "svelte",
+            "proto",
+            "graphql",
+            "tf",
+            "zig",
+            "nim",
+            "jl",
+            "tex",
+        ] {
+            assert!(find(language).is_some(), "no grammar for {language}");
+        }
+        // A language the bundled set carries no grammar for stays plain rather
+        // than borrowing a neighbour's keywords.
+        assert!(find("ps1").is_none());
+    }
+
+    #[test]
     fn a_rust_line_colors_its_keywords_numbers_and_comment() {
         let mut highlighter = Highlighter::new("rust", palette());
         let line = "let x = 42; // note";
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(
-            colored_code(&spans, palette().syntax().keyword),
-            vec!["let"]
+        // The default theme gives keywords and operators one hue, so `=` lands
+        // in the same bucket as `let`; what matters is that both are painted.
+        assert!(
+            colored_code(&spans, palette().syntax.keyword).contains(&"let".to_string()),
+            "{spans:?}"
         );
-        assert_eq!(colored(&spans, palette().syntax().number), vec!["42"]);
+        assert_eq!(colored(&spans, palette().syntax.number), vec!["42"]);
         assert_eq!(
-            colored_comment(&spans, palette().syntax().comment),
+            colored_comment(&spans, palette().syntax.comment),
             vec!["// note"]
+        );
+    }
+
+    #[test]
+    fn each_language_colors_its_own_keywords() {
+        // `public` is a Java and C++ keyword and an ordinary identifier in Rust;
+        // `impl` is the other way round. One shared keyword table cannot tell
+        // them apart, which is what the scanner this replaced did.
+        let mut java = Highlighter::new("java", palette());
+        let java = java.line("public class Main {}");
+        assert!(
+            colored_code(&java, palette().syntax.keyword).contains(&"public".to_string()),
+            "{java:?}"
+        );
+        let mut rust = Highlighter::new("rust", palette());
+        let rust = rust.line("public impl Thing {}");
+        let rust_keywords = colored_code(&rust, palette().syntax.keyword);
+        assert!(rust_keywords.contains(&"impl".to_string()), "{rust:?}");
+        assert!(
+            !rust_keywords.contains(&"public".to_string()),
+            "Rust has no `public` keyword: {rust:?}"
+        );
+    }
+
+    #[test]
+    fn a_cpp_preprocessor_directive_is_not_one_color() {
+        let mut highlighter = Highlighter::new("cpp", palette());
+        let line = "#include <vector>";
+        let spans = highlighter.line(line);
+        assert_eq!(text(&spans), line);
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.content.contains("#include")
+                    && span.style.fg != Some(palette().text)),
+            "the directive carries a token colour: {spans:?}"
+        );
+    }
+
+    #[test]
+    fn a_function_name_is_not_its_keyword() {
+        let mut highlighter = Highlighter::new("rust", palette());
+        let spans = highlighter.line("fn main() {");
+        assert!(
+            colored_code(&spans, palette().syntax.keyword).contains(&"fn".to_string()),
+            "{spans:?}"
+        );
+        assert!(
+            colored_code(&spans, palette().syntax.function).contains(&"main".to_string()),
+            "{spans:?}"
         );
     }
 
@@ -438,16 +423,19 @@ mod tests {
         let spans = highlighter.line("/* open");
         assert_eq!(text(&spans), "/* open");
         assert_eq!(
-            colored_comment(&spans, palette().syntax().comment),
-            vec!["/*", " open"]
+            colored_comment(&spans, palette().syntax.comment),
+            vec!["/* open"]
         );
         let spans = highlighter.line("close */ fn main");
         assert_eq!(text(&spans), "close */ fn main");
         assert_eq!(
-            colored_comment(&spans, palette().syntax().comment),
+            colored_comment(&spans, palette().syntax.comment),
             vec!["close */"]
         );
-        assert_eq!(colored_code(&spans, palette().syntax().keyword), vec!["fn"]);
+        assert!(
+            colored_code(&spans, palette().syntax.keyword).contains(&"fn".to_string()),
+            "{spans:?}"
+        );
     }
 
     #[test]
@@ -457,51 +445,42 @@ mod tests {
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
         assert_eq!(
-            colored(&spans, palette().syntax().string),
+            colored(&spans, palette().syntax.string),
             vec![r#""a\"b""#, "'c'"]
         );
     }
 
     #[test]
-    fn a_rust_char_literal_is_a_string_but_lifetimes_are_not() {
+    fn a_rust_char_literal_is_not_read_as_a_lifetime() {
         let mut highlighter = Highlighter::new("rust", palette());
         let line = "fn borrow<'a>(c: char) -> &'a str { let q = '\\''; }";
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(colored(&spans, palette().syntax().string), vec!["'\\''"]);
-    }
-
-    #[test]
-    fn an_unterminated_double_quote_stops_at_the_end_of_its_line() {
-        let mut highlighter = Highlighter::new("rust", palette());
-        let spans = highlighter.line(r#"let s = "open"#);
-        assert_eq!(colored(&spans, palette().syntax().string), vec![r#""open"#]);
-        let spans = highlighter.line("let t = 1;");
         assert!(
-            colored(&spans, palette().syntax().string).is_empty(),
+            colored(&spans, palette().syntax.string).contains(&"'\\''".to_string()),
             "{spans:?}"
         );
     }
 
     #[test]
-    fn json_keywords_are_not_treated_as_comments() {
+    fn json_constants_take_the_constant_hue_and_no_comment_hue() {
         let mut highlighter = Highlighter::new("json", palette());
         let line = r#"{"ok": true, "n": 3}"#;
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
-        assert_eq!(
-            colored_code(&spans, palette().syntax().keyword),
-            vec!["true"]
+        assert!(
+            colored(&spans, palette().syntax.number).contains(&"true".to_string()),
+            "{spans:?}"
         );
         assert!(
-            colored_comment(&spans, palette().syntax().comment).is_empty(),
+            colored_comment(&spans, palette().syntax.comment).is_empty(),
             "{spans:?}"
         );
     }
 
     #[test]
     fn an_unknown_language_stays_one_span_in_text_color() {
-        let mut highlighter = Highlighter::new("diff", palette());
+        let mut highlighter = Highlighter::new("miao-not-a-language", palette());
         let line = "- let x = 1 // not a comment";
         let spans = highlighter.line(line);
         assert_eq!(spans.len(), 1);
@@ -516,9 +495,19 @@ mod tests {
         let spans = highlighter.line(line);
         assert_eq!(text(&spans), line);
         assert_eq!(
-            colored_comment(&spans, palette().syntax().comment),
+            colored_comment(&spans, palette().syntax.comment),
             vec!["# done"]
         );
-        assert!(colored_code(&spans, palette().syntax().keyword).contains(&"if".to_string()));
+        assert!(colored_code(&spans, palette().syntax.keyword).contains(&"if".to_string()));
+    }
+
+    #[test]
+    fn a_monochrome_palette_paints_code_without_hues() {
+        let theme = theme::builtin("miao", crate::theme::ThemeMode::Dark).expect("builtin theme");
+        let mut highlighter = Highlighter::new("rust", theme.monochrome());
+        let spans = highlighter.line("let x = 42; // note");
+        for span in &spans {
+            assert_eq!(span.style.fg, Some(Color::Reset), "{spans:?}");
+        }
     }
 }

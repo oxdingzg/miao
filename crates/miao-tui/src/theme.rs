@@ -18,6 +18,14 @@ pub struct Palette {
     pub element: Color,
     pub border: Color,
     pub border_active: Color,
+    /// Code tokens, read from the theme's own `syntax*` colours.
+    pub syntax: Syntax,
+    /// The `+`/`-` glyph colour of a changed diff row.
+    pub diff_added: Color,
+    pub diff_removed: Color,
+    /// The band behind a changed diff row.
+    pub diff_added_bg: Color,
+    pub diff_removed_bg: Color,
 }
 
 impl Palette {
@@ -39,76 +47,57 @@ impl Palette {
             element: Color::Reset,
             border: Color::Reset,
             border_active: Color::Reset,
+            syntax: Syntax::monochrome(),
+            diff_added: Color::Reset,
+            diff_removed: Color::Reset,
+            diff_added_bg: Color::Reset,
+            diff_removed_bg: Color::Reset,
         }
     }
 
-    /// How a fenced code block or a diff body colours its tokens.
-    ///
-    /// The names and hues follow the product's `--syntax-*` variables
-    /// (`packages/ui/src/styles/theme.css`), so code reads the same in the TUI
-    /// as in the rest of miao: comments and keywords keep the muted body colour
-    /// instead of a hue of their own, while strings and numbers take the fixed
-    /// teal and cyan the product uses, swapped for darker twins when the
-    /// background is light.
-    pub fn syntax(self) -> Syntax {
-        // The monochrome palette has no colours left to hand out, so a code
-        // block must not reintroduce them through the syntax hues.
-        if self.background == Color::Reset {
-            return Syntax {
-                comment: Color::Reset,
-                string: Color::Reset,
-                number: Color::Reset,
-                keyword: Color::Reset,
-            };
-        }
-        let light = matches!(
-            self.background,
-            Color::Rgb(r, g, b) if (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 > 140
-        );
-        match light {
-            true => Syntax {
-                comment: self.text_muted,
-                string: rgb("006656"),
-                number: rgb("007b80"),
-                keyword: self.text_muted,
-            },
-            false => Syntax {
-                comment: self.text_muted,
-                string: rgb("00ceb9"),
-                number: rgb("93e9f6"),
-                keyword: self.text_muted,
-            },
-        }
-    }
-
-    /// The block behind one changed diff row, named after the product's own
-    /// diff variables (`--surface-diff-add-base`, `--surface-diff-delete-base`):
-    /// the row reads as the product's green or red block, on a light canvas as
-    /// on a dark one. A monochrome terminal keeps meaning in the glyphs alone.
+    /// The block behind one changed diff row: the theme's own `diffAddedBg` or
+    /// `diffRemovedBg`, so the row reads the way the product's diff does. A
+    /// monochrome terminal keeps meaning in the glyphs alone.
     pub fn diff_block(self, added: bool) -> Color {
-        if self.background == Color::Reset {
-            return Color::Reset;
-        }
-        let light = matches!(
-            self.background,
-            Color::Rgb(r, g, b) if (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 > 140
-        );
-        match (light, added) {
-            (true, true) => rgb("e3fae1"),
-            (true, false) => rgb("feefeb"),
-            (false, true) => rgb("1a2919"),
-            (false, false) => rgb("42120b"),
+        match added {
+            true => self.diff_added_bg,
+            false => self.diff_removed_bg,
         }
     }
 }
 
-/// Token colours for code, named after the product's syntax variables.
+/// Token colours for code, named after the product's `syntax*` theme keys
+/// (`packages/plugin/src/tui.ts: TuiThemeCurrent`). A grammar decides which
+/// token a run of code is; this decides what that token looks like.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Syntax {
     pub comment: Color,
+    pub keyword: Color,
+    pub function: Color,
+    pub variable: Color,
     pub string: Color,
     pub number: Color,
-    pub keyword: Color,
+    /// Types, classes, and other named kinds (`syntaxType`; `type` is a
+    /// Rust keyword, so the field cannot take that name).
+    pub kind: Color,
+    pub operator: Color,
+    pub punctuation: Color,
+}
+
+impl Syntax {
+    fn monochrome() -> Self {
+        Self {
+            comment: Color::Reset,
+            keyword: Color::Reset,
+            function: Color::Reset,
+            variable: Color::Reset,
+            string: Color::Reset,
+            number: Color::Reset,
+            kind: Color::Reset,
+            operator: Color::Reset,
+            punctuation: Color::Reset,
+        }
+    }
 }
 
 /// Whether the environment asks for no colour. `NO_COLOR` follows
@@ -439,7 +428,7 @@ fn parse_theme(text: &str, mode: ThemeMode, warnings: &mut Vec<String>) -> Resul
             .ok_or_else(|| format!("missing theme.{key}"))?;
         resolve_color(raw, theme, defs, &mut Vec::new(), mode, warnings)
     };
-    Ok(Palette {
+    let mut palette = Palette {
         primary: color("primary")?,
         secondary: color("secondary")?,
         accent: color("accent")?,
@@ -453,7 +442,55 @@ fn parse_theme(text: &str, mode: ThemeMode, warnings: &mut Vec<String>) -> Resul
         element: color("backgroundElement")?,
         border: color("border")?,
         border_active: color("borderActive")?,
-    })
+        syntax: Syntax::monochrome(),
+        diff_added: Color::Reset,
+        diff_removed: Color::Reset,
+        diff_added_bg: Color::Reset,
+        diff_removed_bg: Color::Reset,
+    };
+    // Code and diff colours are optional: a theme written before they existed
+    // still loads, and an absent key falls back to a derived hue instead of
+    // dropping the whole theme.
+    let mut token = |key: &str| -> Option<Color> {
+        let raw = theme.get(key)?;
+        resolve_color(raw, theme, defs, &mut Vec::new(), mode, warnings).ok()
+    };
+    palette.syntax = Syntax {
+        comment: token("syntaxComment").unwrap_or(palette.text_muted),
+        keyword: token("syntaxKeyword").unwrap_or(palette.text_muted),
+        function: token("syntaxFunction").unwrap_or(palette.primary),
+        variable: token("syntaxVariable").unwrap_or(palette.text),
+        string: token("syntaxString").unwrap_or(palette.success),
+        number: token("syntaxNumber").unwrap_or(palette.warning),
+        kind: token("syntaxType").unwrap_or(palette.accent),
+        operator: token("syntaxOperator").unwrap_or(palette.text_muted),
+        punctuation: token("syntaxPunctuation").unwrap_or(palette.text),
+    };
+    palette.diff_added = token("diffAdded").unwrap_or(palette.success);
+    palette.diff_removed = token("diffRemoved").unwrap_or(palette.error);
+    palette.diff_added_bg =
+        token("diffAddedBg").unwrap_or_else(|| diff_band(palette.background, true));
+    palette.diff_removed_bg =
+        token("diffRemovedBg").unwrap_or_else(|| diff_band(palette.background, false));
+    Ok(palette)
+}
+
+/// The green or red a diff row falls back to when a theme names no band of its
+/// own: dark enough to sit under the code on a dark canvas, pale on a light one.
+fn diff_band(background: Color, added: bool) -> Color {
+    if background == Color::Reset {
+        return Color::Reset;
+    }
+    let light = matches!(
+        background,
+        Color::Rgb(r, g, b) if (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000 > 140
+    );
+    match (light, added) {
+        (true, true) => rgb("e3fae1"),
+        (true, false) => rgb("feefeb"),
+        (false, true) => rgb("1a2919"),
+        (false, false) => rgb("42120b"),
+    }
 }
 
 fn resolve_color(
@@ -1115,43 +1152,71 @@ mod tests {
     }
 
     #[test]
-    fn a_code_block_paints_with_the_products_syntax_hues() {
-        // The same variables the web UI paints code with
-        // (`packages/ui/src/styles/theme.css`), so a block keeps its colours
-        // when the operator moves between the TUI and the rest of miao.
+    fn a_code_block_paints_with_the_themes_own_syntax_hues() {
+        // The theme's `syntax*` keys are the same ones the editor's shiki
+        // pipeline resolves, so a block keeps its colours when the operator
+        // moves between the TUI and the rest of miao.
         let palette = builtin(DEFAULT_THEME, ThemeMode::Dark).expect("builtin theme");
-        let syntax = palette.syntax();
-        assert_eq!(
-            syntax.string,
-            rgb("00ceb9"),
-            "the product's --syntax-string"
-        );
-        assert_eq!(
-            syntax.number,
-            rgb("93e9f6"),
-            "the product's --syntax-constant"
-        );
-        assert_eq!(syntax.comment, palette.text_muted);
-        assert_eq!(syntax.keyword, palette.text_muted);
+        let syntax = palette.syntax;
+        assert_eq!(syntax.string, rgb("e6db74"), "theme.syntaxString");
+        assert_eq!(syntax.number, rgb("ae81ff"), "theme.syntaxNumber");
+        assert_eq!(syntax.comment, rgb("888c94"), "theme.syntaxComment");
+        assert_eq!(syntax.keyword, rgb("f92572"), "theme.syntaxKeyword");
+        assert_eq!(syntax.function, rgb("a7e22e"), "theme.syntaxFunction");
+        assert_eq!(syntax.kind, rgb("65d9ef"), "theme.syntaxType");
     }
 
     #[test]
-    fn a_light_background_gets_the_dark_twins_of_the_syntax_hues() {
-        let light = Palette {
-            background: rgb("ffffff"),
-            ..builtin(DEFAULT_THEME, ThemeMode::Dark).expect("builtin theme")
-        };
-        assert_eq!(light.syntax().string, rgb("006656"));
-        assert_eq!(light.syntax().number, rgb("007b80"));
+    fn a_theme_without_code_colours_still_loads_and_falls_back() {
+        // A theme file written before the code and diff colours existed must
+        // keep working: the keys are optional, and their absence is not a
+        // warning the operator has to read.
+        let mut warnings = Vec::new();
+        let palette = parse_theme(CUSTOM, ThemeMode::Dark, &mut warnings).expect("parses");
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(palette.syntax.comment, palette.text_muted);
+        assert_eq!(palette.syntax.keyword, palette.text_muted);
+        assert_eq!(palette.syntax.variable, palette.text);
+        assert_eq!(palette.diff_added, palette.success);
+        assert_eq!(palette.diff_removed, palette.error);
+        assert_eq!(
+            palette.diff_block(true),
+            diff_band(palette.background, true)
+        );
+        assert_eq!(
+            palette.diff_block(false),
+            diff_band(palette.background, false)
+        );
+    }
+
+    #[test]
+    fn a_theme_paints_its_own_diff_blocks() {
+        let palette = builtin(DEFAULT_THEME, ThemeMode::Dark).expect("builtin theme");
+        assert_eq!(palette.diff_block(true), rgb("022800"), "diffAddedBg");
+        assert_eq!(palette.diff_block(false), rgb("3d0101"), "diffRemovedBg");
     }
 
     #[test]
     fn the_monochrome_palette_hands_out_no_syntax_colour() {
-        let syntax = builtin(DEFAULT_THEME, ThemeMode::Dark)
+        let palette = builtin(DEFAULT_THEME, ThemeMode::Dark)
             .expect("builtin theme")
-            .monochrome()
-            .syntax();
-        for colour in [syntax.comment, syntax.string, syntax.number, syntax.keyword] {
+            .monochrome();
+        let syntax = palette.syntax;
+        for colour in [
+            syntax.comment,
+            syntax.keyword,
+            syntax.function,
+            syntax.variable,
+            syntax.string,
+            syntax.number,
+            syntax.kind,
+            syntax.operator,
+            syntax.punctuation,
+            palette.diff_added,
+            palette.diff_removed,
+            palette.diff_added_bg,
+            palette.diff_removed_bg,
+        ] {
             assert_eq!(colour, Color::Reset);
         }
     }

@@ -25,6 +25,11 @@ crossterm = "0.29"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Syntax highlighting: TextMate grammars (the family the editor's shiki
+# pipeline resolves) with a pure-Rust regex engine, so no C toolchain is needed
+# on any of the build targets. `two-face` adds bat's extra definitions.
+syntect = { version = "5.3", default-features = false, features = ["default-fancy", "parsing"] }
+two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "signal", "sync", "time"] }
 unicode-segmentation = "1"
 unicode-width = "0.2"

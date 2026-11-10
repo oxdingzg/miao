@@ -501,7 +501,7 @@ mod tests {
         let body = &lines[1];
         assert_eq!(text(body), "  │ let x = 1; // note");
         let colors: Vec<_> = body.spans.iter().map(|span| span.style.fg).collect();
-        let syntax = theme().palette.syntax();
+        let syntax = theme().palette.syntax;
         assert!(colors.contains(&Some(syntax.keyword)), "{colors:?}");
         assert!(colors.contains(&Some(syntax.number)), "{colors:?}");
     }

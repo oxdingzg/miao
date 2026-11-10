@@ -18,8 +18,9 @@
 
 不做（Phase 4 / T10）：
 
-- ts/js 语法高亮与 diff 语法高亮：TS 使用 tree-sitter；Rust TUI 用主题色区分
-  `+`/`-`/`@@` 与代码块底纹，不做逐 token 高亮。
+- 逐 token 高亮已改为产品同源的 TextMate 语法：`highlight.rs` 用 `syntect` +
+  `two-face`（与编辑器 shiki 管线同一套语法族），作用域归到主题的九类
+  `syntax*` token；`+`/`-` 行仍用主题的 `diffAddedBg`/`diffRemovedBg` 铺满整行。
 - 工具行展开/折叠的鼠标交互（TS 的 click to view）：当前 transcript 是只读阅读面，
   预览行数按 TS 折叠态选取。
 - 子代理内联 transcript（TS 的 Task 展开）：需要订阅子 Session 的 wire 事件，

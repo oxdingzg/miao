@@ -10,7 +10,6 @@
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use serde_json::Value;
-use unicode_width::UnicodeWidthStr;
 
 use crate::highlight::Highlighter;
 use crate::session::{DisplayFile, ToolPart};
@@ -1062,22 +1061,9 @@ fn paint_diff(
         })
         .max()
         .unwrap_or(0);
-    // The scanner carries block-comment state across lines, so the file's own
-    // language decides the spans; an extension outside the table stays plain.
+    // The grammar carries block-comment state across lines, so the file's own
+    // language decides the spans; an extension no grammar claims stays plain.
     let mut highlighter = Highlighter::new(extension(path), palette);
-    // A changed row is a block, not a streak of coloured text: every cell of it
-    // carries the change's tint, and the block ends on one column so its right
-    // edge is straight whatever the code says.
-    let block = rows
-        .iter()
-        .filter_map(|row| match row {
-            DiffRow::Line { marker, text, .. } if *marker != ' ' => {
-                Some(width + 4 + marker.len_utf8() + text.width())
-            }
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0);
     for row in rows {
         match row {
             DiffRow::Hunk => out.push(Line::from(Span::styled(
@@ -1093,13 +1079,18 @@ fn paint_diff(
                     Some(number) => format!("  {number:>width$}  "),
                     None => format!("  {:width$}  ", ""),
                 };
-                // A changed row is the product's diff block: the row's own
-                // green or red behind the code, whose scanner colours stay —
-                // keywords keep their hue inside the block, the way a fenced
-                // snippet does. Unchanged rows keep the scanner too.
-                let block_style = match marker {
-                    '+' | '-' => Style::new().bg(palette.diff_block(*marker == '+')),
-                    _ => Style::new(),
+                // A changed row is one band from the gutter to the pane's last
+                // column, in the theme's own diff colour; the code inside keeps
+                // its syntax hues, the way a fenced snippet does. Unchanged rows
+                // stay on the canvas.
+                let tint = match marker {
+                    '+' | '-' => Some(palette.diff_block(*marker == '+'))
+                        .filter(|tint| *tint != ratatui::style::Color::Reset),
+                    _ => None,
+                };
+                let block_style = match tint {
+                    Some(tint) => Style::new().bg(tint),
+                    None => Style::new(),
                 };
                 let mut spans = vec![
                     Span::styled(
@@ -1113,24 +1104,20 @@ fn paint_diff(
                             .patch(block_style),
                     ),
                 ];
-                let start = width + 4 + marker.len_utf8() + text.width();
                 spans.extend(
                     highlighter
                         .line(text)
                         .into_iter()
                         .map(|span| span.patch_style(block_style)),
                 );
-                if *marker != ' ' && start < block {
-                    spans.push(Span::styled(" ".repeat(block - start), block_style));
-                }
                 let mut line = Line::from(spans);
                 // The row-level tint is what survives the transcript pipeline:
                 // trailing pad spans can be trimmed downstream, and the pane
                 // re-pads any row whose line style carries a background. A
                 // span-only tint reads as a ragged streak; the line style is
                 // the block.
-                if *marker != ' ' {
-                    line.style = Style::new().bg(palette.diff_block(*marker == '+'));
+                if let Some(tint) = tint {
+                    line.style = Style::new().bg(tint);
                 }
                 out.push(line);
             }
@@ -1178,8 +1165,8 @@ fn extension(path: &str) -> &str {
 fn diff_color(marker: char, theme: &Theme) -> Color {
     let palette = theme.palette;
     match marker {
-        '+' => palette.success,
-        '-' => palette.error,
+        '+' => palette.diff_added,
+        '-' => palette.diff_removed,
         _ => palette.text_muted,
     }
 }
@@ -1756,6 +1743,7 @@ mod tests {
     use super::*;
     use crate::theme;
     use serde_json::json;
+    use unicode_width::UnicodeWidthStr;
 
     fn theme() -> Theme {
         Theme {
@@ -1883,17 +1871,18 @@ mod tests {
             "an unchanged row stays on the canvas: {:?}",
             context
         );
-        // The shorter removed row is padded out to the block the added row sets.
+        // The tint is the pane's job, not a pad to the block's longest line: a
+        // row keeps the width of its own text and the pane fills the rest, so a
+        // short change and a long one are both bands of the same colour.
         let cells = |row: &Line<'_>| {
             row.spans
                 .iter()
                 .map(|span| span.content.width())
                 .sum::<usize>()
         };
-        assert_eq!(
-            cells(removed),
-            cells(added),
-            "both changed rows end on the block's column: {:?}",
+        assert!(
+            cells(removed) < cells(added),
+            "a row is not padded out to the block's longest line: {:?}",
             rendered(&rows)
         );
     }
@@ -2418,7 +2407,7 @@ mod tests {
             .iter()
             .find(|span| span.content.as_ref() == "let")
             .expect("the keyword is its own span");
-        assert_eq!(keyword.style.fg, Some(theme.palette.syntax().keyword));
+        assert_eq!(keyword.style.fg, Some(theme.palette.syntax.keyword));
         assert_eq!(keyword.style.bg, Some(theme.palette.diff_block(false)));
         let row = rendered_lines
             .iter()
@@ -2429,7 +2418,7 @@ mod tests {
             .iter()
             .find(|span| span.content.as_ref() == "let")
             .expect("the keyword is its own span");
-        assert_eq!(keyword.style.fg, Some(theme.palette.syntax().keyword));
+        assert_eq!(keyword.style.fg, Some(theme.palette.syntax.keyword));
     }
 
     #[test]
