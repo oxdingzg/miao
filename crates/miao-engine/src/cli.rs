@@ -487,6 +487,28 @@ pub mod test_support {
     pub use super::config_routes_manifest;
 }
 
+/// The operator's context limits: the flag a product spawner fills in when it
+/// translated the knob, otherwise the environment variable the knob is
+/// documented under.
+///
+/// Reading the variable in the engine keeps `serve`, `acp` and a host that runs
+/// a prompt headlessly honest about it, instead of only the one spawner that
+/// happened to translate it into a flag.
+fn context_limits_from(
+    flag: Option<&str>,
+    environment: Option<&str>,
+) -> Result<
+    Option<miao_engine::context_trigger::ContextLimits>,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    let Some(json) = flag.or(environment) else {
+        return Ok(None);
+    };
+    miao_engine::context_trigger::ContextLimits::from_wire(json)
+        .map(Some)
+        .map_err(|error| error.into())
+}
+
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
@@ -1185,10 +1207,10 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             miao_engine::tool_replay::ToolReplay::load(std::path::Path::new(file))
         })
         .transpose()?;
-    let context_limits = options
-        .get("--context-limits")
-        .map(|json| miao_engine::context_trigger::ContextLimits::from_wire(json))
-        .transpose()?;
+    let context_limits = context_limits_from(
+        options.get("--context-limits").map(String::as_str),
+        std::env::var("MIAO_CONTEXT_LIMITS").ok().as_deref(),
+    )?;
     let default_agent = options
         .get("--agent-config")
         .map(|file| {
@@ -1442,5 +1464,30 @@ mod tests {
         assert!(first[0].is_some());
         std::fs::write(&path, "{ }").unwrap();
         assert_ne!(config_stamp(&files), first);
+    }
+
+    // The knob a product host forwards as a flag and the variable an operator
+    // sets by hand have to mean the same thing, or a headless run silently
+    // ignores the window the operator asked for.
+    #[test]
+    fn context_limits_come_from_the_flag_then_the_environment() {
+        let limits = context_limits_from(None, None).unwrap();
+        assert!(limits.is_none());
+        let environment = r#"{"window":8000,"ratio":0.5,"headroom":800,"perPass":2}"#;
+        let limits = context_limits_from(None, Some(environment))
+            .unwrap()
+            .unwrap();
+        assert_eq!(limits.window, 8_000);
+        assert_eq!(limits.ratio, 0.5);
+        assert_eq!(limits.headroom, 800);
+        assert_eq!(limits.per_pass, 2);
+        // The flag wins: it is what a spawner derived from the same variable.
+        let flag = r#"{"window":4000,"ratio":0.6,"headroom":100,"perPass":1}"#;
+        let limits = context_limits_from(Some(flag), Some(environment))
+            .unwrap()
+            .unwrap();
+        assert_eq!(limits.window, 4_000);
+        let error = context_limits_from(Some("{"), None).unwrap_err();
+        assert!(error.to_string().contains("invalid --context-limits"));
     }
 }
