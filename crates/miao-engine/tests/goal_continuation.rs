@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 /// Serializes the tests that tune the no-progress floor through the process
 /// environment; parallel set/remove would race each other.
-static NO_PROGRESS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static NO_PROGRESS_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct Script {
     calls: AtomicUsize,
@@ -213,9 +213,7 @@ async fn continues_independent_work_without_a_human_prompt_then_idles_with_locke
 
 #[tokio::test]
 async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop_budget() {
-    let _env = NO_PROGRESS_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _env = NO_PROGRESS_ENV_LOCK.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     setup(&store, "active", true, true, dir.path()).await;
@@ -499,9 +497,7 @@ async fn runnable_todos_keep_draining_without_any_goal() {
 
 #[tokio::test]
 async fn stalled_todos_pause_the_loop_without_any_goal() {
-    let _env = NO_PROGRESS_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _env = NO_PROGRESS_ENV_LOCK.lock().await;
     std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
@@ -536,9 +532,7 @@ async fn stalled_todos_pause_the_loop_without_any_goal() {
 /// 3524 continuations, instead of stopping after two idling replies.
 #[tokio::test]
 async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the_run() {
-    let _env = NO_PROGRESS_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _env = NO_PROGRESS_ENV_LOCK.lock().await;
     std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path().join("workspace");
