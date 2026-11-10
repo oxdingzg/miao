@@ -3233,6 +3233,9 @@ async fn execute(
         // operator override, then the Session model's declared capacity, then
         // a refusal-learned window - so bounding and compaction cannot
         // disagree about what fits.
+        // Usage events attribute spend to the same served identity: a Session
+        // on the engine's default model lands in the per-model rollups
+        // instead of a null bucket.
         let model = served_model(binding.as_ref(), provider.identity());
         let declared = inner
             .route_limits
@@ -3623,7 +3626,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":model.as_deref(),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?,"context_window":pressure.map(|(window,_)|json!(window)),"context_tokens":pressure.map(|(_,counted)|json!(counted))}),
                         )
                         .await?;
                     if partial
@@ -3657,7 +3660,7 @@ async fn execute(
                         .record(
                             session,
                             "usage",
-                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":binding.as_ref().map(|binding|binding.model.as_str()),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                            json!({"run_id":run,"step":step,"usage":partial.usage,"partial":true,"model":model.as_deref(),"cache":crate::usage::cache_lineage(&partial.usage),"context_message_seq":inner.store.max_message_seq(session).await?,"context_window":pressure.map(|(window,_)|json!(window)),"context_tokens":pressure.map(|(_,counted)|json!(counted))}),
                         )
                         .await?;
                     if partial
@@ -3850,7 +3853,11 @@ command: None,
             .record(
                 session,
                 "usage",
-                json!({"run_id":run,"step":step,"usage":reply.usage,"model":binding.as_ref().map(|binding|binding.model.as_str()),"route":route,"cost":cost,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?}),
+                // The window and the occupancy this provider call was planned
+                // against ride the same event as its billed usage, so a client
+                // can show how full the Session's context is without
+                // re-deriving the anchor or asking the runtime.
+                json!({"run_id":run,"step":step,"usage":reply.usage,"model":model.as_deref(),"route":route,"cost":cost,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?,"context_window":pressure.map(|(window,_)|json!(window)),"context_tokens":pressure.map(|(_,counted)|json!(counted))}),
             )
             .await?;
         budget_spent = budget_spent.saturating_add(billed_tokens(&reply.usage));

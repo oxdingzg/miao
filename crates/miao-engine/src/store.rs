@@ -4360,6 +4360,12 @@ impl Store {
         self.call(move |conn| {
             let mut turns = 0u64;
             let mut partial_turns = 0u64;
+            // The newest usage event that carried the window the turn was
+            // planned against and the occupancy it planned for: the "how full
+            // is this Session's context" read, at the granularity of the last
+            // provider turn. Older events are overwritten, so a compaction or
+            // a trim shows up the next time a turn settles.
+            let mut context = json!(null);
             let mut tokens = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
             let mut coverage = json!({"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"nonCached":0});
             let mut requests = 0u64;
@@ -4576,6 +4582,11 @@ impl Store {
                                 .saturating_add(usage["cacheWriteInputTokens"].as_u64().unwrap_or(0)) > input
                         }) {
                             invalid_cache_rows += 1;
+                        }
+                        if let (Some(window), Some(counted)) =
+                            (data["context_window"].as_u64(), data["context_tokens"].as_u64())
+                        {
+                            context = json!({"window":window,"tokens":counted});
                         }
                         for (field, key) in [
                             ("inputTokens", "input"),
@@ -4849,6 +4860,7 @@ impl Store {
                 },
                 "ttftMs": ttft_stats,
                 "lineage": lineage,
+                "context": context,
                 "tools": {"calls": tool_calls, "failures": tool_failures},
                 "turnsDetail": turn_detail,
             }))
@@ -4946,6 +4958,60 @@ impl Store {
                     cost_turns.insert(row.get(0)?, row.get::<_, i64>(1)?.max(0) as u64);
                 }
             }
+            // Per-model rollup over the same window. `model` is the served
+            // name the usage event attributed, so a Session on the engine's
+            // default model groups under its provider identity rather than a
+            // null bucket; rows with no name at all (custom providers without
+            // an identity, or events that predate attribution) stay out of the
+            // array and are still counted in the totals above.
+            let mut model_tokens: std::collections::BTreeMap<String, [u64; 4]> =
+                std::collections::BTreeMap::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT json_extract(data,'$.model'),
+                            COALESCE(SUM(json_extract(data,'$.usage.inputTokens')),0),
+                            COALESCE(SUM(json_extract(data,'$.usage.outputTokens')),0),
+                            COALESCE(SUM(json_extract(data,'$.usage.cacheReadInputTokens')),0),
+                            COUNT(*)
+                     FROM engine_event
+                     WHERE kind='usage' AND recorded_at_ms >= ?1
+                       AND json_extract(data,'$.model') IS NOT NULL
+                     GROUP BY json_extract(data,'$.model')",
+                )?;
+                let mut rows = stmt.query(params![first])?;
+                while let Some(row) = rows.next()? {
+                    let model: String = row.get(0)?;
+                    model_tokens.insert(
+                        model,
+                        [
+                            row.get::<_, i64>(1)?.max(0) as u64,
+                            row.get::<_, i64>(2)?.max(0) as u64,
+                            row.get::<_, i64>(3)?.max(0) as u64,
+                            row.get::<_, i64>(4)?.max(0) as u64,
+                        ],
+                    );
+                }
+            }
+            let mut model_cost: std::collections::BTreeMap<String, u64> =
+                std::collections::BTreeMap::new();
+            {
+                let mut stmt = conn.prepare(
+                    "SELECT json_extract(data,'$.model'),
+                            COALESCE(SUM(CAST(json_extract(data,'$.cost.amount') AS REAL)),0.0)
+                     FROM engine_event
+                     WHERE kind='usage' AND recorded_at_ms >= ?1
+                       AND json_extract(data,'$.model') IS NOT NULL
+                       AND lower(COALESCE(json_extract(data,'$.cost.currency'),'usd'))='usd'
+                       AND json_extract(data,'$.cost.amount') IS NOT NULL
+                     GROUP BY json_extract(data,'$.model')",
+                )?;
+                let mut rows = stmt.query(params![first])?;
+                while let Some(row) = rows.next()? {
+                    let model: String = row.get(0)?;
+                    let amount: f64 = row.get(1)?;
+                    model_cost.insert(model, (amount.max(0.0) * 1_000_000.0).round() as u64);
+                }
+            }
             let truncated: bool = conn.query_row(
                 "SELECT EXISTS(SELECT 1 FROM engine_retention WHERE created_ms>=?1)",
                 params![first],
@@ -4984,9 +5050,32 @@ impl Store {
                     "cost_turns": cost_tally,
                 }));
             }
+            let mut models: Vec<(u64, serde_json::Value)> = model_tokens
+                .into_iter()
+                .map(|(model, counts)| {
+                    let cost = model_cost.get(&model).copied().unwrap_or(0);
+                    (
+                        counts[0].saturating_add(counts[1]),
+                        json!({
+                            "model": model,
+                            "input": counts[0],
+                            "output": counts[1],
+                            "cache_read": counts[2],
+                            "turns": counts[3],
+                            "tokens": counts[0].saturating_add(counts[1]),
+                            "cost_micros": cost,
+                        }),
+                    )
+                })
+                .collect();
+            // The busiest model leads: the strip reads top-down, and a rollup
+            // ordered by name hides which model the day's spend belonged to.
+            models.sort_by_key(|(tokens, _)| std::cmp::Reverse(*tokens));
+            let models = models.into_iter().map(|(_, row)| row).collect::<Vec<_>>();
             Ok(json!({
                 "hours": hours,
                 "buckets": out,
+                "models": models,
                 "totals": {
                     "input": totals[0],
                     "output": totals[1],
@@ -5962,6 +6051,65 @@ mod usage_hourly_tests {
             .expect("retention");
         let report = store.usage_hourly(24).await.expect("report");
         assert_eq!(report["truncated"], true);
+    }
+
+    /// The window rollup repeats the totals per served model, busiest first.
+    /// Rows with no attributed name still count in the totals but invent no
+    /// model row: naming one would fabricate an answer.
+    #[tokio::test]
+    async fn the_window_rollup_carries_a_per_model_breakdown() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Store::open(dir.path().join("engine.db"))
+            .await
+            .expect("store");
+        rusqlite::Connection::open(dir.path().join("engine.db"))
+            .expect("open")
+            .execute("INSERT INTO engine_session(id) VALUES('s')", [])
+            .expect("session");
+        let record = |model: Option<&str>, input: u64, output: u64| {
+            let mut event = json!({"usage":{"inputTokens":input,"outputTokens":output}});
+            if let Some(model) = model {
+                event["model"] = json!(model);
+            }
+            event
+        };
+        store
+            .record("s", "usage", record(Some("glm-5"), 1_200, 300))
+            .await
+            .expect("usage");
+        store
+            .record("s", "usage", record(Some("claude-opus"), 500, 100))
+            .await
+            .expect("usage");
+        store
+            .record(
+                "s",
+                "usage",
+                json!({"usage":{"inputTokens":40,"outputTokens":10}}),
+            )
+            .await
+            .expect("unattributed usage");
+        store
+            .record(
+                "s",
+                "usage",
+                json!({"usage":{"inputTokens":10,"outputTokens":5},
+                       "model":"glm-5","cost":{"amount":0.01,"currency":"USD"}}),
+            )
+            .await
+            .expect("priced usage");
+        let report = store.usage_hourly(24).await.expect("report");
+        let models = report["models"].as_array().expect("models");
+        assert_eq!(models.len(), 2, "the unattributed row invents no model");
+        assert_eq!(models[0]["model"], "glm-5", "the busiest model leads");
+        assert_eq!(models[0]["input"], 1_210);
+        assert_eq!(models[0]["output"], 305);
+        assert_eq!(models[0]["tokens"], 1_515);
+        assert_eq!(models[0]["cost_micros"], 10_000);
+        assert_eq!(models[1]["model"], "claude-opus");
+        // The totals still count what no model row can claim.
+        assert_eq!(report["totals"]["input"], 1_750);
+        assert_eq!(report["totals"]["turns"], 4);
     }
 }
 

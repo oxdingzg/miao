@@ -22,6 +22,42 @@ pub struct HourlyBucket {
     pub cost_usd: f64,
 }
 
+/// One model's share of the window: the row under the strip that says which
+/// model the spend belonged to. The engine groups by the served name the usage
+/// event attributed, so this is what answered, not which route priced it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HourlyModel {
+    pub model: String,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub turns: u64,
+    pub cost_usd: f64,
+}
+
+impl HourlyModel {
+    fn from_value(value: &Value) -> Self {
+        let number = |key: &str| value.get(key).and_then(Value::as_u64).unwrap_or(0);
+        Self {
+            model: value
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            input: number("input"),
+            output: number("output"),
+            cache_read: number("cache_read"),
+            turns: number("turns"),
+            cost_usd: number("cost_micros") as f64 / 1_000_000.0,
+        }
+    }
+    /// The cached share of this model's prompt tokens, as the engine reports
+    /// the same ratio for the window's totals: prompt is the denominator.
+    pub fn cache_hit(&self) -> Option<f64> {
+        (self.input > 0).then(|| (self.cache_read.min(self.input) as f64) / self.input as f64)
+    }
+}
+
 /// Billed usage per whole hour for the trailing window the engine answered.
 ///
 /// `cost_turns` says how many turns carried a money figure — the gateway's own
@@ -31,6 +67,10 @@ pub struct HourlyBucket {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HourlyUsage {
     pub buckets: Vec<HourlyBucket>,
+    /// Per-model rollup over the window, busiest first. Rows without a served
+    /// name stay only in the totals: attributing them to a name would invent
+    /// one.
+    pub models: Vec<HourlyModel>,
     pub input: u64,
     pub output: u64,
     pub cache_read: u64,
@@ -68,6 +108,11 @@ impl HourlyUsage {
                         })
                         .collect()
                 })
+                .unwrap_or_default(),
+            models: value
+                .get("models")
+                .and_then(Value::as_array)
+                .map(|rows| rows.iter().map(HourlyModel::from_value).collect())
                 .unwrap_or_default(),
             input: number(totals.and_then(|totals| totals.get("input"))),
             output: number(totals.and_then(|totals| totals.get("output"))),
@@ -156,6 +201,12 @@ pub struct UsageSummary {
     pub auxiliary_calls: u64,
     pub auxiliary_input_tokens: u64,
     pub auxiliary_output_tokens: u64,
+    /// The context window the last provider turn planned against, and the
+    /// occupancy it planned for. `None` means the engine never reported a
+    /// window (no turn yet, or a model with no known capacity), which reads
+    /// differently from an empty context.
+    pub context_window: Option<u64>,
+    pub context_tokens: Option<u64>,
 }
 
 /// One settled turn's timing, as the engine recorded it beside the receipt.
@@ -245,6 +296,14 @@ impl UsageSummary {
                 .unwrap_or(0),
             auxiliary_output_tokens: u64_at(value, &["auxiliary", "usage", "tokens", "output"])
                 .unwrap_or(0),
+            context_window: value
+                .get("context")
+                .and_then(|context| context.get("window"))
+                .and_then(Value::as_u64),
+            context_tokens: value
+                .get("context")
+                .and_then(|context| context.get("tokens"))
+                .and_then(Value::as_u64),
         }
     }
 }
@@ -282,6 +341,48 @@ mod tests {
             HourlyUsage::from_value(&json!({"totals": {}})).cache_hit(),
             None
         );
+    }
+
+    /// The window rollup keeps the served names and their shares, busiest
+    /// first as the engine ordered them; a report without the array reads as
+    /// an older engine whose strip still renders from the totals.
+    #[test]
+    fn the_hourly_report_carries_per_model_rows() {
+        let usage = HourlyUsage::from_value(&json!({
+            "buckets": [],
+            "models": [
+                {"model": "glm-5", "input": 1200, "output": 300, "cache_read": 900, "turns": 3, "cost_micros": 2025},
+                {"model": "claude-opus", "input": 500, "output": 100, "cache_read": 0, "turns": 1},
+            ],
+            "totals": {"input": 1700, "output": 400}
+        }));
+        assert_eq!(usage.models.len(), 2);
+        assert_eq!(usage.models[0].model, "glm-5");
+        assert_eq!(usage.models[0].input, 1200);
+        assert_eq!(usage.models[0].cost_usd, 0.002_025);
+        // Per-model cache share divides the model's own prompt, the way the
+        // engine computes the window's total ratio.
+        assert_eq!(usage.models[0].cache_hit(), Some(0.75));
+        assert_eq!(usage.models[1].cache_hit(), Some(0.0));
+        assert!(HourlyUsage::from_value(&json!({"totals": {}}))
+            .models
+            .is_empty());
+    }
+
+    /// The last provider turn's window and occupancy ride the report so the
+    /// sidebar can show how full the Session's context is. A report without
+    /// them stays `None`: no known capacity is not a full one.
+    #[test]
+    fn the_report_carries_the_last_turns_context_window() {
+        let usage = UsageSummary::from_value(&json!({
+            "turns": 1,
+            "context": {"window": 1_048_576, "tokens": 630_000}
+        }));
+        assert_eq!(usage.context_window, Some(1_048_576));
+        assert_eq!(usage.context_tokens, Some(630_000));
+        let bare = UsageSummary::from_value(&json!({"turns": 1}));
+        assert_eq!(bare.context_window, None);
+        assert_eq!(bare.context_tokens, None);
     }
 
     #[test]
