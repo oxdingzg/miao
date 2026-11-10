@@ -164,34 +164,35 @@ async fn settled(store: &Store, session: &str, id: &str) -> Value {
 /// a Session asking for three holds two and its third stays queued even
 /// though two fleet slots are still free. Another Session's first job takes a
 /// free slot right away — that is the cross-session guarantee.
+/// The pool's own counters are the structural fact; the durable rows only
+/// name which job is waiting.
 #[tokio::test]
 async fn a_session_at_its_share_leaves_free_slots_to_other_sessions() {
     let dir = tempfile::tempdir().unwrap();
     let (runtime, store, _) = setup(dir.path(), 30).await;
     runtime.admit(input("hog", "jobs 3"), true).await.unwrap();
-    let hog = jobs(&store, "hog", 3).await;
-    let third = hog[2]["job_id"].as_str().unwrap().to_owned();
-    let queued = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    let hog_snapshot = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
-            let job = store.job("hog", &third).await.unwrap().unwrap();
-            if job["state"] == "queued" {
-                return job;
+            let snapshot = runtime.resources().await;
+            if snapshot["jobs"]["active"].as_u64() == Some(2)
+                && snapshot["jobs"]["queued"].as_u64().unwrap_or(0) >= 1
+            {
+                return snapshot;
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("the third job queues behind the Session's own share");
+    assert_eq!(hog_snapshot["jobs"]["limit"], 4, "{hog_snapshot}");
+    assert_eq!(hog_snapshot["jobs"]["per_session"], 2, "{hog_snapshot}");
 
     runtime.admit(input("peer", "jobs 1"), true).await.unwrap();
     let peer = jobs(&store, "peer", 1).await;
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    let peer_id = peer[0]["job_id"].as_str().unwrap().to_owned();
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
-            let job = store
-                .job("peer", peer[0]["job_id"].as_str().unwrap())
-                .await
-                .unwrap()
-                .unwrap();
+            let job = store.job("peer", &peer_id).await.unwrap().unwrap();
             if job["state"] == "running" {
                 break;
             }
@@ -200,12 +201,16 @@ async fn a_session_at_its_share_leaves_free_slots_to_other_sessions() {
     })
     .await
     .expect("the peer's job runs without waiting for the hog");
-    let still_queued = store
-        .job("hog", queued["job_id"].as_str().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(still_queued["state"], "queued");
+
+    let snapshot = runtime.resources().await;
+    assert_eq!(snapshot["jobs"]["active"], 3, "{snapshot}");
+    assert_eq!(snapshot["jobs"]["queued"], 1, "{snapshot}");
+    // The hog's third job is the newest durable row, and it still has not
+    // started.
+    let hog_rows = store.jobs("hog").await.unwrap();
+    let third = &hog_rows[0];
+    assert_ne!(third["state"], "running", "{third}");
+    assert_ne!(third["state"], "completed", "{third}");
     runtime.shutdown().await;
 }
 
