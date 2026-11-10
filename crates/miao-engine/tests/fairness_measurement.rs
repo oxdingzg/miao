@@ -44,11 +44,14 @@ impl Provider for Submitter {
                 let long = prompt.contains("long");
                 let count = count.split_whitespace().next().unwrap();
                 let seconds = if long { 600 } else { 2 };
+                // The hog must outlive the whole run; the job tool's own
+                // timeout would otherwise reap it mid-run.
+                let timeout = if long { 120_000 } else { 10_000 };
                 let calls = (0..count.parse::<usize>().unwrap())
                     .map(|index| {
                         json!({"type":"tool_use","id":format!("call_{index}"),"name":"start_job","input":{
                             "argv":["/bin/sh","-c",format!("sleep {seconds}; printf result")],
-                            "timeout_ms":10000
+                            "timeout_ms":timeout
                         }})
                     })
                     .collect::<Vec<_>>();
@@ -175,7 +178,19 @@ async fn stress_curve_for_the_fair_job_pool() {
     .expect("every worker Session's jobs complete while the hog holds its share");
 
     sampler.abort();
-    let final_snapshot = runtime.resources().await;
+    let final_snapshot = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let snapshot = runtime.resources().await;
+            if snapshot["jobs"]["active"].as_u64() == Some(2)
+                && snapshot["jobs"]["queued"].as_u64() == Some(0)
+            {
+                return snapshot;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("only the hog's share remains running");
     let (sample_count, peak_queued, rss, fds) = {
         let rows = samples.lock().unwrap();
         let peak_queued = rows

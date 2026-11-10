@@ -91,6 +91,7 @@ newer record is the one to read.
 | `2026-11-07-tool07-mcp-search.md` | `23d725d997` | TOOL-07 (real REST/MCP backend selection with fail-closed host config, per-backend payload/turn cost bounds in each format's own vocabulary; the real-credential retrieval-quality and latency run stays open) |
 | `2026-11-07-cost04-turn-timings.md` | `18b3a92cc3` | COST-04 (all three criteria, re-run on a current tree; the `turn_timings` filter the issue cites matches no test since the phase-ledger rename) || `2026-11-07-job04-backpressure-signal.md` | `c1b981f229` | JOB-04 (the backpressure edge, its depth counting without a sender `len()`, the status line's `Engine backlog · N queued` rank, and the retry-budget tests; the wider cancellation matrix and real-terminal checks stay open) |
 | `2026-11-07-agt04-goal-plan-checklist.md` | `0f0cfa0283` | AGT-04 engine side (execution checklist / pending plan / persistent goal as three durable kinds, structured `goal.budget` + `stop_when`, plan persistence and fork copy, `verified` defaulting false; the TUI three-way display stays open) |
+| `2026-11-10-job06-cross-session-fairness.md` | `b298679b84` | JOB-06 engine side (per-Session fair shares on the job and subagent pools, the `resources` snapshot with queue accounting, the saturated-pool control-lane pin, stress-harness numbers for queue latency, starvation, RSS, and fds from a build-host run; the release stamp stays open) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
