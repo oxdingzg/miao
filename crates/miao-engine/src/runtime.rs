@@ -3052,6 +3052,13 @@ async fn drain(
             json!({"run_id":run,"reason":reason,"message":message}),
         )
         .await?;
+    // An interruption that produced no assistant reply is the one that reads like
+    // a dead engine: Escape stops the wait, and the transcript has nothing to show
+    // for the turn that was stopped. The live status row exists only while the
+    // drain runs, so the journal carries the explanation instead.
+    if reason == "interrupted" {
+        note_interruption(&inner, &session, &run).await;
+    }
     // Until now this failure existed only in the TUI's bounded stderr ring, so
     // a failed drain left nothing behind once the window closed.
     if reason == "failed" {
@@ -3076,6 +3083,42 @@ async fn drain(
         }
     }
     result
+}
+
+/// Explain an interruption the operator cannot see anywhere else.
+///
+/// Only a run that committed no assistant reply needs one: a run that answered
+/// already put its own text in the transcript, and repeating that as a note would
+/// be noise. A process shutdown and a removed Session are not turns anyone is
+/// waiting on either, so neither writes a note a later window would have to read.
+async fn note_interruption(inner: &Arc<Inner>, session: &str, run: &str) {
+    if inner.stop.is_cancelled() {
+        return;
+    }
+    let Ok(facts) = inner.store.run_interruption(session, run).await else {
+        return;
+    };
+    if facts.replied {
+        return;
+    }
+    let failed = match &facts.last_failure {
+        None => String::new(),
+        Some(reason) if facts.attempts > 0 => format!(
+            ", after {} failed provider attempt{} (last: {reason})",
+            facts.attempts,
+            if facts.attempts == 1 { "" } else { "s" }
+        ),
+        Some(reason) => format!(" (last provider failure: {reason})"),
+    };
+    let note = format!(
+        "Task interrupted: the turn stopped before the model answered{failed}. Nothing new was added here, and nothing is running now; send a message to continue."
+    );
+    // The note is context for the next turn, so a store that refuses it — a
+    // Session removed mid-interrupt — must not fail the run that is closing.
+    let _ = inner
+        .store
+        .inject(session, &format!("interrupted:{run}"), &note, "engine")
+        .await;
 }
 
 /// Emit one UserPromptSubmit per input promoted into visible history.
