@@ -163,9 +163,11 @@ fn any_user(request: &ModelRequest, needle: &str) -> bool {
     request.messages.iter().any(|message| {
         message.role == "user"
             && message.content.as_array().is_some_and(|parts| {
-                parts
-                    .iter()
-                    .any(|part| part["text"].as_str().is_some_and(|text| text.contains(needle)))
+                parts.iter().any(|part| {
+                    part["text"]
+                        .as_str()
+                        .is_some_and(|text| text.contains(needle))
+                })
             })
     })
 }
