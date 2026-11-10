@@ -2045,11 +2045,11 @@ impl App {
                     engine.tag(&tag.session_id, &value);
                 }
             }
-            DialogAction::Submit(key) if matches!(self.dialog, Some(Dialog::SignIn(_))) => {
+            DialogAction::SubmitAccount { account, key } => {
                 let Some(Dialog::SignIn(sign_in)) = self.dialog.take() else {
                     return;
                 };
-                self.store_provider_key(&sign_in.provider, &key);
+                self.store_provider_key(&sign_in.provider, &key, account.as_deref());
             }
             DialogAction::Submit(name) if matches!(self.dialog, Some(Dialog::WorktreeNew(_))) => {
                 self.dialog = None;
@@ -2353,6 +2353,11 @@ impl App {
                 if let Some(provider) = chosen.strip_prefix("action:update:") {
                     let name = self.provider_name(provider);
                     self.open_dialog(Dialog::sign_in_prompt(provider, &name));
+                    return;
+                }
+                if let Some(provider) = chosen.strip_prefix("action:add:") {
+                    let name = self.provider_name(provider);
+                    self.open_dialog(Dialog::add_account_prompt(provider, &name));
                     return;
                 }
                 if let Some(provider) = chosen.strip_prefix("action:delete:") {
@@ -2787,12 +2792,12 @@ impl App {
     /// looked unsaved again until miao itself restarted. A turn that is still
     /// running defers the restart, because shutting an engine down ends the
     /// work it is doing.
-    fn store_provider_key(&mut self, provider: &str, key: &str) {
+    fn store_provider_key(&mut self, provider: &str, key: &str, account: Option<&str>) {
         let Some(store) = self.credential_store.clone() else {
             self.notice("no credential store: set MIAO_DATA_HOME, XDG_DATA_HOME or HOME");
             return;
         };
-        match miao_engine::credential::store_key(&store, provider, key, None) {
+        match miao_engine::credential::store_key(&store, provider, key, account) {
             Ok(stored) => {
                 let label = format!("{} ({})", stored.label, stored.id);
                 let refresh = self.refresh_routes_manifest(&store);
@@ -2876,15 +2881,30 @@ impl App {
         }
     }
 
-    /// Write the routes a just-stored key newly covers into the manifest the
-    /// engine reads, so a restart is enough to serve them.
+    /// Rewrite the manifest the engine reads from the same configuration and
+    /// store a launch derives it from, so a restart serves exactly what the
+    /// store now holds.
+    ///
+    /// Reconciling entry by entry cannot do that: a replaced key keeps its row
+    /// only because the store updates in place, and a second account adds a
+    /// route the old manifest never named. Re-deriving answers both, and the
+    /// configuration the launcher read arrives through the environment so the
+    /// two derivations cannot disagree about which layers count.
     ///
     /// An unmatched launch (no manifest, an inline route list) has nothing to
     /// refresh and reports no error: the restart still serves what it served.
     fn refresh_routes_manifest(&self, store: &std::path::Path) -> Option<Result<usize, String>> {
         let path = std::env::var_os("MIAO_ENGINE_MODEL_ROUTES_CONFIG")?;
-        Some(miao_engine::native_routes::refresh_key_routes(
+        let sources = match std::env::var_os("MIAO_TUI_CONFIG_SOURCES") {
+            Some(plan) => match miao_engine::config_derive::plan(&plan.to_string_lossy()) {
+                Ok(sources) => sources,
+                Err(error) => return Some(Err(error)),
+            },
+            None => return Some(Err("no configuration sources: restart miao".into())),
+        };
+        Some(miao_engine::native_routes::refresh_routes(
             std::path::Path::new(&path),
+            &sources,
             Some(store),
         ))
     }
@@ -2945,7 +2965,12 @@ impl App {
                 Row {
                     id: format!("action:update:{provider}"),
                     label: "update key".to_string(),
-                    detail: format!("store a new key for {provider}"),
+                    detail: format!("replace the default key for {provider}"),
+                },
+                Row {
+                    id: format!("action:add:{provider}"),
+                    label: "add account".to_string(),
+                    detail: format!("store another key for {provider} beside the default"),
                 },
                 Row {
                     id: format!("action:delete:{provider}"),
@@ -8667,15 +8692,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 "action:update:openai",
+                "action:add:openai",
                 "action:delete:openai",
                 "cred_b",
                 "cred_c"
             ],
             "the key's own actions lead the provider's accounts"
         );
-        // The narrowed list starts on the first action, so three steps down
+        // The narrowed list starts on the first action, so four steps down
         // land on the second account.
-        for _ in 0..3 {
+        for _ in 0..4 {
             app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         }
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
@@ -8705,6 +8731,7 @@ mod tests {
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         // The provider's key actions lead its accounts, so step past them to
         // reach the account the landing screen cannot pin.
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
@@ -8873,10 +8900,59 @@ mod tests {
         );
     }
 
+    /// A second key for one provider is a second account: the prompt collects
+    /// the label first, then the key, and the store keeps both rows so the
+    /// account list and the route ids can tell them apart.
+    #[test]
+    fn adding_a_second_key_stores_it_under_its_account_label() {
+        let mut app = session_app();
+        let (handle, _requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        let dir = std::env::temp_dir().join(format!("miao-add-account-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        miao_engine::credential::store_key(&store, "mtty", "sk-first", None).expect("stores");
+        app.open_dialog(Dialog::add_account_prompt("mtty", "mtty"));
+        let Some(sign_in) = app.dialog.as_ref().and_then(Dialog::sign_in) else {
+            panic!("the prompt is open")
+        };
+        assert_eq!(
+            sign_in.field,
+            crate::dialogs::SignInField::Account,
+            "the label is asked for first"
+        );
+        for character in "work".chars() {
+            app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        // Enter in the label field moves on instead of submitting: a label
+        // alone stores nothing.
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_some(), "the key is still missing");
+        for character in "sk-second".chars() {
+            app.handle(key(KeyCode::Char(character), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.dialog.is_none(), "the prompt closes on submit");
+        let listed = miao_engine::credential::list_database(&store).expect("list");
+        let mut labels: Vec<&str> = listed.iter().map(|row| row.label.as_str()).collect();
+        labels.sort();
+        assert_eq!(
+            labels,
+            vec!["default", "work"],
+            "the second key sits beside the first instead of replacing it"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A stored key is also where it is replaced or forgotten: the provider's
     /// own list carries both actions ahead of its accounts.
     #[test]
-    fn a_provider_account_list_offers_updating_and_deleting_its_key() {
+    /// A provider's own key actions: replace the default, add another account
+    /// beside it, or forget every account. Adding is what a second key for one
+    /// provider needs, and it is a distinct action because the label it asks for
+    /// is what tells the two apart afterwards.
+    fn a_provider_account_list_offers_its_key_actions() {
         let mut app = session_app();
         app.accounts = vec![AccountInfo {
             credential_id: "cred_zhipu".into(),
@@ -8893,6 +8969,7 @@ mod tests {
             ids,
             vec![
                 "action:update:zhipuai-coding-plan",
+                "action:add:zhipuai-coding-plan",
                 "action:delete:zhipuai-coding-plan",
                 "cred_zhipu",
             ]
