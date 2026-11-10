@@ -221,7 +221,7 @@ async fn an_explicit_parent_budget_closes_the_child_at_the_stated_turn_allowance
         child_turns: AtomicUsize::new(0),
     });
     let (_dir, runtime, store) = harness(None, provider.clone()).await;
-    admit(&store, "delegate with a budget");
+    admit(&store, "delegate with a budget").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -254,7 +254,7 @@ async fn an_explicit_wallclock_closes_the_child_at_the_stated_deadline() {
         child_turns: AtomicUsize::new(0),
     });
     let (_dir, runtime, store) = harness(None, provider.clone()).await;
-    admit(&store, "delegate under a deadline");
+    admit(&store, "delegate under a deadline").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -298,7 +298,7 @@ impl Provider for Refusing {
 async fn assert_refused(input: Value, needle: &str) {
     let provider = Arc::new(Refusing { input });
     let (_dir, runtime, store) = harness(None, provider).await;
-    admit(&store, "delegate a refused input");
+    admit(&store, "delegate a refused input").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let started = store
@@ -374,7 +374,7 @@ async fn deny_tools_narrow_the_child_surface() {
         offered: Mutex::new(Vec::new()),
     });
     let (_dir, runtime, store) = harness(None, provider.clone()).await;
-    admit(&store, "delegate without bash");
+    admit(&store, "delegate without bash").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -443,7 +443,7 @@ impl Provider for Redispatch {
 #[tokio::test]
 async fn a_running_child_refuses_redispatch_until_its_outcome_is_settled() {
     let (_dir, runtime, store) = harness(None, Arc::new(Redispatch)).await;
-    admit(&store, "start the watch");
+    admit(&store, "start the watch").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let transcript = store.history("parent").await.unwrap();
@@ -488,7 +488,7 @@ async fn an_explicit_budget_is_capped_by_what_the_delegating_turn_has_left() {
     // The parent holds four turns; the delegation spends one, so the child's
     // grant can never exceed the three the delegator may still spend.
     let (_dir, runtime, store) = harness(Some(4), provider).await;
-    admit(&store, "delegate greedily");
+    admit(&store, "delegate greedily").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -521,7 +521,7 @@ async fn the_parents_goal_budget_caps_a_child_when_the_parent_states_none() {
         )
         .await
         .unwrap();
-    admit(&store, "delegate under the goal");
+    admit(&store, "delegate under the goal").await;
     finish(&store, "parent").await;
     runtime.shutdown().await;
     let child = delegated_child(&store, "parent").await;
@@ -570,7 +570,7 @@ impl Provider for Parked {
 #[tokio::test]
 async fn cancelling_the_parent_run_settles_a_synchronously_waited_child() {
     let (_dir, runtime, store) = harness(None, Arc::new(Parked)).await;
-    admit(&store, "delegate and wait");
+    admit(&store, "delegate and wait").await;
     let child = delegated_child(&store, "parent").await;
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
