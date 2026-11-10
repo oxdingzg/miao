@@ -4975,17 +4975,19 @@ impl Store {
                     cost_turns.insert(row.get(0)?, row.get::<_, i64>(1)?.max(0) as u64);
                 }
             }
-            // Per-model rollup over the same window. `model` is the served
-            // name the usage event attributed, so a Session on the engine's
-            // default model groups under its provider identity rather than a
-            // null bucket; rows with no name at all (custom providers without
-            // an identity, or events that predate attribution) stay out of the
-            // array and are still counted in the totals above.
-            let mut model_tokens: std::collections::BTreeMap<String, [u64; 4]> =
+            // Per-model rollup over the same window. Each row is one (route,
+            // model) pair the usage events named: `route` is the provider a
+            // turn priced under, so a day spread across providers reads as
+            // provider groups instead of one flat list; rows with no name at
+            // all (custom providers without an identity, or events that
+            // predate attribution) stay out of the array and are still
+            // counted in the totals above.
+            let mut model_tokens: std::collections::BTreeMap<(Option<String>, String), [u64; 4]> =
                 std::collections::BTreeMap::new();
             {
                 let mut stmt = conn.prepare(
-                    "SELECT json_extract(data,'$.model'),
+                    "SELECT json_extract(data,'$.route'),
+                            json_extract(data,'$.model'),
                             COALESCE(SUM(json_extract(data,'$.usage.inputTokens')),0),
                             COALESCE(SUM(json_extract(data,'$.usage.outputTokens')),0),
                             COALESCE(SUM(json_extract(data,'$.usage.cacheReadInputTokens')),0),
@@ -4993,40 +4995,50 @@ impl Store {
                      FROM engine_event
                      WHERE kind='usage' AND recorded_at_ms >= ?1
                        AND json_extract(data,'$.model') IS NOT NULL
-                     GROUP BY json_extract(data,'$.model')",
+                     GROUP BY 1, 2",
                 )?;
                 let mut rows = stmt.query(params![first])?;
                 while let Some(row) = rows.next()? {
-                    let model: String = row.get(0)?;
+                    let provider: Option<String> = row
+                        .get::<_, Option<String>>(0)?
+                        .map(|route| route.split('/').next().unwrap_or(&route).to_string());
+                    let model: String = row.get(1)?;
                     model_tokens.insert(
-                        model,
+                        (provider, model),
                         [
-                            row.get::<_, i64>(1)?.max(0) as u64,
                             row.get::<_, i64>(2)?.max(0) as u64,
                             row.get::<_, i64>(3)?.max(0) as u64,
                             row.get::<_, i64>(4)?.max(0) as u64,
+                            row.get::<_, i64>(5)?.max(0) as u64,
                         ],
                     );
                 }
             }
-            let mut model_cost: std::collections::BTreeMap<String, u64> =
+            let mut model_cost: std::collections::BTreeMap<(Option<String>, String), u64> =
                 std::collections::BTreeMap::new();
             {
                 let mut stmt = conn.prepare(
-                    "SELECT json_extract(data,'$.model'),
+                    "SELECT json_extract(data,'$.route'),
+                            json_extract(data,'$.model'),
                             COALESCE(SUM(CAST(json_extract(data,'$.cost.amount') AS REAL)),0.0)
                      FROM engine_event
                      WHERE kind='usage' AND recorded_at_ms >= ?1
                        AND json_extract(data,'$.model') IS NOT NULL
                        AND lower(COALESCE(json_extract(data,'$.cost.currency'),'usd'))='usd'
                        AND json_extract(data,'$.cost.amount') IS NOT NULL
-                     GROUP BY json_extract(data,'$.model')",
+                     GROUP BY 1, 2",
                 )?;
                 let mut rows = stmt.query(params![first])?;
                 while let Some(row) = rows.next()? {
-                    let model: String = row.get(0)?;
-                    let amount: f64 = row.get(1)?;
-                    model_cost.insert(model, (amount.max(0.0) * 1_000_000.0).round() as u64);
+                    let provider: Option<String> = row
+                        .get::<_, Option<String>>(0)?
+                        .map(|route| route.split('/').next().unwrap_or(&route).to_string());
+                    let model: String = row.get(1)?;
+                    let amount: f64 = row.get(2)?;
+                    model_cost.insert(
+                        (provider, model),
+                        (amount.max(0.0) * 1_000_000.0).round() as u64,
+                    );
                 }
             }
             let truncated: bool = conn.query_row(
@@ -5069,11 +5081,15 @@ impl Store {
             }
             let mut models: Vec<(u64, serde_json::Value)> = model_tokens
                 .into_iter()
-                .map(|(model, counts)| {
-                    let cost = model_cost.get(&model).copied().unwrap_or(0);
+                .map(|((provider, model), counts)| {
+                    let cost = model_cost
+                        .get(&(provider.clone(), model.clone()))
+                        .copied()
+                        .unwrap_or(0);
                     (
                         counts[0].saturating_add(counts[1]),
                         json!({
+                            "provider": provider,
                             "model": model,
                             "input": counts[0],
                             "output": counts[1],
@@ -6083,27 +6099,30 @@ mod usage_hourly_tests {
             .expect("open")
             .execute("INSERT INTO engine_session(id) VALUES('s')", [])
             .expect("session");
-        let record = |model: Option<&str>, input: u64, output: u64| {
+        let record = |route: Option<&str>, model: Option<&str>, input: u64, output: u64| {
             let mut event = json!({"usage":{"inputTokens":input,"outputTokens":output}});
             if let Some(model) = model {
                 event["model"] = json!(model);
             }
+            if let Some(route) = route {
+                event["route"] = json!(route);
+            }
             event
         };
-        store
-            .record("s", "usage", record(Some("glm-5"), 1_200, 300))
-            .await
-            .expect("usage");
-        store
-            .record("s", "usage", record(Some("claude-opus"), 500, 100))
-            .await
-            .expect("usage");
         store
             .record(
                 "s",
                 "usage",
-                json!({"usage":{"inputTokens":40,"outputTokens":10}}),
+                record(Some("zhipuai-coding-plan/glm-5"), Some("glm-5"), 1_200, 300),
             )
+            .await
+            .expect("usage");
+        store
+            .record("s", "usage", record(None, Some("claude-opus"), 500, 100))
+            .await
+            .expect("usage");
+        store
+            .record("s", "usage", record(None, None, 40, 10))
             .await
             .expect("unattributed usage");
         store
@@ -6111,6 +6130,7 @@ mod usage_hourly_tests {
                 "s",
                 "usage",
                 json!({"usage":{"inputTokens":10,"outputTokens":5},
+                       "route":"zhipuai-coding-plan/glm-5",
                        "model":"glm-5","cost":{"amount":0.01,"currency":"USD"}}),
             )
             .await
@@ -6119,6 +6139,15 @@ mod usage_hourly_tests {
         let models = report["models"].as_array().expect("models");
         assert_eq!(models.len(), 2, "the unattributed row invents no model");
         assert_eq!(models[0]["model"], "glm-5", "the busiest model leads");
+        assert_eq!(
+            models[0]["provider"], "zhipuai-coding-plan",
+            "the route names the provider the turn priced under"
+        );
+        assert_eq!(
+            models[1]["provider"],
+            serde_json::Value::Null,
+            "a model no route named stays provider-less"
+        );
         assert_eq!(models[0]["input"], 1_210);
         assert_eq!(models[0]["output"], 305);
         assert_eq!(models[0]["tokens"], 1_515);

@@ -2804,6 +2804,25 @@ fn fit(text: &str, width: usize) -> String {
     format!("{}…", clip_cells(&single, 0, room))
 }
 
+/// Push one sidebar row whose clipped text a hover tip can complete: the row
+/// shows `fit(...)`'s cut, the tip carries the whole string. Sidebar rows never
+/// wrap, so a row wider than the column is where information otherwise dies.
+fn hoverable_line(
+    hover_rows: &mut Vec<HoverRow>,
+    inner: ratatui::layout::Rect,
+    lines: &mut Vec<Line<'static>>,
+    text: String,
+    style: ratatui::style::Style,
+    width: usize,
+) {
+    hover_rows.push(HoverRow {
+        row: inner.y + lines.len() as u16,
+        span: (inner.x, inner.x + inner.width.saturating_sub(1)),
+        text: text.clone(),
+    });
+    lines.push(Line::from(Span::styled(fit(&text, width), style)));
+}
+
 /// One wrapped display row of the draft as spans, with the selected cells
 /// carrying the highlight. `start` is the cell of the logical line the row
 /// begins at, so a selection over CJK text covers exactly the cells the
@@ -2881,16 +2900,17 @@ fn hourly_lines(
     usage: Option<&crate::status::HourlyUsage>,
     width: usize,
     palette: &crate::theme::Palette,
-) -> Vec<Line<'static>> {
+) -> (Vec<Line<'static>>, Vec<(usize, String)>) {
     const GLYPHS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     let muted = Style::new().fg(palette.text_muted);
     // The window spans the workspace ledger rather than this Session: say so,
     // or every Session's sidebar reads the same figures and the block looks
     // like a stub instead of a total.
     let mut lines = vec![Line::from(Span::styled("▾ Last 24h · workspace", muted))];
+    let mut hover: Vec<(usize, String)> = Vec::new();
     let Some(usage) = usage else {
         lines.push(Line::from(Span::styled("no usage recorded", muted)));
-        return lines;
+        return (lines, hover);
     };
     // A narrow column pairs hours instead of dropping them: the shape of the
     // day is the point, and twelve two-hour glyphs keep it.
@@ -2906,7 +2926,7 @@ fn hourly_lines(
         .collect::<Vec<_>>();
     if cells.is_empty() {
         lines.push(Line::from(Span::styled("no usage recorded", muted)));
-        return lines;
+        return (lines, hover);
     }
     let mut sorted = cells.clone();
     sorted.sort_unstable();
@@ -2961,9 +2981,19 @@ fn hourly_lines(
     ]));
     // The totals never name the model that earned them. One row per served
     // model, busiest first as the engine ordered them, keeps "which model did
-    // the day's spend belong to" a glance instead of a guess. Six is the
-    // window a tall sidebar shows without crowding the histogram's meaning.
+    // the day's spend belong to" a glance instead of a guess. Six model rows
+    // are the window a tall sidebar shows without crowding the histogram's
+    // meaning. Once the day spread across providers, each provider heads its
+    // own group and its models indent under it — a flat wall of look-alike
+    // rows hides which provider billed what.
     const MODEL_ROWS: usize = 6;
+    let providers: std::collections::HashSet<Option<&str>> = usage
+        .models
+        .iter()
+        .map(|model| model.provider.as_deref())
+        .collect();
+    let grouped = providers.len() > 1;
+    let mut open_provider = None;
     for (index, model) in usage.models.iter().enumerate() {
         if index == MODEL_ROWS {
             let more = usage.models.len() - MODEL_ROWS;
@@ -2977,19 +3007,26 @@ fn hourly_lines(
             .cache_hit()
             .map(|hit| format!("{:.0}%", hit * 100.0))
             .unwrap_or_else(|| "—".into());
-        lines.push(Line::from(Span::styled(
-            fit(
-                &format!(
-                    "  {} · in {} · out {} · {}",
-                    model.model,
-                    compact(model.input),
-                    compact(model.output),
-                    hit
-                ),
-                width,
-            ),
-            muted,
-        )));
+        let provider = model.provider.as_deref();
+        if grouped && provider != open_provider {
+            open_provider = provider;
+            if let Some(name) = provider {
+                lines.push(Line::from(Span::styled(name.to_string(), muted)));
+            }
+        }
+        let mark = match grouped && provider == open_provider && provider.is_some() {
+            true => "  - ",
+            false => "  ",
+        };
+        let row = format!(
+            "{mark}{} · in {} · out {} · {}",
+            model.model,
+            compact(model.input),
+            compact(model.output),
+            hit
+        );
+        hover.push((lines.len(), row.clone()));
+        lines.push(Line::from(Span::styled(fit(&row, width), muted)));
     }
     let mut money = Vec::new();
     if usage.cost_turns > 0 {
@@ -3056,10 +3093,11 @@ fn hourly_lines(
             Style::new().fg(palette.warning),
         )));
     }
-    lines
+    (lines, hover)
 }
 
 /// One sidebar row whose clipped title a hover tip can complete.
+#[derive(Debug)]
 pub struct HoverRow {
     /// The screen row the tip belongs to.
     pub row: u16,
@@ -3120,6 +3158,9 @@ impl Pane for SidebarPane {
         // `paddingLeft={2}` comes from the block above, so the text never
         // touches the rule and the indent carries the page colour with it.
         let area = inner;
+        // Hover tips track this pass's rows only: a tip left over from the
+        // previous frame must not answer for a row this render never painted.
+        self.hover_rows.clear();
         // The column never wraps, so a title or path longer than it is cut with
         // an ellipsis instead of pushing the rest of the column down.
         let text_width = area.width as usize;
@@ -3147,23 +3188,22 @@ impl Pane for SidebarPane {
             ],
         };
         if self.session.is_some() {
-            // Context: the same billed usage the status dialog reads, kept
-            // beside the transcript so cost and throughput stay glanceable.
-            // It leads because these are the numbers this session is burning
-            // right now; the fleet-wide Last 24h read sits at the bottom.
+            // The billed-usage section opens with its only header, the
+            // workspace-wide Last 24h strip: a "Context" banner above it read
+            // as two stacked headers for one block of numbers, and the strip
+            // already says what the rows below explain.
             lines.push(Line::default());
-            lines.push(Line::from(Span::styled(
-                "▾ Context",
-                Style::new().fg(palette.text_muted),
-            )));
-            // The 24-hour strip is the first read of this section, not a block
-            // of its own at the far end of the column: it drew the same spend
-            // twice and sat a scroll away from the numbers it explains.
-            lines.extend(hourly_lines(
-                self.usage_hourly.as_ref(),
-                text_width,
-                &palette,
-            ));
+            let (hourly, hourly_hover) =
+                hourly_lines(self.usage_hourly.as_ref(), text_width, &palette);
+            let hourly_base = lines.len();
+            lines.extend(hourly);
+            for (offset, text) in hourly_hover {
+                self.hover_rows.push(HoverRow {
+                    row: inner.y + (hourly_base + offset) as u16,
+                    span: (inner.x, inner.x + inner.width.saturating_sub(1)),
+                    text,
+                });
+            }
             lines.push(Line::default());
             match &self.usage {
                 None => lines.push(Line::from(Span::styled(
@@ -3175,10 +3215,14 @@ impl Pane for SidebarPane {
                     // session that switched models must not keep painting only
                     // the first one.
                     for lineage in &usage.lineage {
-                        lines.push(Line::from(Span::styled(
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
                             lineage.clone(),
                             Style::new().fg(palette.text),
-                        )));
+                            text_width,
+                        );
                     }
                     // How full the live context is: the window the last turn
                     // planned against and the occupancy it planned for. This
@@ -3190,7 +3234,10 @@ impl Pane for SidebarPane {
                         (usage.context_window, usage.context_tokens)
                     {
                         let percent = tokens.saturating_mul(100) / window.max(1);
-                        lines.push(Line::from(Span::styled(
+                        hoverable_line(
+                            &mut self.hover_rows,
+                            inner,
+                            &mut lines,
                             format!(
                                 "ctx {} / {} · {}%",
                                 crate::status::compact_tokens(tokens),
@@ -3202,24 +3249,33 @@ impl Pane for SidebarPane {
                             } else {
                                 palette.text_muted
                             }),
-                        )));
+                            text_width,
+                        );
                     }
-                    lines.push(Line::from(Span::styled(
+                    hoverable_line(
+                        &mut self.hover_rows,
+                        inner,
+                        &mut lines,
                         format!(
                             "in {}  ·  out {}",
                             crate::status::compact_tokens(usage.input_tokens),
                             crate::status::compact_tokens(usage.output_tokens)
                         ),
                         Style::new().fg(palette.text_muted),
-                    )));
-                    lines.push(Line::from(Span::styled(
+                        text_width,
+                    );
+                    hoverable_line(
+                        &mut self.hover_rows,
+                        inner,
+                        &mut lines,
                         format!(
                             "cache {}  ·  turns {}",
                             crate::status::compact_tokens(usage.cache_read_tokens),
                             usage.turns
                         ),
                         Style::new().fg(palette.text_muted),
-                    )));
+                        text_width,
+                    );
                     // A retry is billed work: saying "1 turn" while three
                     // attempts were made hides where the money went.
                     // A subagent bills on its own Session, so a parent screen
@@ -3410,7 +3466,6 @@ impl Pane for SidebarPane {
                 )));
             }
             let width = area.width.saturating_sub(3) as usize;
-            self.hover_rows.clear();
             for todo in &self.todos {
                 // The same bracket glyphs the transcript's todowrite row paints,
                 // so a task reads identically in both columns.
@@ -7067,8 +7122,12 @@ mod tests {
         // A column too narrow for 24 glyphs pairs the hours instead of
         // dropping them: the shape of the day is the point, not the count.
         let palette = home_theme().palette;
-        let narrow = hourly_lines(sidebar.usage_hourly.as_ref(), 20, &palette);
+        let (narrow, narrow_hover) = hourly_lines(sidebar.usage_hourly.as_ref(), 20, &palette);
         assert_eq!(narrow[1].spans.len(), 12, "narrow columns pair hours");
+        assert!(
+            narrow_hover.is_empty(),
+            "no model rows, no hover candidates"
+        );
 
         sidebar.usage_hourly = Some(crate::status::HourlyUsage {
             cost_turns: 3,
@@ -7091,6 +7150,102 @@ mod tests {
             "retention is stated: {rendered}"
         );
         assert!(rendered.contains('~'), "partial cost coverage is marked");
+    }
+
+    /// A day spread across providers reads as groups: the provider heads its
+    /// own block and its models indent under it, while a single-provider day
+    /// keeps the flat rows it always had and an unattributed model stays flat.
+    /// Each model row is hoverable with its full text, because the column
+    /// clips what it cannot fit.
+    #[test]
+    fn provider_groups_head_the_hourly_model_rows_and_rows_are_hoverable() {
+        let buckets = (0..24)
+            .map(|index| crate::status::HourlyBucket {
+                start_ms: 1_760_000_000_000 + index * 3_600_000,
+                tokens: if index == 5 { 50_000 } else { 0 },
+                turns: 1,
+                cost_usd: 0.001,
+            })
+            .collect::<Vec<_>>();
+        let model = |provider: Option<&str>, name: &str, input: u64| crate::status::HourlyModel {
+            provider: provider.map(str::to_string),
+            model: name.to_string(),
+            input,
+            output: input / 10,
+            cache_read: 0,
+            turns: 1,
+            cost_usd: 0.001,
+        };
+        let usage = crate::status::HourlyUsage {
+            buckets,
+            models: vec![
+                model(Some("zhipuai-coding-plan"), "glm-5.3-flash", 900_000),
+                model(Some("opencode-go"), "deepseek-v4.1-flash", 400_000),
+                model(None, "claude-opus", 100_000),
+            ],
+            input: 1_400_000,
+            output: 140_000,
+            cache_read: 0,
+            turns: 3,
+            tokens: 1_540_000,
+            cost_usd: 0.003,
+            cost_turns: 3,
+            peak: None,
+            truncated: false,
+            cache_hit_ratio: None,
+        };
+        let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_p", "providers", None)),
+            usage: None,
+            usage_hourly: Some(usage),
+            goal: None,
+            todos: Vec::new(),
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 30)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(60)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let joined = rows.join("\n");
+        assert!(
+            joined.contains("zhipuai-coding-plan"),
+            "the provider heads its group: {joined:?}"
+        );
+        assert!(
+            joined.contains("  - glm-5.3-flash"),
+            "models indent under the provider: {joined:?}"
+        );
+        // The unattributed model stays a flat row: no route, no group to head.
+        assert!(
+            joined.contains("  claude-opus"),
+            "no route keeps the flat row: {joined:?}"
+        );
+        assert_eq!(
+            joined.matches("zhipuai-coding-plan").count(),
+            1,
+            "one header per contiguous group, never one per model: {joined:?}"
+        );
+        let tip = sidebar
+            .hover_rows
+            .iter()
+            .find(|tip| tip.text.contains("glm-5.3-flash"))
+            .expect("clipped model rows are hoverable");
+        assert!(
+            tip.text.contains("· in "),
+            "the hover carries the full row: {tip:?}"
+        );
     }
 
     /// The column names the chord that hides it on its own last row. A
@@ -7185,7 +7340,7 @@ mod tests {
             cache_hit_ratio: Some(0.0),
         };
         let theme = home_theme();
-        let strip = hourly_lines(Some(&usage), 40, &theme.palette);
+        let (strip, _) = hourly_lines(Some(&usage), 40, &theme.palette);
         let glyphs = strip[1]
             .spans
             .iter()
@@ -7234,7 +7389,7 @@ mod tests {
                 cache_hit_ratio: Some(cache_read as f64 / input as f64),
             }
         };
-        let unhealthy = hourly_lines(Some(&build(120_000, 10_000)), 40, &theme.palette);
+        let (unhealthy, _) = hourly_lines(Some(&build(120_000, 10_000)), 40, &theme.palette);
         let joined = unhealthy
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -7244,7 +7399,7 @@ mod tests {
             joined.contains("/compact"),
             "a low hit with heavy billed input names the fix: {joined:?}"
         );
-        let healthy = hourly_lines(Some(&build(120_000, 110_000)), 40, &theme.palette);
+        let (healthy, _) = hourly_lines(Some(&build(120_000, 110_000)), 40, &theme.palette);
         let joined = healthy
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -7254,7 +7409,7 @@ mod tests {
             !joined.contains("/compact"),
             "a healthy hit stays quiet: {joined:?}"
         );
-        let small = hourly_lines(Some(&build(3_000, 1_000)), 40, &theme.palette);
+        let (small, _) = hourly_lines(Some(&build(3_000, 1_000)), 40, &theme.palette);
         let joined = small
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -7274,6 +7429,7 @@ mod tests {
         let theme = home_theme();
         let model =
             |name: &str, input: u64, output: u64, cache_read: u64| crate::status::HourlyModel {
+                provider: None,
                 model: name.to_string(),
                 input,
                 output,
@@ -7305,7 +7461,7 @@ mod tests {
             truncated: false,
             cache_hit_ratio: None,
         };
-        let strip = hourly_lines(Some(&usage), 40, &theme.palette);
+        let (strip, _) = hourly_lines(Some(&usage), 40, &theme.palette);
         let joined = strip
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -7319,7 +7475,7 @@ mod tests {
             joined.contains("claude-opus · in 500 · out 100 · 0%"),
             "the second model keeps its cold-cache row: {joined:?}"
         );
-        let bare = hourly_lines(
+        let (bare, _) = hourly_lines(
             Some(&crate::status::HourlyUsage {
                 models: Vec::new(),
                 ..usage
@@ -7345,6 +7501,7 @@ mod tests {
         let theme = home_theme();
         let models = (0..8)
             .map(|index| crate::status::HourlyModel {
+                provider: None,
                 model: format!("model-{index}"),
                 input: 1_000 - index,
                 output: 0,
@@ -7374,7 +7531,7 @@ mod tests {
             truncated: false,
             cache_hit_ratio: None,
         };
-        let strip = hourly_lines(Some(&usage), 40, &theme.palette);
+        let (strip, _) = hourly_lines(Some(&usage), 40, &theme.palette);
         let joined = strip
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -7389,9 +7546,10 @@ mod tests {
     }
 
     /// How full the live context is reads differently from what was billed, so
-    /// the Context section leads with it: window and occupancy at the last
-    /// turn's granularity, warning-coloured once automatic compaction arms,
-    /// and absent when the engine never reported a window.
+    /// the usage section carries it beside the billed rows: window and
+    /// occupancy at the last turn's granularity, warning-coloured once
+    /// automatic compaction arms, and absent when the engine never reported a
+    /// window.
     #[test]
     fn the_context_section_shows_window_occupancy_and_warns_when_it_is_high() {
         fn rows(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
@@ -7527,7 +7685,7 @@ mod tests {
             .position(|row| row.contains("Todo"))
             .expect("todo header");
         // The checklist is bounded by the column itself now that the 24-hour
-        // strip opens the Context section above it: everything between its
+        // strip opens the usage section above it: everything between its
         // header and the first blank row is the todo's own rows. The column's
         // left border survives trimming, so a padding row still reads as
         // "│    "; only a row with content counts.
@@ -7594,7 +7752,7 @@ mod tests {
             row.trim_matches(|c: char| c == '│' || c.is_whitespace())
                 .is_empty()
         };
-        for header in ["▾ Context", "▾ Mode", "▾ Changes", "▾ Goal", "▾ Todo"] {
+        for header in ["▾ Last 24h", "▾ Mode", "▾ Changes", "▾ Goal", "▾ Todo"] {
             let at = rows
                 .iter()
                 .position(|row| row.contains(header))

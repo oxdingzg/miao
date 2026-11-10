@@ -23,10 +23,12 @@ pub struct HourlyBucket {
 }
 
 /// One model's share of the window: the row under the strip that says which
-/// model the spend belonged to. The engine groups by the served name the usage
-/// event attributed, so this is what answered, not which route priced it.
+/// model the spend belonged to. Rows are grouped by the route that priced the
+/// turns, so `provider` names that route; `None` means the events predate
+/// attribution or a custom provider never reported one.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HourlyModel {
+    pub provider: Option<String>,
     pub model: String,
     pub input: u64,
     pub output: u64,
@@ -39,6 +41,10 @@ impl HourlyModel {
     fn from_value(value: &Value) -> Self {
         let number = |key: &str| value.get(key).and_then(Value::as_u64).unwrap_or(0);
         Self {
+            provider: value
+                .get("provider")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             model: value
                 .get("model")
                 .and_then(Value::as_str)
@@ -344,19 +350,24 @@ mod tests {
     }
 
     /// The window rollup keeps the served names and their shares, busiest
-    /// first as the engine ordered them; a report without the array reads as
-    /// an older engine whose strip still renders from the totals.
+    /// first as the engine ordered them, each under the route that priced it;
+    /// a report without the array reads as an older engine whose strip still
+    /// renders from the totals.
     #[test]
     fn the_hourly_report_carries_per_model_rows() {
         let usage = HourlyUsage::from_value(&json!({
             "buckets": [],
             "models": [
-                {"model": "glm-5", "input": 1200, "output": 300, "cache_read": 900, "turns": 3, "cost_micros": 2025},
+                {"provider": "zhipuai-coding-plan", "model": "glm-5", "input": 1200, "output": 300, "cache_read": 900, "turns": 3, "cost_micros": 2025},
                 {"model": "claude-opus", "input": 500, "output": 100, "cache_read": 0, "turns": 1},
             ],
             "totals": {"input": 1700, "output": 400}
         }));
         assert_eq!(usage.models.len(), 2);
+        assert_eq!(
+            usage.models[0].provider.as_deref(),
+            Some("zhipuai-coding-plan")
+        );
         assert_eq!(usage.models[0].model, "glm-5");
         assert_eq!(usage.models[0].input, 1200);
         assert_eq!(usage.models[0].cost_usd, 0.002_025);
@@ -364,6 +375,8 @@ mod tests {
         // engine computes the window's total ratio.
         assert_eq!(usage.models[0].cache_hit(), Some(0.75));
         assert_eq!(usage.models[1].cache_hit(), Some(0.0));
+        // A row the engine never attributed to a route stays provider-less.
+        assert_eq!(usage.models[1].provider, None);
         assert!(HourlyUsage::from_value(&json!({"totals": {}}))
             .models
             .is_empty());
