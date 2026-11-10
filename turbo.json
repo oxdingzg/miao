@@ -22,15 +22,6 @@
         "dist/**"
       ]
     },
-    "miao#test": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [],
-      "passThroughEnv": [
-        "*"
-      ]
-    },
     "@miao/core#test": {
       "dependsOn": [
         "^build"

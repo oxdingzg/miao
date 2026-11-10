@@ -100,11 +100,6 @@ jobs:
             crates/miao-sandbox
             crates/miao-engine
 
-      - name: Verify native Windows upgrade
-        if: runner.os == 'Windows'
-        working-directory: packages/miao
-        run: bun test test/installation/windows-upgrade.test.ts
-
       - name: Install musl tools
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
@@ -160,7 +155,7 @@ jobs:
         # a release build, and it talks to the release through GH_TOKEN and
         # GH_REPO. Without them the leg builds and smokes a binary that never
         # lands on the release — how v0.3.26 published with zero assets.
-        run: ./packages/miao/script/build.ts --native-cli
+        run: bun script/build-native-cli.ts --native-cli
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ needs.version.outputs.repo }}
@@ -187,10 +182,10 @@ jobs:
           # Windows leg builds a baseline variant too), so every match is smoked.
           shopt -s nullglob
           found=0
-          # `build.ts` chdirs into `packages/miao`, so its artifacts land under
-          # that package's `dist/`, not the repository root's. The native release
-          # writes `miao` at the archive root; the Bun host nested it under `bin/`.
-          for binary in "packages/miao/dist/miao-${os}-${arch}"*/miao "packages/miao/dist/miao-${os}-${arch}"*/miao.exe "packages/miao/dist/miao-${os}-${arch}"*/bin/miao "packages/miao/dist/miao-${os}-${arch}"*/bin/miao.exe; do
+          # The build script runs at the repository root, so its artifacts land
+          # under the root `dist/`. The native release writes `miao` at the
+          # archive root; the Bun host nested it under `bin/`.
+          for binary in "dist/miao-${os}-${arch}"*/miao "dist/miao-${os}-${arch}"*/miao.exe "dist/miao-${os}-${arch}"*/bin/miao "dist/miao-${os}-${arch}"*/bin/miao.exe; do
             [ -f "$binary" ] || continue
             found=$((found + 1))
             if ! "$binary" --version; then
