@@ -576,7 +576,10 @@ mod tests {
             .unwrap()
             .contains("whitespace-insensitive"));
         let written = std::fs::read_to_string(dir.path().join("src.rs")).unwrap();
-        assert_eq!(written, "fn kept() {\n    work(1);\n}\nfn tail() {}\n");
+        assert_eq!(
+            written, "fn kept() {\nwork(1);\n}\nfn tail() {}\n",
+            "matching ignores per-line whitespace; the replacement does not re-indent"
+        );
     }
 
     #[test]
