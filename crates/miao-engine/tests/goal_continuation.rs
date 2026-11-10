@@ -212,6 +212,10 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     setup(&store, "active", true, true, dir.path()).await;
+    // The no-progress pause requires the stall to persist past the
+    // configurable floor (MIAO_NO_PROGRESS_MIN_SECS, default 120s); this
+    // test pins the immediate-pause behaviour with the floor disabled.
+    std::env::set_var("MIAO_NO_PROGRESS_MIN_SECS", "0");
     let provider = Arc::new(Script {
         calls: AtomicUsize::new(0),
         progress: false,
@@ -227,6 +231,7 @@ async fn no_progress_is_bounded_and_synthetic_admissions_do_not_restart_the_loop
     .unwrap();
     runtime.resume("s").await.unwrap();
     finished(&store).await;
+    std::env::remove_var("MIAO_NO_PROGRESS_MIN_SECS");
     assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
     assert!(store
         .events("s", 0, 500)
