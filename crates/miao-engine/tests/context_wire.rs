@@ -73,7 +73,11 @@ fn budget() -> Budget {
 
 #[tokio::test]
 async fn below_threshold_leaves_the_session_untouched() {
-    let (_dir, store, boundary, _counted) = seeded().await;
+    let (dir, store, boundary, _counted) = seeded().await;
+    // A gate that keeps a checkpoint idle must leave a trace an operator can
+    // read afterwards; point the engine's diagnostic file at this test.
+    let log = dir.path().join("miao.log");
+    std::env::set_var("MIAO_LOG_FILE", &log);
     let mut notices: Vec<Value> = Vec::new();
     let mut breaker = Breaker::new(2);
     let mut calls = 0;
@@ -102,7 +106,24 @@ async fn below_threshold_leaves_the_session_untouched() {
     .unwrap();
     assert!(!committed);
     assert_eq!(calls, 0);
-    assert!(notices.is_empty());
+    // The trigger reports why it stayed idle, so a Session that grows without
+    // ever compacting is diagnosable from the run's progress stream and from the
+    // engine log instead of only from reading the gate code.
+    let kinds: Vec<&str> = notices
+        .iter()
+        .filter_map(|notice| notice["kind"].as_str())
+        .collect();
+    assert_eq!(kinds, vec!["compaction.skipped", "compaction.skipped"]);
+    assert_eq!(notices[0]["gate"], 1);
+    assert_eq!(notices[0]["reason"], "no_context_anchor");
+    assert_eq!(notices[1]["reason"], "under_threshold");
+    assert_eq!(notices[1]["gate"], 1);
+    std::env::remove_var("MIAO_LOG_FILE");
+    let log = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        log.contains("context gate 1 kept the checkpoint idle: no_context_anchor"),
+        "{log}"
+    );
 }
 
 #[tokio::test]
@@ -309,9 +330,11 @@ async fn gate_two_counts_the_delta_since_the_anchor() {
 }
 
 #[tokio::test]
-async fn a_report_without_the_anchor_marker_leaves_the_trigger_off() {
-    // A usage event recorded before the anchor existed reports no marker, so
-    // nothing is invented: no count is requested and no checkpoint is written.
+async fn a_report_without_the_anchor_marker_prices_the_whole_history() {
+    // A usage event recorded before the anchor marker existed cannot say which
+    // messages it counted, so the trigger takes the whole selected history as
+    // uncounted and prices it through gate ②. The report itself never became an
+    // anchor, so the estimate alone still decides whether to compact.
     let (_dir, store, boundary, _) = seeded().await;
     store
         .record(
@@ -350,7 +373,7 @@ async fn a_report_without_the_anchor_marker_leaves_the_trigger_off() {
     .await
     .unwrap();
     assert!(!committed);
-    assert_eq!(counted, 0);
+    assert_eq!(counted, 1, "gate ② prices the whole history once");
     assert_eq!(calls, 0);
 }
 
