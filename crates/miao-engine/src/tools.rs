@@ -83,20 +83,29 @@ struct ReadDelivery {
     fingerprint: String,
 }
 
-/// Source tracking for reads (TOOL-01): what each path delivered, in which
-/// form, at which fingerprint. An exact re-request of unchanged content is a
-/// duplicate delivery and is answered with the fingerprint instead of paying
-/// the payload again; a different window, or changed content, always
-/// delivers -- that is the way back when an earlier read left the context.
-/// The totals are the measurement behind "no repeated full-file reads":
-/// reads, duplicates, and the bytes each side of that line cost.
+/// One session's delivered reads (TOOL-01): what each path delivered, in
+/// which form, at which fingerprint. An exact re-request of unchanged
+/// content is a duplicate delivery and is answered with the fingerprint
+/// instead of paying the payload again; a different window, or changed
+/// content, always delivers -- that is the way back when an earlier read
+/// left the context. The totals are the measurement behind "no repeated
+/// full-file reads": reads, duplicates, and the bytes each side of that
+/// line cost.
 #[derive(Default)]
-struct ReadLedger {
+struct SessionReads {
     deliveries: std::collections::HashMap<String, Vec<ReadDelivery>>,
     reads: usize,
     duplicate_reads: usize,
     bytes_delivered: u64,
     bytes_saved: u64,
+}
+
+/// Keyed by session: a runtime's tools serve every session in the process,
+/// so dedup must never match one session's re-read against another
+/// session's delivery.
+#[derive(Default)]
+struct ReadLedger {
+    sessions: std::collections::HashMap<String, SessionReads>,
 }
 
 #[derive(Deserialize)]
@@ -256,6 +265,9 @@ pub struct Tools {
     hooks: Arc<StdRwLock<Arc<Vec<crate::hooks::Hook>>>>,
     edit_snapshots: Arc<std::sync::Mutex<Snapshots>>,
     read_ledger: Arc<std::sync::Mutex<ReadLedger>>,
+    /// Which session's deliveries this clone reads and records. Empty is the
+    /// direct-caller scope; the runtime scopes every model-driven call.
+    read_scope: String,
     edit_recovery: bool,
     lsp_diagnostics: bool,
     compact_disclosure: bool,
@@ -348,6 +360,7 @@ impl Tools {
             hooks: Arc::new(StdRwLock::new(Arc::new(vec![]))),
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             read_ledger: Arc::new(std::sync::Mutex::new(ReadLedger::default())),
+            read_scope: String::new(),
             edit_recovery: true,
             lsp_diagnostics: true,
             compact_disclosure: false,
@@ -357,26 +370,49 @@ impl Tools {
         })
     }
 
-    /// The read ledger's totals: how many reads ran for this session, how
-    /// many were duplicates of unchanged content, and the payload bytes each
-    /// side of that line cost, plus the unique deliveries per path.
+    /// The read ledger's totals for this clone's scope: how many reads ran,
+    /// how many were duplicates of unchanged content, and the payload bytes
+    /// each side of that line cost, plus the unique deliveries per path.
     pub fn read_ledger(&self) -> Value {
         let ledger = self
             .read_ledger
             .lock()
             .unwrap_or_else(|held| held.into_inner());
-        let paths = ledger
+        let empty = SessionReads::default();
+        let session = ledger
+            .sessions
+            .get(self.read_scope.as_str())
+            .unwrap_or(&empty);
+        let paths = session
             .deliveries
             .iter()
             .map(|(path, deliveries)| (path.clone(), json!(deliveries.len())))
             .collect::<serde_json::Map<String, Value>>();
         json!({
-            "reads": ledger.reads,
-            "duplicate_reads": ledger.duplicate_reads,
-            "bytes_delivered": ledger.bytes_delivered,
-            "bytes_saved": ledger.bytes_saved,
+            "reads": session.reads,
+            "duplicate_reads": session.duplicate_reads,
+            "bytes_delivered": session.bytes_delivered,
+            "bytes_saved": session.bytes_saved,
             "paths": paths,
         })
+    }
+
+    /// Scope this clone's ledger to one session: duplicate-delivery
+    /// detection is per session, never across sessions sharing a runtime.
+    pub fn with_read_scope(mut self, session: &str) -> Self {
+        self.read_scope = session.to_owned();
+        self
+    }
+
+    /// The session's context was compacted, so its earlier deliveries may
+    /// have left the live context: stop stubbing re-reads until the file is
+    /// delivered again.
+    pub fn reset_read_ledger(&self, session: &str) {
+        let mut ledger = self
+            .read_ledger
+            .lock()
+            .unwrap_or_else(|held| held.into_inner());
+        ledger.sessions.remove(session);
     }
 
     /// The capability gates as one snapshot, so a reader never mixes two
@@ -2629,23 +2665,24 @@ impl Tools {
                             .read_ledger
                             .lock()
                             .unwrap_or_else(|held| held.into_inner());
+                        let session = ledger.sessions.entry(self.read_scope.clone()).or_default();
                         let key = path.to_string_lossy().into_owned();
-                        let found = ledger.deliveries.get_mut(&key).and_then(|history| {
+                        let found = session.deliveries.get_mut(&key).and_then(|history| {
                             history.iter().position(|delivery| {
                                 delivery.form == form && delivery.fingerprint == sha256
                             })
                         });
                         match found {
                             Some(position) => {
-                                ledger.reads += 1;
-                                ledger.duplicate_reads += 1;
-                                ledger.bytes_saved += delivered as u64;
+                                session.reads += 1;
+                                session.duplicate_reads += 1;
+                                session.bytes_saved += delivered as u64;
                                 Some(position + 1)
                             }
                             None => {
-                                ledger.reads += 1;
-                                ledger.bytes_delivered += delivered as u64;
-                                ledger
+                                session.reads += 1;
+                                session.bytes_delivered += delivered as u64;
+                                session
                                     .deliveries
                                     .entry(key)
                                     .or_default()

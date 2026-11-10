@@ -139,3 +139,56 @@ async fn a_large_file_refuses_wholesale_and_still_deduplicates_windows() {
     assert_eq!(ledger["reads"], json!(2));
     assert_eq!(ledger["duplicate_reads"], json!(1));
 }
+
+#[tokio::test]
+async fn sessions_do_not_inherit_each_others_deliveries() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("data.txt"), "shared\n").unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+
+    let alice = tools.clone().with_read_scope("alice");
+    let bob = tools.clone().with_read_scope("bob");
+
+    let alice_first = read(&alice, json!({"path":"data.txt"})).await;
+    assert_eq!(alice_first["text"], json!("shared\n"));
+
+    let bob_first = read(&bob, json!({"path":"data.txt"})).await;
+    assert_eq!(
+        bob_first["text"],
+        json!("shared\n"),
+        "another session's read must never stub this one"
+    );
+
+    let alice_second = read(&alice, json!({"path":"data.txt"})).await;
+    assert_eq!(alice_second["unchanged"], json!(true));
+
+    let alice_ledger = alice.read_ledger();
+    assert_eq!(alice_ledger["reads"], json!(2));
+    assert_eq!(alice_ledger["duplicate_reads"], json!(1));
+    let bob_ledger = bob.read_ledger();
+    assert_eq!(bob_ledger["reads"], json!(1));
+    assert_eq!(bob_ledger["duplicate_reads"], json!(0));
+}
+
+#[tokio::test]
+async fn a_compaction_clears_the_scope_so_rereads_deliver_again() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("data.txt"), "FILE-CONTENT\n").unwrap();
+    let tools = Tools::new(dir.path()).await.unwrap();
+
+    read(&tools, json!({"path":"data.txt"})).await;
+    let stubbed = read(&tools, json!({"path":"data.txt"})).await;
+    assert_eq!(stubbed["unchanged"], json!(true));
+
+    tools.reset_read_ledger("");
+
+    let after = read(&tools, json!({"path":"data.txt"})).await;
+    assert_eq!(
+        after["text"],
+        json!("FILE-CONTENT\n"),
+        "after the ledger reset the re-read carries the payload again"
+    );
+    let ledger = tools.read_ledger();
+    assert_eq!(ledger["reads"], json!(3));
+    assert_eq!(ledger["duplicate_reads"], json!(1));
+}
