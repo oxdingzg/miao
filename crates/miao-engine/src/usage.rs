@@ -138,6 +138,24 @@ impl Totals {
     }
 }
 
+/// The middle idle gap in minutes between consecutive turns, or `None` when no
+/// gap was observed. Reported, not judged: how long a route keeps a prefix
+/// cached is the provider's to state, so this figure lets a reader separate
+/// "the prefix expired while the Session was idle" from "the prefix changed".
+pub(crate) fn median_gap_minutes(gaps: &mut [u64]) -> Option<f64> {
+    if gaps.is_empty() {
+        return None;
+    }
+    gaps.sort_unstable();
+    let middle = gaps.len() / 2;
+    let milliseconds = if gaps.len().is_multiple_of(2) {
+        (gaps[middle - 1] + gaps[middle]) / 2
+    } else {
+        gaps[middle]
+    };
+    Some((milliseconds as f64 / 60_000.0 * 10.0).round() / 10.0)
+}
+
 /// Provider-reported token counts are integers; a JSON string is accepted
 /// because some gateways quote them. Invalid counters stay unknown; coercing
 /// a negative or fractional count to zero would create false billing coverage.
@@ -367,6 +385,17 @@ pub fn cache_lineage(usage: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_middle_idle_gap_is_reported_in_minutes() {
+        assert_eq!(median_gap_minutes(&mut []), None);
+        assert_eq!(median_gap_minutes(&mut [60_000]), Some(1.0));
+        assert_eq!(
+            median_gap_minutes(&mut [180_000, 60_000, 120_000]),
+            Some(2.0)
+        );
+        assert_eq!(median_gap_minutes(&mut [60_000, 240_000]), Some(2.5));
+    }
 
     #[test]
     fn invalid_provider_counters_remain_unknown_instead_of_becoming_zero_or_truncated() {
