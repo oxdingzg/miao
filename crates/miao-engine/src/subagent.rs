@@ -15,9 +15,12 @@ pub const PER_SESSION_LIMIT: usize = 2;
 /// child has neither, so a prompt that never converges runs for hours with
 /// nobody able to stop it — one `task` call spent 69 minutes this way. A child
 /// the host left unbounded therefore gets this allowance, and a wall clock,
-/// after which it closes itself and its report returns.
-pub const TURN_LIMIT: u32 = 32;
-pub const TIME_LIMIT_SECS: u64 = 1800;
+/// after which it closes itself and its report returns. The sizing follows
+/// issue #2825: an implementation-shaped child (read, implement, test, iterate
+/// on CI) routinely outgrows a short burst, so the default covers a working
+/// session; an explicit `budget` remains the way to grant more or less.
+pub const TURN_LIMIT: u32 = 96;
+pub const TIME_LIMIT_SECS: u64 = 3600;
 /// A parent may state a child's bounds explicitly, but a stated bound may not
 /// exceed what the host could ever honour: `0` is not a bound, and a larger
 /// value is refused rather than silently clamped.
