@@ -2915,14 +2915,38 @@ async fn execute(
     // A Session forked by `task` is a leaf: its lineage is fixed before the
     // run starts, so one lookup answers every turn.
     let delegated = is_delegated_child(inner, session).await?;
+    // The boundary recorded at delegation time governs this child: an explicit
+    // grant beats the environment, and the denied tools narrow the surface.
+    let boundary = if delegated {
+        inner
+            .store
+            .latest_event(session, "delegation.boundary")
+            .await?
+            .map(|event| crate::subagent::Boundary::from_event(&event.data))
+    } else {
+        None
+    };
+    let deny: &[String] = boundary
+        .as_ref()
+        .map(|boundary| boundary.deny_tools.as_slice())
+        .unwrap_or(&[]);
     // Nobody can tell a delegated child to continue, so a host that sets no
     // cutoff leaves it able to run forever. Bound it here rather than in the
     // policy, so the operator's own Session keeps its uncut allowance.
-    let delegated_turns = delegated.then(crate::subagent::turn_limit).flatten();
-    let delegated_deadline = delegated
-        .then(crate::subagent::time_limit)
-        .flatten()
-        .map(|limit| std::time::Instant::now() + limit);
+    let delegated_turns = boundary
+        .as_ref()
+        .and_then(|boundary| boundary.max_turns)
+        .or_else(|| delegated.then(crate::subagent::turn_limit).flatten());
+    let delegated_deadline = boundary
+        .as_ref()
+        .and_then(|boundary| boundary.wallclock_ms)
+        .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms))
+        .or_else(|| {
+            delegated
+                .then(crate::subagent::time_limit)
+                .flatten()
+                .map(|limit| std::time::Instant::now() + limit)
+        });
     // Todo debt: count provider turns against the last `todos` revision so a
     // long stretch of tool calls cannot leave the persisted checklist silently
     // behind the work. The existing no-progress guard only watches text-only
@@ -3321,7 +3345,7 @@ async fn execute(
         // a policy bump that leaves this digest unchanged did not churn the
         // prefix, and any surface change (catalogue growth on a small server,
         // an allow-listed alias leaving) shows up here before the model sees it.
-        let disclosure_digest = crate::permission::digest(&serde_json::to_vec(&json!({"tools": agent_tools(&inner.tools, agent.as_ref(), &policy, delegated).iter().map(|tool| (&tool.name, &tool.input_schema)).collect::<Vec<_>>()})).expect("tool surface serializes"));
+        let disclosure_digest = crate::permission::digest(&serde_json::to_vec(&json!({"tools": agent_tools(&inner.tools, agent.as_ref(), &policy, delegated, deny).iter().map(|tool| (&tool.name, &tool.input_schema)).collect::<Vec<_>>()})).expect("tool surface serializes"));
         let started = inner
             .store
             .record(
@@ -3401,7 +3425,7 @@ async fn execute(
             }
         }
         let named = inner.store.named_agents(session).await?;
-        let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy, delegated);
+        let mut tools = agent_tools(&inner.tools, agent.as_ref(), &policy, delegated, deny);
         for tool in &mut tools {
             if tool.name == "task" && !named.is_empty() {
                 tool.input_schema["properties"]["agent"] = json!({"type":"string","enum":named.iter().map(|agent|&agent.name).collect::<Vec<_>>()});
@@ -4238,7 +4262,7 @@ command: None,
                                         id,
                                         &prepared,
                                         cancel.child_token(),
-                                        Delegation {target:None,referenced_agents:&[],agent:manifest,binding:binding.as_ref(),account:account.as_ref(),model_override:None,attachments:&[],agent_references:&[]},
+                                        Delegation {target:None,referenced_agents:&[],agent:manifest,binding:binding.as_ref(),account:account.as_ref(),model_override:None,attachments:&[],agent_references:&[],turns_left:allowance,wallclock_left_ms:delegated_deadline.map(|deadline| deadline.saturating_duration_since(std::time::Instant::now()).as_millis() as u64)},
                                     )
                                     .await
                                 }
@@ -6373,6 +6397,10 @@ struct Delegation<'a> {
     model_override: Option<&'a crate::session_model::Binding>,
     attachments: &'a [Attachment],
     agent_references: &'a [crate::session_agent::AgentManifest],
+    /// What the delegating turn still has left: a child's grant is capped by
+    /// the parent's remaining allowance, so it can never outlive its delegator.
+    turns_left: Option<u32>,
+    wallclock_left_ms: Option<u64>,
 }
 
 async fn delegate(
@@ -6385,6 +6413,7 @@ async fn delegate(
     context: Delegation<'_>,
 ) -> Result<Value, ToolError> {
     let task = crate::subagent::Input::parse(prepared.input().clone())?;
+    validate_deny_tools(inner, &task.deny_tools)?;
     let catalog = inner
         .store
         .named_agents(parent)
@@ -6483,19 +6512,31 @@ async fn delegate(
             )
             .await
             .map_err(|error| ToolError::External(error.to_string()))?;
-    } else if task.agent.is_some()
-        && inner
-            .store
-            .agent(&child)
-            .await
-            .map_err(|error| ToolError::External(error.to_string()))?
-            .map(|(agent, _)| agent)
-            != selected
-    {
-        return Err(ToolError::External(
-            "existing child Session has a different captured agent; adopt its authority explicitly"
-                .into(),
-        ));
+    } else {
+        if task.agent.is_some()
+            && inner
+                .store
+                .agent(&child)
+                .await
+                .map_err(|error| ToolError::External(error.to_string()))?
+                .map(|(agent, _)| agent)
+                != selected
+        {
+            return Err(ToolError::External(
+                "existing child Session has a different captured agent; adopt its authority explicitly"
+                    .into(),
+            ));
+        }
+        // A subtask whose outcome is unknown has no finished run to settle:
+        // delegating into it again would queue a second prompt behind a run
+        // nobody has read. The parent settles the outcome first — task_result
+        // for the report, task_cancel to stop it — then may redispatch.
+        if inner.store.latest_run_state(&child).await?.as_deref() == Some("running") {
+            return Err(ToolError::External(
+                "subtask outcome is unknown: the child Session is still running; settle it with task_result or task_cancel before delegating again"
+                    .into(),
+            ));
+        }
     }
     let description: String = task
         .prompt
@@ -6516,6 +6557,26 @@ async fn delegate(
         )
         .await
         .map_err(|_| ToolError::External("subagent start could not be recorded".into()))?;
+    // The boundary is the child's durable contract: what bounded it, and who
+    // granted it. Recording it before the first wake means every delegated
+    // run reads its own grant, not whatever the environment happens to say.
+    let boundary = delegation_boundary(inner, parent, &task, context).await?;
+    inner
+        .store
+        .record(
+            &child,
+            "delegation.boundary",
+            json!({
+                "parent_session_id": parent,
+                "call_id": call,
+                "max_turns": boundary.max_turns,
+                "wallclock_ms": boundary.wallclock_ms,
+                "source": boundary.source,
+                "deny_tools": task.deny_tools,
+            }),
+        )
+        .await
+        .map_err(|_| ToolError::External("delegation boundary could not be recorded".into()))?;
 
     // A child forks empty, so material of the delegating Session reaches it by
     // reference: each handle is resolved here and injected as a bounded window.
@@ -6590,6 +6651,83 @@ async fn delegate(
     )
     .await?;
     Ok(json!({"session_id":child,"text":text}))
+}
+
+/// The boundary one delegation grants its child, resolved deterministically:
+/// an explicit parent budget wins, then the parent's own goal budget (AGT-04),
+/// then the host default fills in at the child's run. Every explicit grant is
+/// capped by what the delegating turn still has left, so a child can never be
+/// granted more than its delegator may still spend.
+async fn delegation_boundary(
+    inner: &Arc<Inner>,
+    parent: &str,
+    task: &crate::subagent::Input,
+    context: Delegation<'_>,
+) -> Result<ResolvedBoundary, ToolError> {
+    let stated_turns = task.budget.as_ref().and_then(|budget| budget.max_turns);
+    let goal_turns = if stated_turns.is_none() {
+        goal_budget_turns(inner, parent).await?
+    } else {
+        None
+    };
+    let capped = |turns: u32| turns.min(context.turns_left.unwrap_or(u32::MAX));
+    let (max_turns, source) = match (stated_turns, goal_turns) {
+        (Some(turns), _) => (Some(capped(turns)), "parent"),
+        (None, Some(turns)) => (Some(capped(turns)), "goal"),
+        (None, None) => (None, "default"),
+    };
+    let wallclock_ms = task
+        .budget
+        .as_ref()
+        .and_then(|budget| budget.wallclock_ms)
+        .map(|ms| ms.min(context.wallclock_left_ms.unwrap_or(u64::MAX)));
+    Ok(ResolvedBoundary {
+        max_turns,
+        wallclock_ms,
+        source,
+    })
+}
+
+struct ResolvedBoundary {
+    max_turns: Option<u32>,
+    wallclock_ms: Option<u64>,
+    source: &'static str,
+}
+
+/// The parent's active goal budget as a turn ceiling for its child: a Session
+/// that promised the operator N iterations does not hand a child more than N.
+async fn goal_budget_turns(inner: &Arc<Inner>, parent: &str) -> Result<Option<u32>, ToolError> {
+    let state = inner
+        .store
+        .state(parent)
+        .await
+        .map_err(|_| ToolError::External("parent state unavailable".into()))?;
+    Ok(state["goal"]["value"]["budget"]["iterations"]
+        .as_u64()
+        .map(|turns| turns.min(u32::MAX as u64) as u32))
+}
+
+/// A denied name that registers nothing narrows nothing, so a typo would
+/// silently leave the tool enabled. Refuse the call instead.
+fn validate_deny_tools(inner: &Arc<Inner>, deny_tools: &[String]) -> Result<(), ToolError> {
+    if deny_tools.is_empty() {
+        return Ok(());
+    }
+    let known: std::collections::HashSet<&str> = inner
+        .tools
+        .definitions()
+        .into_iter()
+        .map(|tool| tool.name.as_str())
+        .collect();
+    if let Some(unknown) = deny_tools
+        .iter()
+        .find(|name| !known.contains(name.as_str()))
+    {
+        return Err(ToolError::InvalidArgs(format!(
+            "deny_tools names a tool this engine does not register: {unknown}"
+        )));
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6781,12 +6919,14 @@ fn agent_tools(
     agent: Option<&(crate::session_agent::AgentManifest, String)>,
     policy: &Policy,
     delegated: bool,
+    deny: &[String],
 ) -> Vec<crate::protocol::ToolDefinition> {
     tools
         .definitions()
         .into_iter()
         .filter(|tool| {
             !(delegated && crate::subagent::is_delegation_tool(&tool.name))
+                && !deny.iter().any(|denied| *denied == tool.name)
                 && agent.is_none_or(|(manifest, _)| manifest.permits(&tool.name))
                 && policy.tool_visible(&tool.name)
         })

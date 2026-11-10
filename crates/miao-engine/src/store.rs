@@ -1111,6 +1111,23 @@ impl Store {
         .await
     }
 
+    /// The state of the Session's most recently opened run, or None when it
+    /// never ran. A delegated child whose latest run is still open has an
+    /// outcome nobody has read, so a delegation into it is refused.
+    pub(crate) async fn latest_run_state(&self, session: &str) -> Result<Option<String>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT state FROM engine_run WHERE session_id=?1 ORDER BY rowid DESC LIMIT 1",
+                    [session],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
+    }
+
     /// Initialize identity and location without an inbox row. Retries preserve
     /// title edits and timestamps; another location cannot adopt the identity.
     pub async fn initialize(&self, session: &str, title: &str, root: &str) -> Result<Value, Error> {
