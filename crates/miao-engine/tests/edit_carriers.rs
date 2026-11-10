@@ -49,7 +49,7 @@ impl Provider for Script {
         let content = (self.plan)(index, &results);
         let needs_tools = content.iter().any(|part| part["type"] == "tool_use");
         Ok(Reply {
-            content,
+            content: Value::Array(content),
             usage: json!({}),
             needs_tools,
         })
@@ -212,6 +212,7 @@ async fn ablating_short_anchors_rejects_the_carrier_and_the_full_form_still_edit
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("f.txt"), "alpha\nbeta\n").unwrap();
     let read = read_call("r", "f.txt");
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, _| match turn {
         0 => read.clone(),
         1 => tool_use(
@@ -221,7 +222,7 @@ async fn ablating_short_anchors_rejects_the_carrier_and_the_full_form_still_edit
                 "path":"f.txt",
                 "anchor":"beta",
                 "new_text":"BETA",
-                "expected_sha256": digest_at(&root, "f.txt"),
+                "expected_sha256": digest_at(&plan_root, "f.txt"),
             }),
         ),
         2 => tool_use(
@@ -231,7 +232,7 @@ async fn ablating_short_anchors_rejects_the_carrier_and_the_full_form_still_edit
                 "path":"f.txt",
                 "old_string":"beta",
                 "new_string":"BETA",
-                "expected_sha256": digest_at(&root, "f.txt"),
+                "expected_sha256": digest_at(&plan_root, "f.txt"),
             }),
         ),
         _ => text_done(),
@@ -269,6 +270,7 @@ async fn ablating_batch_edit_hides_the_tool_and_rejects_its_calls() {
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("f.txt"), "alpha\nbeta\n").unwrap();
     let read = read_call("r", "f.txt");
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, _| match turn {
         0 => read.clone(),
         1 => tool_use(
@@ -283,7 +285,7 @@ async fn ablating_batch_edit_hides_the_tool_and_rejects_its_calls() {
                 "path":"f.txt",
                 "old_string":"beta",
                 "new_string":"BETA",
-                "expected_sha256": digest_at(&root, "f.txt"),
+                "expected_sha256": digest_at(&plan_root, "f.txt"),
             }),
         ),
         _ => text_done(),
@@ -337,10 +339,11 @@ async fn rebasing_saves_the_reread_and_retry_turns() {
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("f.txt"), "alpha\nbeta\ngamma\n").unwrap();
     let read = read_call("r", "f.txt");
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, _| match turn {
         0 => read.clone(),
         1 => {
-            std::fs::write(root.join("f.txt"), "alpha\nrenamed\ngamma\nextra\n").unwrap();
+            std::fs::write(plan_root.join("f.txt"), "alpha\nrenamed\ngamma\nextra\n").unwrap();
             // The digest names the pre-drift read; the rebase relocates the
             // edit onto the drifted content instead of failing it.
             tool_use(
@@ -378,10 +381,11 @@ async fn an_ablated_rebase_costs_a_reread_and_a_retry() {
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("f.txt"), "alpha\nbeta\ngamma\n").unwrap();
     let read = read_call("r", "f.txt");
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, _| match turn {
         0 => read.clone(),
         1 => {
-            std::fs::write(root.join("f.txt"), "alpha\nrenamed\ngamma\nextra\n").unwrap();
+            std::fs::write(plan_root.join("f.txt"), "alpha\nrenamed\ngamma\nextra\n").unwrap();
             tool_use(
                 "e1",
                 "edit_file",
@@ -402,7 +406,7 @@ async fn an_ablated_rebase_costs_a_reread_and_a_retry() {
                 "path":"f.txt",
                 "old_string":"renamed",
                 "new_string":"BETA",
-                "expected_sha256": digest_at(&root, "f.txt"),
+                "expected_sha256": digest_at(&plan_root, "f.txt"),
             }),
         ),
         _ => text_done(),
@@ -429,12 +433,13 @@ async fn a_stale_failure_hands_back_the_fingerprint_for_a_readless_retry() {
     let carried_fingerprint = Arc::new(Mutex::new(false));
     let read = read_call("r", "f.txt");
     let flag = carried_fingerprint.clone();
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, results| match turn {
         0 => read.clone(),
         1 => {
             // The drift keeps old_string present, so the readless retry can
             // genuinely land the edit against the current content.
-            std::fs::write(root.join("f.txt"), "alpha\nbeta\ngamma\nextra\n").unwrap();
+            std::fs::write(plan_root.join("f.txt"), "alpha\nbeta\ngamma\nextra\n").unwrap();
             tool_use(
                 "e1",
                 "edit_file",
@@ -490,6 +495,7 @@ async fn a_unique_fuzzy_target_applies_and_explains_itself() {
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("f.txt"), "fn kept() {\n    work();\n}\n").unwrap();
     let read = read_call("r", "f.txt");
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, _| match turn {
         0 => read.clone(),
         // The transcription carries a tab, so the needle is absent exactly
@@ -501,7 +507,7 @@ async fn a_unique_fuzzy_target_applies_and_explains_itself() {
                 "path":"f.txt",
                 "old_string":"\twork();",
                 "new_string":"work(1);",
-                "expected_sha256": digest_at(&root, "f.txt"),
+                "expected_sha256": digest_at(&plan_root, "f.txt"),
             }),
         ),
         _ => text_done(),
@@ -578,6 +584,7 @@ async fn an_exact_match_never_goes_fuzzy() {
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("f.txt"), "alpha\nbeta\n").unwrap();
     let read = read_call("r", "f.txt");
+    let plan_root = root.clone();
     let plan: Plan = Arc::new(move |turn, _| match turn {
         0 => read.clone(),
         1 => tool_use(
@@ -587,7 +594,7 @@ async fn an_exact_match_never_goes_fuzzy() {
                 "path":"f.txt",
                 "old_string":"beta",
                 "new_string":"BETA",
-                "expected_sha256": digest_at(&root, "f.txt"),
+                "expected_sha256": digest_at(&plan_root, "f.txt"),
             }),
         ),
         _ => text_done(),
