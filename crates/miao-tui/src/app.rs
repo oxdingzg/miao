@@ -1987,6 +1987,10 @@ impl App {
                     engine.cancel_job(&session_id, &job_id);
                 }
             }
+            // The global stop is gated here: naming the Session is not
+            // stopping it, so the confirmation dialog comes first and the
+            // engine call happens only in `Confirmed` below.
+            DialogAction::StopAllJobs => self.open_dialog(Dialog::confirm_stop_all_jobs()),
             DialogAction::DeviceChosen(index, action) => self.device_action(
                 index,
                 match action {
@@ -2107,6 +2111,12 @@ impl App {
                         };
                         engine.revert(&session_id, boundary_seq, files);
                         self.notice(&format!("reverted to #{boundary_seq}"));
+                    }
+                    ConfirmKind::StopAllJobs => {
+                        let Some(session_id) = self.session_id() else {
+                            return;
+                        };
+                        engine.stop_all_jobs(&session_id);
                     }
                 }
             }
@@ -2440,17 +2450,27 @@ impl App {
     /// row shows what the job produced once the engine answers. Asked once per
     /// row, because the detail stays on the row until the list is rebuilt.
     fn preview_selected_job(&mut self) {
-        let Some(Dialog::Jobs(list)) = self.dialog.as_ref() else {
+        let Some(Dialog::Jobs(list)) = self.dialog.as_mut() else {
             return;
         };
-        let (Some(job_id), Some(session_id), Some(engine)) =
-            (list.selected_id(), self.session_id(), self.engine.as_ref())
-        else {
+        let Some(job_id) = list.selected_id() else {
             return;
         };
-        if list.detail_of(&job_id).is_some() {
+        let job_id = job_id.clone();
+        if list.preview_asked(&job_id) {
             return;
         }
+        // The asked-marker needs the dialog mutably, so it lands before the
+        // shared borrows of the Session and the engine start.
+        if let Some(Dialog::Jobs(list)) = self.dialog.as_mut() {
+            list.mark_preview_asked(&job_id);
+        }
+        let Some(session_id) = self.session_id() else {
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
         engine.job_detail(&session_id, &job_id);
     }
 
@@ -4783,6 +4803,7 @@ fn title_from_prompt(prompt: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::JobRow;
     use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
     use std::collections::BTreeMap;
@@ -9476,13 +9497,42 @@ mod tests {
     }
 
     #[test]
+    fn the_global_stop_fires_only_from_the_confirmation() {
+        // Naming the stop opens the gate; answering the confirmation is what
+        // asks the engine to stop the Session's jobs.
+        let (mut app, mut requests) = revert_session_app();
+        app.dialog_action(DialogAction::StopAllJobs);
+        let Some(Dialog::Confirm(confirm)) = app.dialog.as_ref() else {
+            panic!("the global stop did not ask first");
+        };
+        assert_eq!(confirm.kind, ConfirmKind::StopAllJobs);
+        app.dialog_action(DialogAction::Confirmed(ConfirmKind::StopAllJobs));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::StopAllJobs { session_id }) if session_id == "ses_a"
+        ));
+    }
+
+    #[test]
     fn opening_the_jobs_dialog_previews_the_selected_job() {
         // The list only names each job's state, so the row the cursor is on asks
         // for its detail as soon as the dialog has rows.
         let (mut app, mut requests) = revert_session_app();
         app.handle(AppEvent::Jobs(vec![
-            ("job_1".into(), "running".into()),
-            ("job_2".into(), "finished".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_a".into(),
+                state: "finished".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]));
         assert!(matches!(
             requests.try_recv(),
@@ -9495,15 +9545,29 @@ mod tests {
     fn a_job_detail_answer_lands_on_its_own_row() {
         let (mut app, _requests) = revert_session_app();
         app.handle(AppEvent::Jobs(vec![
-            ("job_1".into(), "finished".into()),
-            ("job_2".into(), "running".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "finished".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]));
         app.handle(AppEvent::JobDetail {
             job_id: "job_2".into(),
             detail: "running · no result yet".into(),
         });
         let list = app.dialog.as_ref().and_then(Dialog::list).expect("jobs");
-        assert_eq!(list.rows[0].detail, "");
+        // The answer lands on the row it names; the other row keeps what it
+        // already carried before any answer landed.
+        assert_eq!(list.rows[0].detail, "bun test");
         assert_eq!(list.rows[1].detail, "running · no result yet");
     }
 
@@ -9511,8 +9575,20 @@ mod tests {
     fn moving_between_jobs_previews_each_row_once() {
         let (mut app, mut requests) = revert_session_app();
         app.handle(AppEvent::Jobs(vec![
-            ("job_1".into(), "finished".into()),
-            ("job_2".into(), "running".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "finished".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]));
         assert!(matches!(
             requests.try_recv(),

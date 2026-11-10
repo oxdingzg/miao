@@ -8,6 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serde_json::Value;
 
 use crate::editor::Editor;
+use crate::event::JobRow;
 use crate::session::{ModelPin, SessionSummary};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -447,6 +448,11 @@ pub struct ListDialog {
     /// Sessions only: the pinned Session ids in display order, one per `1`-`9`
     /// quick slot, so a digit reaches a pin without walking the list.
     pub slots: Vec<String>,
+    /// Rows whose preview the app already asked the engine for, kept apart
+    /// from the detail: a jobs row carries its command as the detail before
+    /// any preview answer lands, so the detail cannot say whether the engine
+    /// was asked.
+    pub(crate) previewed: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -485,6 +491,7 @@ impl ListDialog {
             visible,
             search: false,
             slots: Vec::new(),
+            previewed: Vec::new(),
         };
         // A leading header names a group and never takes the cursor, so the
         // list opens on its first model.
@@ -612,14 +619,16 @@ impl ListDialog {
         }
     }
 
-    /// Whether the detail of `id` is already known, so a preview is asked for
-    /// once per row instead of on every cursor move.
-    pub(crate) fn detail_of(&self, id: &str) -> Option<&str> {
-        self.rows
-            .iter()
-            .find(|row| row.id == id)
-            .map(|row| row.detail.as_str())
-            .filter(|detail| !detail.is_empty())
+    /// Whether the preview for `id` was already asked for, once per row
+    /// instead of on every cursor move.
+    pub(crate) fn preview_asked(&self, id: &str) -> bool {
+        self.previewed.iter().any(|asked| asked == id)
+    }
+
+    pub(crate) fn mark_preview_asked(&mut self, id: &str) {
+        if !self.preview_asked(id) {
+            self.previewed.push(id.to_string());
+        }
     }
 }
 
@@ -637,6 +646,9 @@ pub enum ConfirmKind {
     /// Forget every stored credential for one integration. The routes that
     /// named them go with them, which is why it is worth a confirmation.
     RemoveCredential(String),
+    /// Stop every background job of the open Session at once. Every running
+    /// job dies together, which is why it is worth a confirmation.
+    StopAllJobs,
 }
 
 pub struct ConfirmDialog {
@@ -657,6 +669,7 @@ impl ConfirmDialog {
             ConfirmKind::RemoveWorktree(_) => "remove",
             ConfirmKind::Revert { .. } => "revert",
             ConfirmKind::RemoveCredential(_) => "delete",
+            ConfirmKind::StopAllJobs => "stop",
         }
     }
 }
@@ -1108,22 +1121,31 @@ impl Dialog {
         ))
     }
 
-    /// The devices the host's remote-control administration knows about.
-    /// Background jobs of one Session. A Session with none says so rather than
-    /// opening an empty list.
-    pub fn jobs(jobs: &[(String, String)]) -> Self {
-        let rows = if jobs.is_empty() {
+    /// Background jobs of one Session, each row naming the Session that owns
+    /// it, with the Session's subagent runs below the jobs as read-only rows.
+    /// A subagent row carries an empty id, so `x` — which stops jobs — walks
+    /// over it. A Session with none says so rather than opening an empty list.
+    pub fn jobs(rows: &[JobRow]) -> Self {
+        let rows = if rows.is_empty() {
             vec![Row {
                 id: String::new(),
                 label: "no background jobs".to_string(),
                 detail: String::new(),
             }]
         } else {
-            jobs.iter()
-                .map(|(id, state)| Row {
-                    id: id.clone(),
-                    label: format!("{id} · {state}"),
-                    detail: String::new(),
+            rows.iter()
+                .map(|row| Row {
+                    id: if row.subagent {
+                        String::new()
+                    } else {
+                        row.id.clone()
+                    },
+                    label: if row.subagent {
+                        format!("◇ {} · {} · {}", row.id, row.owner, row.state)
+                    } else {
+                        format!("{} · {} · {}", row.id, row.owner, row.state)
+                    },
+                    detail: row.detail.clone(),
                 })
                 .collect()
         };
@@ -1131,7 +1153,7 @@ impl Dialog {
             "jobs",
             rows,
             ListKind::Jobs,
-            "x stop · esc close",
+            "x stop · X stop all · esc close",
         ))
     }
 
@@ -1334,6 +1356,17 @@ impl Dialog {
             ),
             confirmed: false,
             kind: ConfirmKind::RemoveWorktree(name.to_string()),
+        })
+    }
+
+    /// The global stop of the jobs dialog: one answer for every background
+    /// job the Session owns.
+    pub fn confirm_stop_all_jobs() -> Self {
+        Dialog::Confirm(ConfirmDialog {
+            title: "stop all jobs",
+            message: "Stop every background job this Session owns?".to_string(),
+            confirmed: false,
+            kind: ConfirmKind::StopAllJobs,
         })
     }
 
@@ -1771,6 +1804,8 @@ pub enum Action {
     DeviceChosen(usize, u8),
     /// Stop the background job the row names.
     CancelJob(String),
+    /// Stop every background job of the Session, after confirmation.
+    StopAllJobs,
     /// Ask for the name of a worktree to add.
     WorktreeNew,
     /// Remove the worktree the row names, after confirmation.
@@ -1905,10 +1940,13 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
             return Action::DeviceChosen(list.selected, 0)
         }
         KeyCode::Char('x') if list.kind == ListKind::Jobs => {
-            if let Some(id) = list.current_id() {
+            if let Some(id) = list.current_id().filter(|id| !id.is_empty()) {
                 return Action::CancelJob(id);
             }
         }
+        // The global stop names no row, so it takes no selection; the action
+        // opens the confirmation and only an answer stops anything.
+        KeyCode::Char('X') if list.kind == ListKind::Jobs => return Action::StopAllJobs,
         KeyCode::Char('x') if list.kind == ListKind::Schedule => {
             if let Some(id) = list.current_id() {
                 return Action::CancelSchedule(id);
@@ -2126,6 +2164,7 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
                 ConfirmKind::RemoveCredential(integration) => {
                     ConfirmKind::RemoveCredential(integration.clone())
                 }
+                ConfirmKind::StopAllJobs => ConfirmKind::StopAllJobs,
             };
             return Action::Confirmed(kind);
         }
@@ -2162,6 +2201,7 @@ mod tests {
             visible: (0..labels.len()).collect(),
             search: false,
             slots: Vec::new(),
+            previewed: Vec::new(),
         }
     }
 
@@ -2951,44 +2991,136 @@ mod tests {
     #[test]
     fn a_jobs_row_names_the_job_and_x_stops_it() {
         // A Session with no jobs says so, and `x` on a row names that job so the
-        // caller stops the one the operator is looking at.
+        // caller stops the one the operator is looking at. A subagent row owns
+        // no job, so `x` on it stops nothing.
         let empty = Dialog::jobs(&[]);
         let rows = empty.list().expect("list");
         assert_eq!(rows.rows[0].label, "no background jobs");
 
         let mut dialog = Dialog::jobs(&[
-            ("job_1".into(), "running".into()),
-            ("job_2".into(), "finished".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "sub_survey".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "survey the flaky tests".into(),
+                subagent: true,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_c".into(),
+                state: "finished".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]);
         assert!(matches!(
             dialog.handle_key(key(KeyCode::Char('x'))),
             Action::CancelJob(id) if id == "job_1"
         ));
         let rows = dialog.list().expect("list");
-        assert_eq!(rows.rows[1].label, "job_2 · finished");
+        assert_eq!(rows.rows[0].label, "job_1 · ses_a · running");
+        assert_eq!(
+            rows.rows[1].label, "◇ sub_survey · ses_a · running",
+            "a subagent row marks itself and names its owner"
+        );
+        assert_eq!(rows.rows[2].label, "job_2 · ses_c · finished");
+        dialog.handle_key(key(KeyCode::Down));
+        assert!(
+            !matches!(
+                dialog.handle_key(key(KeyCode::Char('x'))),
+                Action::CancelJob(_)
+            ),
+            "x on a subagent row stops nothing"
+        );
+    }
+
+    #[test]
+    fn x_names_the_global_stop_and_the_confirmation_gates_it() {
+        // `X` does not name a row: it opens the confirmation, whatever the
+        // cursor is on.
+        let mut dialog = Dialog::jobs(&[JobRow {
+            id: "job_1".into(),
+            owner: "ses_a".into(),
+            state: "running".into(),
+            detail: "bun test".into(),
+            subagent: false,
+        }]);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('X'))),
+            Action::StopAllJobs
+        ));
+
+        // The confirmation starts on the safe choice, so a bare Enter closes
+        // it without stopping anything; `y` arms it and Enter fires it.
+        let mut confirm = Dialog::confirm_stop_all_jobs();
+        assert!(matches!(
+            confirm.handle_key(key(KeyCode::Enter)),
+            Action::Close
+        ));
+        confirm.handle_key(key(KeyCode::Char('y')));
+        assert!(matches!(
+            confirm.handle_key(key(KeyCode::Enter)),
+            Action::Confirmed(ConfirmKind::StopAllJobs)
+        ));
     }
 
     #[test]
     fn a_job_detail_fills_only_the_row_that_asked_for_it() {
-        // The preview answers once per selected row, so an answer for a job the
-        // operator already left must not land under the new one.
+        // A row shows the job's command as its detail before any preview answer
+        // lands, and the answer for the selected row replaces it. An answer for
+        // a job the operator already left must not land under the new one.
         let mut dialog = Dialog::jobs(&[
-            ("job_1".into(), "running".into()),
-            ("job_2".into(), "finished".into()),
+            JobRow {
+                id: "job_1".into(),
+                owner: "ses_a".into(),
+                state: "running".into(),
+                detail: "bun test".into(),
+                subagent: false,
+            },
+            JobRow {
+                id: "job_2".into(),
+                owner: "ses_c".into(),
+                state: "running".into(),
+                detail: "bun run deploy".into(),
+                subagent: false,
+            },
         ]);
         let list = dialog.list_mut().expect("list");
         assert_eq!(list.selected_id().as_deref(), Some("job_1"));
-        assert!(list.detail_of("job_1").is_none(), "nothing is known yet");
-
-        list.set_detail("job_2", "finished · {\"exit_code\":0}".into());
-        let list = dialog.list().expect("list");
-        assert!(list.detail_of("job_1").is_none());
         assert_eq!(
-            list.detail_of("job_2"),
-            Some("finished · {\"exit_code\":0}"),
+            list.rows
+                .iter()
+                .find(|row| row.id == "job_1")
+                .map(|row| row.detail.as_str()),
+            Some("bun test"),
+            "the command is known before any preview answer lands"
+        );
+
+        list.set_detail("job_2", "running · no result yet".into());
+        let list = dialog.list().expect("list");
+        assert_eq!(
+            list.rows
+                .iter()
+                .find(|row| row.id == "job_1")
+                .map(|row| row.detail.as_str()),
+            Some("bun test")
+        );
+        assert_eq!(
+            list.rows
+                .iter()
+                .find(|row| row.id == "job_2")
+                .map(|row| row.detail.as_str()),
+            Some("running · no result yet"),
             "the answer names its job, so it fills that row only"
         );
-        assert_eq!(list.rows[1].detail, "finished · {\"exit_code\":0}");
+        assert_eq!(list.rows[1].detail, "running · no result yet");
     }
 
     #[test]

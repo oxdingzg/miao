@@ -420,15 +420,30 @@ impl Host {
                 .job(&session_id, &job_id)
                 .await
                 .map(|value| value.unwrap_or(Value::Null)),
-            Command::Jobs { session_id } => runtime
-                .store()
-                .jobs(&session_id)
-                .await
-                .and_then(|value| serde_json::to_value(value).map_err(Error::from)),
+            Command::Jobs { session_id } => {
+                let jobs = runtime.store().jobs(&session_id).await?;
+                // One answer serves the whole dialog: the Session's jobs
+                // beside its subagent runs, so a client costs one round trip
+                // instead of composing two reads. A children read fails only
+                // for an unknown Session, and the jobs above already answered
+                // that Session's rows, so the side list empties instead of
+                // failing the answer.
+                let subagents = runtime
+                    .store()
+                    .children(&session_id, crate::children::MAX_CHILDREN)
+                    .await
+                    .map(|children| subagent_rows(&children))
+                    .unwrap_or_default();
+                Ok(json!({ "jobs": jobs, "subagents": subagents }))
+            }
             Command::CancelJob { session_id, job_id } => runtime
                 .cancel_job(&session_id, &job_id)
                 .await
                 .map(|accepted| json!({ "accepted": accepted })),
+            Command::StopAllJobs { session_id } => runtime
+                .stop_all_jobs(&session_id)
+                .await
+                .map(|stopped| json!({ "stopped": stopped })),
             Command::Context { session_id, epoch } => runtime
                 .store()
                 .context(&session_id, epoch)
@@ -776,6 +791,30 @@ impl Host {
         }
         Ok(notifications)
     }
+}
+
+/// The subagent side of a `jobs` answer: the Session's delegated children, one
+/// row each, named the way the jobs rows are so one list shape serves both. A
+/// child is another Session, so its row stays read-only in the dialog — the
+/// stop commands name jobs, never children.
+fn subagent_rows(children: &Value) -> Vec<Value> {
+    children
+        .get("children")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let id = row.get("session_id")?.as_str()?;
+                    Some(json!({
+                        "id": id,
+                        "session_id": children.get("session_id"),
+                        "status": row.get("status"),
+                        "description": row.get("title"),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The host prepares a read-only list (workspaces, devices) and exports it as

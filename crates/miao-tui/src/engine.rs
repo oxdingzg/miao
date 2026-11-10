@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use crate::dialogs::{AccountInfo, ModelInfo};
-use crate::event::{AppEvent, Bus};
+use crate::event::{AppEvent, Bus, JobRow};
 
 /// How much of a job's result the preview row shows before it is clipped. The
 /// renderer clips to the row width anyway; this keeps the event small.
@@ -156,6 +156,10 @@ pub enum Request {
     CancelJob {
         session_id: String,
         job_id: String,
+    },
+    /// Every background job of the open Session at once.
+    StopAllJobs {
+        session_id: String,
     },
     /// One job's detail, for the preview of the selected row.
     JobDetail {
@@ -488,6 +492,14 @@ impl Handle {
         let _ = self.tx.send(Request::CancelJob {
             session_id: session_id.into(),
             job_id: job_id.into(),
+        });
+    }
+
+    /// Stop every background job of the open Session, then ask for the list
+    /// again so the dialog shows the state the engine actually reached.
+    pub fn stop_all_jobs(&self, session_id: &str) {
+        let _ = self.tx.send(Request::StopAllJobs {
+            session_id: session_id.into(),
         });
     }
 
@@ -1375,6 +1387,17 @@ async fn run(
                         }
                     }
                 }
+                Request::StopAllJobs { session_id } => {
+                    let result = client
+                        .request("stop_all_jobs", json!({ "session_id": session_id }))
+                        .await;
+                    match result {
+                        Ok(_) => refresh_jobs(client, &bus, &session_id).await,
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("stop failed: {error}")))
+                        }
+                    }
+                }
                 Request::Devices => {
                     let result = client.request("devices", json!({})).await;
                     match result {
@@ -1876,23 +1899,94 @@ async fn refresh_jobs(client: &EngineClient, bus: &Bus, session_id: &str) {
         .await
     {
         Ok(value) => {
-            let rows = value
-                .as_array()
-                .map(|rows| {
-                    rows.iter()
-                        .filter_map(|row| {
-                            let id = row.get("job_id")?.as_str()?;
-                            let state =
-                                row.get("state").and_then(Value::as_str).unwrap_or_default();
-                            Some((id.to_string(), state.to_string()))
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
+            let mut rows = parse_job_rows(&value);
+            rows.extend(parse_subagent_rows(&value));
             bus.send(AppEvent::Jobs(rows));
         }
         Err(error) => bus.send(AppEvent::ActionFailed(format!("jobs failed: {error}"))),
     }
+}
+
+/// The engine answers a bare array of job rows. A stand-in that serves the
+/// whole dialog from one call may instead wrap the array beside a `subagents`
+/// side list; both shapes parse, and a missing field is no rows.
+fn parse_job_rows(value: &Value) -> Vec<JobRow> {
+    let empty = Vec::new();
+    let jobs = match value.as_array() {
+        Some(jobs) => jobs,
+        None => value
+            .get("jobs")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty),
+    };
+    jobs.iter()
+        .filter_map(|row| {
+            let id = row.get("job_id")?.as_str()?.to_string();
+            let command = row
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            // The tail of what the job has produced: the list answers "what is
+            // it saying" without a round trip per row, and the preview still
+            // fills the full result in for the selected one.
+            let output = row
+                .get("output")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            Some(JobRow {
+                owner: owner_short(row.get("session_id").and_then(Value::as_str)),
+                state: row
+                    .get("state")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                detail: if output.is_empty() {
+                    command.to_string()
+                } else {
+                    format!("{command} · {output}")
+                },
+                id,
+                subagent: false,
+            })
+        })
+        .collect()
+}
+
+/// The Session's subagent runs, taken from the same answer's `subagents`
+/// list, which the engine composes from the Session's delegated children.
+fn parse_subagent_rows(value: &Value) -> Vec<JobRow> {
+    value
+        .get("subagents")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let id = row.get("id")?.as_str()?.to_string();
+                    Some(JobRow {
+                        owner: owner_short(row.get("session_id").and_then(Value::as_str)),
+                        state: row
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        detail: row
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        id,
+                        subagent: true,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The owner column shows the head of the owning Session's id, not its whole
+/// length.
+fn owner_short(session_id: Option<&str>) -> String {
+    session_id.unwrap_or_default().chars().take(8).collect()
 }
 
 /// The single line a jobs row shows for its selected job: the state it reached

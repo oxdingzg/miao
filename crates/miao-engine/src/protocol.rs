@@ -600,6 +600,12 @@ pub enum Command {
         session_id: String,
         job_id: String,
     },
+    /// Stop every background job one Session owns. The answer names the ids
+    /// actually cancelled, so the caller reports what stopped instead of a
+    /// bare `true` that hides whether anything was running.
+    StopAllJobs {
+        session_id: String,
+    },
     Context {
         session_id: String,
         #[serde(default)]

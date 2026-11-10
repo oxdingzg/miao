@@ -82,6 +82,10 @@ fn main() {
     let cjk = std::env::var_os("MIAO_TUI_FAKE_CJK").is_some();
     // The approval scenario keeps one request outstanding until the client
     // resolves it, so the panel has something to show on the first snapshot.
+    // The jobs dialog's scripted answer; the value names the phase, so a
+    // restart can answer the new real state a reopened list must show.
+    let jobs_phase = std::env::var("MIAO_TUI_FAKE_JOBS").ok();
+    let mut jobs_stopped = false;
     let mut approval_pending = std::env::var_os("MIAO_TUI_FAKE_APPROVAL").is_some();
     let streaming = std::env::var_os("MIAO_TUI_FAKE_STREAM").is_some();
     let stream_updates = Arc::new(AtomicU64::new(0));
@@ -468,6 +472,67 @@ fn main() {
             "select_account" if sessions => {
                 log_action(&frame["params"], "select_account");
                 send(&mut out, json!({"id":id,"result":{"accepted":true}}));
+            }
+            // Two jobs owned by different Sessions and one subagent run, so
+            // the jobs dialog has owners and a subagent row to show. The env
+            // value names the phase: "after" answers the state a restart
+            // produced, which a reopened dialog has to catch up to.
+            "jobs" if jobs_phase.is_some() => {
+                // `stop_all_jobs` moves the same process to the stopped phase:
+                // the list must show the state the engine reached, not the one
+                // it held when the dialog opened.
+                let phase = if jobs_stopped {
+                    "stopped"
+                } else {
+                    jobs_phase.as_deref().unwrap_or_default()
+                };
+                let (build, deploy, survey) = match phase {
+                    "after" => ("finished", "running", "finished"),
+                    "stopped" => ("cancelled", "finished", "running"),
+                    _ => ("running", "finished", "running"),
+                };
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{
+                        "jobs":[
+                            {"job_id":"job_build","session_id":"ses_a","state":build,"command":"bun test","output":if build == "running" {""} else {"build ok"}},
+                            {"job_id":"job_deploy","session_id":"ses_c","state":deploy,"command":"bun run deploy","output":"deploy ok"}
+                        ],
+                        "subagents":[
+                            {"id":"sub_survey","session_id":"ses_a","status":survey,"description":"survey the flaky tests"}
+                        ]
+                    }}),
+                );
+            }
+            "job" if jobs_phase.is_some() => {
+                let phase = if jobs_stopped {
+                    "stopped"
+                } else {
+                    jobs_phase.as_deref().unwrap_or_default()
+                };
+                let state = match phase {
+                    "after" => "finished",
+                    "stopped" => "cancelled",
+                    _ => "running",
+                };
+                // A stopped job kept what it produced, so the preview answer
+                // names the same tail the list row already carried.
+                let result = if phase == "stopped" {
+                    json!({"stdout":"build ok"})
+                } else {
+                    json!(null)
+                };
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"state":state,"result":result}}),
+                );
+            }
+            "stop_all_jobs" if jobs_phase.is_some() => {
+                jobs_stopped = true;
+                send(
+                    &mut out,
+                    json!({"id":id,"result":{"stopped":["job_build"]}}),
+                );
             }
             "select_model" if sessions => {
                 log_action(&frame["params"], "select_model");

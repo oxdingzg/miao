@@ -1,8 +1,9 @@
 #![cfg(any(target_os = "macos", target_os = "linux"))]
 use async_trait::async_trait;
 use miao_engine::{
+    host::Host,
     permission::{Config, Decision, Mode, Policy, Rule},
-    protocol::{Delivery, Input, ModelRequest},
+    protocol::{Command, Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
@@ -225,6 +226,68 @@ async fn stop_all_jobs_leaves_another_sessions_jobs_running() {
         terminal(&store, &id).await["state"].as_str(),
         Some("cancelled")
     );
+    runtime.shutdown().await;
+}
+
+/// The `jobs` command serves the whole dialog in one frame: each row names its
+/// owner and carries the command plus the tail of what it produced, and the
+/// Session's delegated children ride along as read-only rows. `stop_all_jobs`
+/// reaches the same set through the wire, which is what the dialog's global
+/// stop calls.
+#[tokio::test]
+async fn the_jobs_command_serves_owners_output_and_children_in_one_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, next) = setup(dir.path(), 1, false, 1).await;
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.notified())
+        .await
+        .unwrap();
+    // One delegated child of the Session, so the side list has a row to show.
+    store.fork("s", "sub", Some(0)).await.unwrap();
+
+    let mut host = Host::new(runtime.clone());
+    let answer = host
+        .dispatch(Command::Jobs {
+            session_id: "s".into(),
+        })
+        .await
+        .unwrap();
+    let rows = answer["jobs"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{answer}");
+    let id = rows[0]["job_id"].as_str().unwrap();
+    assert_eq!(rows[0]["session_id"], "s", "the row names its owner");
+    assert_eq!(
+        rows[0]["command"],
+        "/bin/sh -c sleep 1; printf done > finished_0; printf result"
+    );
+    // A running job has no result yet, so the tail is empty rather than
+    // invented; the `job` command answers the result once it lands.
+    assert_eq!(rows[0]["output"], "");
+
+    let subagents = answer["subagents"].as_array().unwrap();
+    assert_eq!(subagents.len(), 1, "{answer}");
+    assert_eq!(subagents[0]["id"], "sub");
+    assert_eq!(subagents[0]["session_id"], "s");
+    assert_eq!(subagents[0]["status"], "idle", "the child never ran");
+    assert_eq!(subagents[0]["description"], "");
+
+    // The durable row can exist before the owning task registers, so the
+    // registration is awaited exactly like `stop_all_jobs` itself walks it.
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while runtime.owned_jobs("s").await.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the job registers with the runtime");
+
+    let stopped = host
+        .dispatch(Command::StopAllJobs {
+            session_id: "s".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(stopped["stopped"], serde_json::json!([id]), "{stopped}");
+    assert_eq!(terminal(&store, id).await["state"], "cancelled");
     runtime.shutdown().await;
 }
 

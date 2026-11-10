@@ -8,6 +8,20 @@ use crate::platform::clipboard;
 use crate::session::{RevertPlan, SessionState, SessionSummary, Transcript};
 use crate::status::UsageSummary;
 
+/// One row of the jobs dialog: a background job of the Session, or, when
+/// `subagent` is set, one of the Session's subagent runs. A subagent row
+/// carries an empty `id`, so `x` — which stops jobs — walks over it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JobRow {
+    pub id: String,
+    /// The Session that owns the row, in the short form the dialog shows.
+    pub owner: String,
+    pub state: String,
+    /// What the row is about: a job's command, a subagent's description.
+    pub detail: String,
+    pub subagent: bool,
+}
+
 #[derive(Debug)]
 pub enum AppEvent {
     Key(KeyEvent),
@@ -85,8 +99,9 @@ pub enum AppEvent {
     },
     /// The host's remote-control devices, served by the engine.
     Devices(serde_json::Value),
-    /// Background jobs of the open Session, as `(job_id, state)` newest first.
-    Jobs(Vec<(String, String)>),
+    /// Background jobs of the open Session, newest first, each row naming the
+    /// Session that owns it; the Session's subagent runs follow the jobs.
+    Jobs(Vec<JobRow>),
     /// The git worktrees of the checkout the open Session works in, the
     /// checkout itself first.
     Worktrees(Vec<crate::worktrees::Worktree>),
