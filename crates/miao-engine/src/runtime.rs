@@ -5176,13 +5176,10 @@ command: None,
                 // background work with an unchanged todo list. Seconds-level
                 // windows misfired on orchestration sessions (see #2824); the
                 // floor is operator-tunable for tests and embedded hosts.
-                let min_no_progress_secs = match std::env::var("MIAO_NO_PROGRESS_MIN_SECS")
+                let min_no_progress_secs = std::env::var("MIAO_NO_PROGRESS_MIN_SECS")
                     .ok()
                     .and_then(|value| value.parse::<u64>().ok())
-                {
-                    Some(secs) => secs,
-                    None => 120,
-                };
+                    .unwrap_or(120);
                 let waited = goal_stalled_since
                     .map(|since| since.elapsed().as_secs())
                     .unwrap_or(0);
