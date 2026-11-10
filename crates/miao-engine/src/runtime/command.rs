@@ -301,6 +301,8 @@ impl Context<'_> {
                     model_override: model,
                     attachments: &attachments,
                     agent_references: &input.agent_references.catalog,
+                    turns_left: None,
+                    wallclock_left_ms: None,
                 },
             )
             .await;

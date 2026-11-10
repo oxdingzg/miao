@@ -6537,7 +6537,14 @@ async fn delegate(
         // delegating into it again would queue a second prompt behind a run
         // nobody has read. The parent settles the outcome first — task_result
         // for the report, task_cancel to stop it — then may redispatch.
-        if inner.store.latest_run_state(&child).await?.as_deref() == Some("running") {
+        if inner
+            .store
+            .latest_run_state(&child)
+            .await
+            .map_err(|error| ToolError::External(error.to_string()))?
+            .as_deref()
+            == Some("running")
+        {
             return Err(ToolError::External(
                 "subtask outcome is unknown: the child Session is still running; settle it with task_result or task_cancel before delegating again"
                     .into(),
@@ -6719,11 +6726,11 @@ fn validate_deny_tools(inner: &Arc<Inner>, deny_tools: &[String]) -> Result<(), 
     if deny_tools.is_empty() {
         return Ok(());
     }
-    let known: std::collections::HashSet<&str> = inner
+    let known: std::collections::HashSet<String> = inner
         .tools
         .definitions()
         .into_iter()
-        .map(|tool| tool.name.as_str())
+        .map(|tool| tool.name)
         .collect();
     if let Some(unknown) = deny_tools
         .iter()
