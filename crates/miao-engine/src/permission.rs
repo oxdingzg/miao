@@ -95,6 +95,11 @@ pub struct Config {
     /// background completion notifications wake the session regardless, so
     /// the skipped injections lose nothing but noise.
     pub continuation_min_interval_ms: u64,
+    /// The Session's cost, time, and turn budget (COST-02). The run loop
+    /// evaluates it at every provider-turn boundary and a Goal budget narrows
+    /// it, so an operator states a limit once here and sees what is left.
+    #[serde(default)]
+    pub budget: Option<crate::budget::Declaration>,
 }
 fn provider_turns() -> Option<u32> {
     None
@@ -144,6 +149,7 @@ impl Default for Config {
             approval_timeout_ms: approval_timeout(),
             max_provider_turns: provider_turns(),
             continuation_min_interval_ms: continuation_interval(),
+            budget: None,
         }
     }
 }
@@ -240,6 +246,12 @@ impl Policy {
         self.config.continuation_min_interval_ms
     }
 
+    /// The Session-scope budget this policy declares, if any. A Goal budget is
+    /// read from the Session's own state row and only ever narrows this.
+    pub fn budget(&self) -> Option<crate::budget::Declaration> {
+        self.config.budget
+    }
+
     pub fn new(config: Config) -> Result<Self, Error> {
         if !(1..=600_000).contains(&config.approval_timeout_ms)
             || config
@@ -248,6 +260,9 @@ impl Policy {
             || config.rules.len() > 256
         {
             return Err(Error::Invalid("invalid permission limits".into()));
+        }
+        if let Some(budget) = config.budget {
+            budget.validate().map_err(Error::Invalid)?;
         }
         let revision = digest(&serde_json::to_vec(&config)?);
         let matchers = config
