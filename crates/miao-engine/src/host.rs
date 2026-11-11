@@ -251,6 +251,9 @@ impl Host {
                     )
                     .await
             }
+            Command::ChangeCron { session_id, change } => {
+                runtime.edit_cron(&session_id, change).await
+            }
             Command::Crons { session_id } => runtime
                 .store()
                 .crons(&session_id)
@@ -263,6 +266,9 @@ impl Host {
                 .cancel_cron(&session_id, &cron_id)
                 .await
                 .map(|accepted| json!({ "accepted": accepted })),
+            Command::ChangeWakeup { session_id, change } => {
+                runtime.edit_wakeup(&session_id, change).await
+            }
             Command::Wakeups { session_id } => runtime
                 .store()
                 .wakeups(&session_id)

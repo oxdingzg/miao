@@ -1988,6 +1988,15 @@ impl App {
             DialogAction::None => {}
             DialogAction::Close => self.dialog = None,
             DialogAction::Chosen(index) => self.choose(index),
+            DialogAction::EditSchedule(entry) => {
+                let (kind, id) = entry
+                    .split_once(':')
+                    .map(|(kind, id)| (kind.to_string(), id.to_string()))
+                    .unwrap_or_default();
+                if !id.is_empty() {
+                    self.open_dialog(Dialog::schedule_edit(&kind, &id));
+                }
+            }
             DialogAction::CancelSchedule(entry) => {
                 // The row names what it is (`kind:id`) so the cancel call can
                 // reach `cancel_cron` or `cancel_wakeup`.
@@ -2106,6 +2115,15 @@ impl App {
                 let root = self.worktree_root();
                 if let Some(engine) = self.engine.as_ref() {
                     engine.worktree_create(&root, &name);
+                }
+            }
+            DialogAction::Submit(value) if matches!(self.dialog, Some(Dialog::ScheduleEdit(_))) => {
+                let Some(Dialog::ScheduleEdit(edit)) = self.dialog.take() else {
+                    return;
+                };
+                let session_id = self.session_id();
+                if let (Some(session_id), Some(engine)) = (session_id, self.engine.as_ref()) {
+                    engine.change_schedule(&session_id, &edit.kind, &edit.id, &value);
                 }
             }
             DialogAction::Submit(title) => {
@@ -9969,6 +9987,33 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::CancelSchedule { session_id, kind, id })
                 if session_id == "ses_a" && kind == "cron" && id == "c1"
+        ));
+    }
+
+    /// Editing a schedule row opens the text dialog, and submitting it tells
+    /// the engine which row and what new value — the same `kind:id` grammar the
+    /// cancel path uses.
+    #[test]
+    fn editing_a_scheduled_row_sends_the_new_value_for_that_row() {
+        let (mut app, mut requests) = revert_session_app();
+        app.handle(AppEvent::Schedule(vec![(
+            "cron:c1".into(),
+            "cron c1 · scheduled".into(),
+            "*/5 * * * * · 2 fired · 0 skipped".into(),
+        )]));
+        app.handle(key(KeyCode::Char('e'), KeyModifiers::NONE));
+        assert!(
+            matches!(app.dialog, Some(Dialog::ScheduleEdit(_))),
+            "e opens the editor instead of cancelling"
+        );
+        for c in "0 9 * * 1".chars() {
+            app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::ChangeSchedule { session_id, kind, id, value })
+                if session_id == "ses_a" && kind == "cron" && id == "c1" && value == "0 9 * * 1"
         ));
     }
 

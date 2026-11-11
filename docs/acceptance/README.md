@@ -110,6 +110,7 @@ newer record is the one to read.
 | `2026-11-11-cost02-budgets.md` | `feat/issue1972` | COST-02 (cost, time, and turn budgets per Session and per Goal, the remaining amount in the warning/stop facts and in the usage report, the money axis counting only reported charges with a lower-bound disclosure, and a stop that leaves admitted input queued without touching model selection; retention and idle-time limits stated; no release stamp yet) |
 | `2026-11-11-his03-revert-boundaries.md` | `feat/issue1984` (PR #2866) | HIS-03 (the code-only boundary beside history-only and combined, the durable `scope` it is recorded as, and the gate that refuses to overwrite an outside edit until the caller forces it; the TUI half is green on CI run `42950926493`, the engine half is named blocked by the unrelated `delegation_benefit` compile error, no stamp yet) |
 | `2026-11-11-his03-revert-boundaries.md` | `feat/issue1984` (PR #2866) | HIS-03 (the code-only boundary beside history-only and combined, the durable `scope` it is recorded as, and the gate that refuses to overwrite an outside edit until the caller forces it; engine and TUI green on CI run `42954116083`, no stamp yet) |
+| `2026-11-11-job05-schedule-edit.md` | `feat/job05-cron-edit` on `xx04` | JOB-05 (the schedule panel gains `e`: a text dialog sends `change_cron`/`change_wakeup` through the new protocol commands that reuse the tool's own partial-edit structs; timezone/ownership rows and per-task budget stay open) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`

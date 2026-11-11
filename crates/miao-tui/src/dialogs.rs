@@ -724,6 +724,8 @@ pub enum Dialog {
     Tag(TagDialog),
     SignIn(SignInDialog),
     WorktreeNew(WorktreeNewDialog),
+    /// Type the new expression or delay for one schedule row.
+    ScheduleEdit(ScheduleEditDialog),
     Confirm(ConfirmDialog),
 }
 
@@ -830,6 +832,13 @@ pub struct TagDialog {
 
 /// The name for a new worktree: one path component, which is what the engine
 /// accepts and what the directory it creates is called.
+pub struct ScheduleEditDialog {
+    /// `cron` or `wakeup`, the same word the row's action carries.
+    pub kind: String,
+    pub id: String,
+    pub input: Editor,
+}
+
 pub struct WorktreeNewDialog {
     pub input: Editor,
 }
@@ -1384,6 +1393,16 @@ impl Dialog {
         })
     }
 
+    /// Edit one schedule in place: the row names what it is (`kind:id`) and the
+    /// operator types the new expression (a cron pattern) or delay (seconds).
+    pub fn schedule_edit(kind: &str, id: &str) -> Self {
+        Dialog::ScheduleEdit(ScheduleEditDialog {
+            kind: kind.to_string(),
+            id: id.to_string(),
+            input: Editor::new(),
+        })
+    }
+
     /// A worktree removal is destructive, so it asks first and opens on the safe
     /// choice like a Session deletion does.
     pub fn confirm_remove_worktree(name: &str) -> Self {
@@ -1629,6 +1648,7 @@ impl Dialog {
             Dialog::Tag(tag) => handle_rename_key(&mut tag.input, key),
             Dialog::SignIn(sign_in) => handle_sign_in_key(sign_in, key),
             Dialog::WorktreeNew(dialog) => handle_rename_key(&mut dialog.input, key),
+            Dialog::ScheduleEdit(dialog) => handle_rename_key(&mut dialog.input, key),
             Dialog::Confirm(confirm) => handle_confirm_key(confirm, key),
         }
     }
@@ -1675,6 +1695,7 @@ impl Dialog {
             | Dialog::Tag(_)
             | Dialog::SignIn(_)
             | Dialog::WorktreeNew(_)
+            | Dialog::ScheduleEdit(_)
             | Dialog::Confirm(_) => {}
         }
     }
@@ -1709,6 +1730,7 @@ impl Dialog {
             Dialog::Tag(_) => "tag session",
             Dialog::SignIn(_) => "provider key",
             Dialog::WorktreeNew(_) => "new worktree",
+            Dialog::ScheduleEdit(_) => "edit schedule",
             Dialog::Confirm(confirm) => confirm.title,
         }
     }
@@ -1792,6 +1814,7 @@ impl Dialog {
             Dialog::Rename(rename) => insert_paste(&mut rename.input, text),
             Dialog::Tag(tag) => insert_paste(&mut tag.input, text),
             Dialog::WorktreeNew(dialog) => insert_paste(&mut dialog.input, text),
+            Dialog::ScheduleEdit(dialog) => insert_paste(&mut dialog.input, text),
             _ => return false,
         }
         true
@@ -1802,6 +1825,7 @@ impl Dialog {
             Dialog::Rename(rename) => Some(&rename.input),
             Dialog::Tag(tag) => Some(&tag.input),
             Dialog::WorktreeNew(dialog) => Some(&dialog.input),
+            Dialog::ScheduleEdit(dialog) => Some(&dialog.input),
             _ => None,
         }
     }
@@ -1895,6 +1919,8 @@ pub enum Action {
     WorktreeRemove(String),
     /// Cancel the wakeup or cron the row names, written `kind:id`.
     CancelSchedule(String),
+    /// Edit the wakeup or cron the row names, written `kind:id`.
+    EditSchedule(String),
     OpenSession(String),
     Rename(String),
     ToggleArchive(String),
@@ -2046,6 +2072,13 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         KeyCode::Char('x') if list.kind == ListKind::Schedule => {
             if let Some(id) = list.current_id() {
                 return Action::CancelSchedule(id);
+            }
+        }
+        // `e` edits instead of cancelling: the row keeps its id and its
+        // fired/skipped history, only the expression or delay changes.
+        KeyCode::Char('e') if list.kind == ListKind::Schedule => {
+            if let Some(id) = list.current_id() {
+                return Action::EditSchedule(id);
             }
         }
         KeyCode::Char('a') if list.kind == ListKind::Keys => return Action::AddKey,
@@ -3378,6 +3411,39 @@ mod tests {
             "the answer names its job, so it fills that row only"
         );
         assert_eq!(list.rows[1].detail, "running · no result yet");
+    }
+
+    /// `e` edits the row under the cursor instead of cancelling it, and it
+    /// names the row the same way `x` does, so one grammar reaches both
+    /// schedule kinds.
+    #[test]
+    fn e_on_a_schedule_row_asks_for_an_edit_of_that_row() {
+        let mut dialog = Dialog::schedule(&[
+            (
+                "wakeup:t1".into(),
+                "wakeup t1 · pending".into(),
+                "in 5m".into(),
+            ),
+            (
+                "cron:c1".into(),
+                "cron c1 · scheduled".into(),
+                "*/5 * * * * · 2 fired · 0 skipped".into(),
+            ),
+        ]);
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('e'))),
+            Action::EditSchedule(entry) if entry == "wakeup:t1"
+        ));
+        dialog.handle_key(key(KeyCode::Down));
+        assert!(matches!(
+            dialog.handle_key(key(KeyCode::Char('e'))),
+            Action::EditSchedule(entry) if entry == "cron:c1"
+        ));
+        // The editor itself is a text dialog: it takes keys and has a title, so
+        // the generic renderer paints it like the other prompts.
+        let mut editor = Dialog::schedule_edit("cron", "c1");
+        assert_eq!(editor.title(), "edit schedule");
+        assert!(editor.rename_input().is_some());
     }
 
     #[test]

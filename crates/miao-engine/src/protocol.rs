@@ -474,8 +474,22 @@ pub enum Command {
         session_id: String,
         cron_id: String,
     },
+    /// Change one schedule in place: the fields given replace the scheduled
+    /// ones, the id and its fired/skipped history stay. The change is the same
+    /// partial edit the `cron_edit` tool makes, so a client and the model
+    /// cannot drift into two vocabularies for one operation.
+    ChangeCron {
+        session_id: String,
+        change: crate::cron::Change,
+    },
     Wakeups {
         session_id: String,
+    },
+    /// Change one wakeup in place. Absent fields keep their scheduled value, and
+    /// the timer id stays stable so a restart still adopts the same timer.
+    ChangeWakeup {
+        session_id: String,
+        change: crate::wakeup::Change,
     },
     CancelWakeup {
         session_id: String,
