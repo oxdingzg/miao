@@ -28,7 +28,7 @@ A finished background **job** already tells its owner (an admitted steer input p
 
 | surface | before | after |
 | --- | --- | --- |
-| a background child ending `failed` | `subagent_stop` recorded; no input admitted, so an orchestration that only polls saw a child that stopped answering | one admitted steer input naming the child and carrying its own words, then a wake: *"Background task `<id>` failed: `<error>` Read its stored result with task_result; it does not resume on its own."* |
+| a background child ending `failed` | its cause was recorded (#2882), but no input was admitted, so an orchestration that only polls saw a child that stopped answering | one admitted steer input naming the child and carrying its cause, then a wake: *"Background task `<id>` failed: `<cause>` Read its stored result with task_result; it does not resume on its own."* |
 | a background child ending `completed` | no input admitted | **unchanged** — AGT-06 measured that, and `a_side_question_never_enters_the_parent_context_by_itself` still pins exactly one admitted input for a completed child |
 | a child whose provider failed | the only record of why was the child's own `stop_failure` | the notice reads that record back, because a failed child has no assistant text to quote |
 
@@ -36,12 +36,12 @@ The notice is bounded (512 characters, whitespace collapsed) and reuses the job-
 mechanics (`Store::admit_subagent_failure` → `notify_admission`), so one shape covers both
 kinds of background work.
 
-## Problem 3 — "a normal stop and a stalled child look the same" — fixed for the ended case
+## Problem 3 — "a normal stop and a stalled child look the same" — named by #2882, not here
 
-`Store::subagents` rows now carry `reason` (`completed` / `failed` / `cancelled` /
-`interrupted`) and `error` (the endpoint's own words, for a failure) beside `status` and
-`text`. The parent's `task_list` therefore answers "did it finish, fail, or get cancelled,
-and why" without a second query.
+The vocabulary landed separately: `#2882` made a child's terminal event carry the provider's
+own reason, so the settlement report, the parent's `subagent_stop` row and `children` all
+name the cause. This tree consumes that field (`message`) rather than adding a second one,
+which is why the row projection here is the one `#2882` shipped.
 
 **Not covered:** a child that is still `running`. Its row has no age, so a child that is
 working and one that has wedged look identical until something settles them. Detecting that
@@ -52,7 +52,7 @@ tree does not add.
 
 | pin | command (`crates/miao-engine`) | observed |
 | --- | --- | --- |
-| a failed background child tells the parent, with its words | `cargo test --test subagent a_failed_background_child_tells_the_delegating_session` | `ok` — one `input.admitted` ending `:failed` whose prompt contains `Background task`, `failed:`, the endpoint's `429`, and `task_result`; and the child's row reads `status: failed`, `reason: failed`, `error` containing `429` |
+| a failed background child tells the parent, with its cause | `cargo test --test subagent a_failed_background_child_tells_the_delegating_session` | `ok` — one `input.admitted` ending `:failed` whose prompt contains `Background task`, `failed:`, the endpoint's `429`, and `task_result`; and the child's row reads `status: failed` with a `message` containing `429` |
 | a completed child still admits nothing | `cargo test --test subagent a_side_question_never_enters_the_parent_context_by_itself` | `ok` (unchanged) |
 | the whole sub-agent suite | `cargo test --test subagent` | `15 passed; 0 failed` |
 | the crate around it | `cargo test --lib` | `479 passed; 0 failed` |

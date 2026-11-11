@@ -7550,33 +7550,12 @@ async fn finish_delegation(
         "cost":{"child":child_cost,"combined":combined},
         "history":format!("full trace in child Session {child}"),
     });
-    // A failed child leaves no assistant text, so the reason it failed is kept
-    // beside the report: the parent reads a row, not a second query.
-    let error = if reason == "failed" {
-        inner
-            .store
-            .latest_event(child, "stop_failure")
-            .await
-            .ok()
-            .flatten()
-            .and_then(|event| {
-                event
-                    .data
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":reason,
-                   "error":error,
                    "text":text,
                    "message":failure.as_deref(),
                    "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},

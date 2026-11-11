@@ -604,9 +604,10 @@ async fn a_failed_background_child_tells_the_delegating_session() {
     let tasks = store.subagents("parent").await.unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0]["status"], "failed");
-    assert_eq!(tasks[0]["reason"], "failed");
+    // The row's own field for the cause is #2882's `message`; what this test
+    // adds is that the parent was *told*, not merely able to look.
     assert!(
-        tasks[0]["error"]
+        tasks[0]["message"]
             .as_str()
             .unwrap_or_default()
             .contains("429"),
