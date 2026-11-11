@@ -101,6 +101,11 @@ pub enum LivePhase {
     /// A tool call is executing. The engine is quiet here too, but naming the
     /// work is what makes a long command differ from a stuck turn.
     Tool { name: String },
+    /// The history is being summarized so the next request fits the window.
+    /// Compaction is automatic, but it spends the turn on its own model calls
+    /// with no token coming back, so the strip names it instead of reporting a
+    /// model wait that is not happening.
+    Compacting { segment: u64, total: u64 },
 }
 
 /// Whether a reconciled manifest needs the engine restarted. A manifest that
@@ -138,6 +143,10 @@ fn phase_label(phase: &LivePhase) -> String {
             format!("retry {attempt} · {why}")
         }
         LivePhase::Tool { name } => format!("running {name}"),
+        LivePhase::Compacting { segment, total } if *total > 1 => {
+            format!("compacting context {segment}/{total}")
+        }
+        LivePhase::Compacting { .. } => "compacting context".to_string(),
     }
 }
 
@@ -248,6 +257,10 @@ impl Live {
                 format!("Retrying · attempt {attempt} · {detail}")
             }
             LivePhase::Tool { name } => format!("Running {}", tool_label(name)),
+            LivePhase::Compacting { segment, total } if *total > 1 => {
+                format!("Compacting context · segment {segment} of {total}")
+            }
+            LivePhase::Compacting { .. } => "Compacting context".to_string(),
         }
     }
 
@@ -4113,6 +4126,34 @@ impl App {
                     .set_running_tool(self.tool_running.as_ref().map(|tool| tool.name.clone()));
                 return;
             }
+            // Compaction summarizes the history with its own model calls
+            // between provider turns. Without a phase of its own the strip kept
+            // claiming the turn waited for an answer nobody was fetching, which
+            // is the silence an operator reads as a stall.
+            "compaction.started" => LivePhase::Compacting {
+                segment: 1,
+                total: frame
+                    .get("segments")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .max(1),
+            },
+            "compaction.progress" => {
+                let total = frame
+                    .get("total")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .max(1);
+                let segment = frame
+                    .get("segment")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .clamp(1, total);
+                LivePhase::Compacting { segment, total }
+            }
+            // The summary landed or was refused, and the turn continues: the
+            // next provider frame names what it is doing now.
+            "compaction.finished" | "compaction.failed" => LivePhase::Waiting,
             _ => return,
         };
         // Only a phase change restarts the clock; a heartbeat must not restart
@@ -7611,6 +7652,75 @@ mod tests {
         app.handle(provider_frame("provider.delta"));
         app.update_status();
         assert_eq!(app.shell.title.status(), Some("Working · Esc interrupt"));
+    }
+
+    /// Compaction spends the turn on its own model calls, so the strip has to
+    /// name it: a summary in flight reported as "Waiting for model" is exactly
+    /// the silence an operator reads as a stall.
+    #[test]
+    fn compaction_names_itself_on_the_status_strip() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.started",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segments": 2,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Compacting context · segment 1 of 2 · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.progress",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segment": 2,
+            "total": 2,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Compacting context · segment 2 of 2 · Esc interrupt")
+        );
+        // The summary landed and the turn continues: the strip goes back to the
+        // model wait instead of keeping a phase that is over.
+        app.handle(provider_frame("compaction.finished"));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Waiting for model · Esc interrupt")
+        );
+    }
+
+    /// One segment has no counter to show, and the phase ledger records the
+    /// wait as compaction rather than as a model turn.
+    #[test]
+    fn a_single_segment_compaction_needs_no_counter() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.started",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segments": 1,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Compacting context · Esc interrupt")
+        );
+        app.handle(provider_frame("compaction.finished"));
+        app.open_turn_timings();
+        let Some(Dialog::TurnTimings(list)) = app.dialog.as_ref() else {
+            panic!("timings dialog opens");
+        };
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            labels.first().copied(),
+            Some("compacting context"),
+            "{labels:?}"
+        );
     }
 
     #[test]
