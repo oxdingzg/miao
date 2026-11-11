@@ -397,9 +397,13 @@ async fn a_churning_todo_list_is_bounded_instead_of_running_forever() {
     .unwrap();
     runtime.resume("s").await.unwrap();
     finished(&store).await;
-    // Rewriting the same todo's words is not progress: the loop now stops one
-    // turn after the flat cap instead of churning until the list is emptied.
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 25);
+    // Rewriting the same todo's words is not progress: the loop stops once the
+    // flat cap is reached instead of churning until the list is emptied. Each
+    // continuation here costs two provider turns (a todowrite, then the text
+    // that ends the turn), so the cap of 24 shows up as one initial pair plus
+    // 24 pairs.
+    const FLAT_CAP: usize = 24;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), (FLAT_CAP + 1) * 2);
     let events = store.events("s", 0, 5000).await.unwrap();
     assert!(
         events
@@ -412,8 +416,11 @@ async fn a_churning_todo_list_is_bounded_instead_of_running_forever() {
             .as_str()
             .unwrap_or_default()
             .contains("without any todo changing state")));
+    // The loop stops with the work still listed: that is the point of the cap —
+    // the operator is asked, instead of a model that never closes the list being
+    // re-prompted forever.
     assert!(
-        miao_engine::state::runnable_state(&store.state("s").await.unwrap())
+        !miao_engine::state::runnable_state(&store.state("s").await.unwrap())
             .unwrap()
             .is_empty()
     );
