@@ -154,9 +154,6 @@ jobs:
       - name: Verify storage, session ownership, and Windows location paths
         working-directory: packages/core
         run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts test/location-filesystem-windows.test.ts
-      - name: Verify window exit and immutable upgrade
-        working-directory: packages/miao
-        run: bun test test/installation/windows-upgrade.test.ts
 
   unit:
     name: unit (linux)

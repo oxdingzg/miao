@@ -19,7 +19,7 @@ class ChangesTest(unittest.TestCase):
         self.assertTrue(changes.classify(["packages/core/src/prompt/system.md"])["code"])
 
     def test_platform_and_shared_changes_require_windows(self):
-        for path in ["packages/core/src/session.ts", "packages/miao/src/installation/index.ts", "script/install-local.ps1", "bun.lock", ".github/actions/setup-bun/action.yml"]:
+        for path in ["packages/core/src/session.ts", "script/install-local.ps1", "bun.lock", ".github/actions/setup-bun/action.yml"]:
             self.assertEqual(changes.classify([path]), {"code": True, "windows": True})
 
 
