@@ -1666,16 +1666,21 @@ async fn run(
                         ) {
                             dirty.get_or_insert_with(Instant::now);
                         }
-                        // Retries and tool calls are durable, so the live status
-                        // reads them from the journal rather than the ephemeral
-                        // progress channel.
+                        // Retries, refusals and tool calls are durable, so the live
+                        // status reads them from the journal rather than the
+                        // ephemeral progress channel.
                         match event.kind.as_str() {
-                            "provider.retry" | "tool.planned" | "tool.completed" => {
+                            "provider.retry" | "provider.window" | "tool.planned"
+                            | "tool.completed" => {
                                 bus.send(AppEvent::Provider(json!({
                                     "kind": event.kind.as_str(),
                                     "run_id": event.data.get("run_id").cloned().unwrap_or(Value::Null),
                                     "attempt": event.data.get("attempt").cloned().unwrap_or(Value::Null),
                                     "name": event.data.get("name").cloned().unwrap_or(Value::Null),
+                                    "cause": event.data.get("cause").cloned().unwrap_or(Value::Null),
+                                    "note": event.data.get("note").cloned().unwrap_or(Value::Null),
+                                    "requested_ms": event.data.get("requested_ms").cloned().unwrap_or(Value::Null),
+                                    "remaining_ms": event.data.get("remaining_ms").cloned().unwrap_or(Value::Null),
                                 })));
                             }
                             _ => {}

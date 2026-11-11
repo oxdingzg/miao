@@ -123,6 +123,18 @@ impl ProviderError {
             _ => false,
         }
     }
+    /// The turn stopped instead of retrying, and the sentence says why. It
+    /// travels on the failure itself because the refusal is the last thing the
+    /// turn produces: an error that only repeated the provider's own words left
+    /// the operator unable to tell "no attempt fitted what was left" from "the
+    /// attempts ran out".
+    fn refused_by_window(self, note: &str) -> Self {
+        match self {
+            Self::Http(status, detail) => Self::Http(status, format!("{detail} · {note}")),
+            Self::Transport(reason) => Self::Transport(format!("{reason} · {note}")),
+            other => other,
+        }
+    }
 }
 
 impl From<reqwest::Error> for ProviderError {
@@ -1245,6 +1257,7 @@ pub(crate) async fn request_with_retry(
             .remaining()
             .filter(|remaining| *remaining <= pause)
         {
+            let note = window_refusal_note(requested, pause, remaining);
             let _ = progress
                 .send(json!({
                     "kind": "provider.window",
@@ -1254,9 +1267,10 @@ pub(crate) async fn request_with_retry(
                     "cause": cause,
                     "requested_ms": pause.as_millis() as u64,
                     "remaining_ms": remaining.as_millis() as u64,
+                    "note": note.clone(),
                 }))
                 .await;
-            return Err(error);
+            return Err(error.refused_by_window(&note));
         }
         announce_retry(
             progress,
@@ -1368,6 +1382,34 @@ fn pause_source(requested: Option<Duration>) -> &'static str {
     match requested {
         Some(_) => "provider",
         None => "backoff",
+    }
+}
+
+/// Why the next attempt was refused, in the two numbers the decision used. The
+/// source matters: a delay the provider named and one this runner's schedule
+/// chose read the same on a status line and mean different things.
+fn window_refusal_note(
+    requested: Option<Duration>,
+    pause: Duration,
+    remaining: Duration,
+) -> String {
+    let asking = match requested {
+        Some(_) => "the provider asked for",
+        None => "the next backoff was",
+    };
+    format!(
+        "no retry: {asking} {} but the turn's retry window had only {} left",
+        pause_words(pause),
+        pause_words(remaining)
+    )
+}
+
+/// A pause written the way the status line spells one: whole seconds, and
+/// milliseconds below a second so a local backoff never reads as `0s`.
+fn pause_words(pause: Duration) -> String {
+    match pause.subsec_millis() {
+        0 => format!("{}s", pause.as_secs()),
+        _ => format!("{}ms", pause.as_millis()),
     }
 }
 
@@ -1850,6 +1892,24 @@ mod retry_tests {
             .collect();
         assert_eq!(refused.len(), 1, "{notices:?}");
         assert_eq!(refused[0]["requested_ms"], 2_000);
+        // The refusal names both numbers, and the failure repeats the same
+        // sentence: an error that only carried the provider's words left the
+        // operator unable to tell a runner that would not retry from a window
+        // that could not hold the pause.
+        let note = refused[0]["note"]
+            .as_str()
+            .expect("the refusal names the numbers it used");
+        assert!(
+            note.starts_with(
+                "no retry: the provider asked for 2s but the turn's retry window had only "
+            ),
+            "{note}"
+        );
+        assert!(note.ends_with(" left"), "{note}");
+        let message = outcome
+            .expect_err("the refusal is the turn's failure")
+            .to_string();
+        assert!(message.contains(note), "{message}");
         assert!(
             delays(&notices).is_empty(),
             "the refused pause was never announced as a retry"

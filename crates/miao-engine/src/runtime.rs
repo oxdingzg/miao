@@ -3939,6 +3939,19 @@ async fn execute(
                             // never counts as `produced` and never disarms the
                             // pre-output transport retry.
                             inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
+                        } else if delta["kind"] == "provider.window" {
+                            // A refusal is a durable product fact: it is why the turn
+                            // stops instead of retrying, so it is recorded beside the
+                            // retries it never became. Like an attempt it is not
+                            // provider output, so it neither measures TTFT nor spends
+                            // the pre-output transport replay.
+                            inner.store.record(session, "provider.window", json!({
+                                "run_id":run,"step":step,
+                                "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                                "cause":delta["cause"],"requested_ms":delta["requested_ms"],
+                                "remaining_ms":delta["remaining_ms"],"note":delta["note"],
+                            })).await?;
+                            inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.window","attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],"cause":delta["cause"],"requested_ms":delta["requested_ms"],"remaining_ms":delta["remaining_ms"],"note":delta["note"]}));
                         } else {
                             if !produced {
                                 ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);
@@ -3961,6 +3974,14 @@ async fn execute(
                     })).await?;
                 } else if delta["kind"] == "provider.attempt" {
                     inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));
+                } else if delta["kind"] == "provider.window" {
+                    inner.store.record(session, "provider.window", json!({
+                        "run_id":run,"step":step,
+                        "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
+                        "cause":delta["cause"],"requested_ms":delta["requested_ms"],
+                        "remaining_ms":delta["remaining_ms"],"note":delta["note"],
+                    })).await?;
+                    inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.window","attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],"cause":delta["cause"],"requested_ms":delta["requested_ms"],"remaining_ms":delta["remaining_ms"],"note":delta["note"]}));
                 } else {
                     if !produced {
                         ttft_ms = Some(attempt_started.elapsed().as_millis() as u64);

@@ -420,3 +420,94 @@ async fn an_interrupt_lands_in_a_retry_pause_without_waiting_for_the_next_attemp
     );
     runtime.shutdown().await;
 }
+
+/// A refusal is what a paused retry never became, and it is the answer to the
+/// question the failure line raises: "why did it stop instead of retrying". It
+/// has to reach the ledger as its own fact — the frame used to fall through the
+/// delta branch, where it was forwarded to clients as provider output and
+/// recorded nowhere.
+struct Refused {
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl Provider for Refused {
+    async fn stream(
+        &self,
+        _: ModelRequest,
+        progress: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let _ = progress
+            .send(json!({
+                "kind": "provider.window",
+                "attempt": 2,
+                "reason": "provider HTTP 429",
+                "status": 429,
+                "cause": "vendor_rate_limit",
+                "requested_ms": 30_000,
+                "remaining_ms": 12_000,
+                "note": "no retry: the provider asked for 30s but the turn's retry window had only 12s left",
+            }))
+            .await;
+        Err(ProviderError::Http(429, " · retry-after: 30s".into()))
+    }
+}
+
+#[tokio::test]
+async fn a_refused_retry_is_journalled_before_the_turn_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let provider = Arc::new(Refused {
+        calls: AtomicUsize::new(0),
+    });
+    let runtime = Runtime::new(
+        store.clone(),
+        provider.clone(),
+        Tools::new(dir.path()).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "one".into(),
+                prompt: "go".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let events = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let events = store.events("s", 0, 1000).await.unwrap();
+            if events.iter().any(|event| event.kind == "stop_failure") {
+                return events;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the refused turn settles as a failure");
+    let window = events
+        .iter()
+        .find(|event| event.kind == "provider.window")
+        .expect("the refusal is a durable fact");
+    assert_eq!(window.data["attempt"], 2);
+    assert_eq!(window.data["requested_ms"], 30_000);
+    assert_eq!(window.data["remaining_ms"], 12_000);
+    assert_eq!(
+        window.data["note"],
+        "no retry: the provider asked for 30s but the turn's retry window had only 12s left"
+    );
+    assert_eq!(
+        provider.calls.load(Ordering::SeqCst),
+        1,
+        "the refused pause produced no further attempt"
+    );
+    runtime.shutdown().await;
+}
