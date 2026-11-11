@@ -2314,15 +2314,14 @@ impl App {
                 self.reopen_models_dialog();
             }
             Some(Dialog::Models(list)) => {
-                // A needs-auth row names a provider this engine does not serve
-                // yet; selecting it surfaces the way in instead of failing the
-                // parse silently.
+                // The picker's provider rows name one provider each: either a
+                // key that serves no model yet, or the keys behind the models
+                // above it. Both lead to that provider's key list rather than
+                // failing the parse silently.
                 if let Some(row) = list.rows.get(index) {
                     if let Some(provider) = row.id.strip_prefix("accounts:") {
-                        // The row names one provider, so the list it opens is
-                        // that provider's credentials instead of the full one
-                        // again: the point of the row is "look at why this key
-                        // serves no model".
+                        // Scoped to one provider, so the list is that
+                        // provider's keys instead of the full one again.
                         self.accounts_filter = Some(provider.to_string());
                         self.open_account_list();
                         return;
@@ -9460,6 +9459,59 @@ mod tests {
             list.rows[1].detail.starts_with("key · no route"),
             "{}",
             list.rows[1].detail
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The picker's `manage keys` row lands on the same list `ctrl+o` opens:
+    /// one provider's keys with the letters that update, add and delete them.
+    /// A key is therefore reachable from the dialog the operator already uses
+    /// to choose a model, and the two ways in cannot drift apart.
+    #[test]
+    fn the_model_pickers_key_row_opens_the_same_list_as_the_accounts_panel() {
+        let mut app = session_app();
+        let dir = std::env::temp_dir().join(format!("miao-picker-keys-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        miao_engine::credential::store_key(&store, "mtty", "sk-test", None).expect("store");
+        let catalog = ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "flash", "model_key": "mtty/flash"}
+        ]));
+        app.open_dialog(Dialog::models(&catalog, None));
+        // The first model stays the row Enter acts on: the key row trails it.
+        assert_eq!(
+            app.dialog
+                .as_ref()
+                .and_then(Dialog::list)
+                .and_then(|list| list.selected_id()),
+            Some("0".to_string())
+        );
+        let target = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::list)
+            .and_then(|list| list.rows.iter().position(|row| row.id == "accounts:mtty"))
+            .expect("the picker names the provider's keys");
+        for _ in 0..target {
+            app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        }
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(
+            app.accounts_filter.as_deref(),
+            Some("mtty"),
+            "the list is that provider's, not the flat one"
+        );
+        let Some(Dialog::Accounts(list)) = app.dialog.as_ref() else {
+            panic!("the keys dialog `ctrl+o` opens")
+        };
+        assert_eq!(list.kind, crate::dialogs::ListKind::Keys);
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            vec!["default", "add key"],
+            "the stored key and the way to add another sit where `u` and `a` act"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
