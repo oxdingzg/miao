@@ -1912,9 +1912,15 @@ impl Provider for Exploring {
         });
         let last_user = texts("user").pop().unwrap_or_default();
         if last_user.contains("does the ledger parse") {
-            let present = texts("user")
-                .iter()
-                .any(|text| text.contains("mainline marker"));
+            // The mainline's marker is what its own turn *answered*, so the copy
+            // carries it in an assistant message: looking only at user prompts
+            // would report the copy missing for every branch, including a
+            // correct one.
+            let present = ["user", "assistant"].iter().any(|role| {
+                texts(role)
+                    .iter()
+                    .any(|text| text.contains("mainline marker"))
+            });
             let answer = if present {
                 "context present"
             } else {
