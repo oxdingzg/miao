@@ -3565,44 +3565,42 @@ fn stale_subagents(
     tx: &Transaction<'_>,
     session: Option<&str>,
 ) -> Result<Vec<(String, String)>, Error> {
+    // Both kinds have to be read as one sequence: `running_subagents()` keeps a
+    // child open until a stop *later* than its newest start closes it, so a stop
+    // that predates a re-dispatch says nothing about the second run. Collecting
+    // the starts and the stops separately — then dropping every id that appears
+    // in either — left the second run of a stopped child open forever, which is
+    // exactly what a re-dispatched delegation that died again looks like.
     let mut stmt = tx.prepare(
-        "SELECT session_id, data FROM engine_event \
-         WHERE kind='subagent_start' AND (?1 IS NULL OR session_id=?1) ORDER BY seq",
+        "SELECT session_id, kind, data FROM engine_event \
+         WHERE kind IN ('subagent_start','subagent_stop') AND (?1 IS NULL OR session_id=?1) \
+         ORDER BY session_id, seq",
     )?;
     let rows = stmt.query_map([session], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
     })?;
-    let mut open: Vec<(String, String)> = Vec::new();
+    let mut open: std::collections::BTreeSet<(String, String)> = std::collections::BTreeSet::new();
     for row in rows {
-        let (owner, data) = row?;
+        let (owner, kind, data) = row?;
         let data: Value = serde_json::from_str(&data)?;
-        if data["background"] != true {
-            continue;
-        }
         let Some(id) = data["subagent_id"].as_str() else {
             continue;
         };
-        open.push((owner, id.to_string()));
+        if kind == "subagent_start" && data["background"] != true {
+            continue;
+        }
+        let row = (owner, id.to_string());
+        if kind == "subagent_start" {
+            open.insert(row);
+        } else {
+            open.remove(&row);
+        }
     }
-    if open.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut stopped = tx.prepare(
-        "SELECT data FROM engine_event WHERE kind='subagent_stop' AND (?1 IS NULL OR session_id=?1)",
-    )?;
-    let closed: std::collections::HashSet<String> = stopped
-        .query_map([session], |row| row.get::<_, String>(0))?
-        .filter_map(Result::ok)
-        .filter_map(|data| {
-            serde_json::from_str::<Value>(&data)
-                .ok()
-                .and_then(|data| data["subagent_id"].as_str().map(str::to_string))
-        })
-        .collect();
-    Ok(open
-        .into_iter()
-        .filter(|(_, id)| !closed.contains(id))
-        .collect())
+    Ok(open.into_iter().collect())
 }
 
 fn promote_tx(tx: &Transaction<'_>, session: &str, idle: bool) -> Result<Vec<Event>, Error> {
