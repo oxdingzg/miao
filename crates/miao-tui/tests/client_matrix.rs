@@ -119,11 +119,32 @@ impl Harness {
 
     /// The screen as a terminal reconstructs it: what a person sees, not the
     /// repaint byte stream.
+    /// The rendered grid, read row by row.
+    ///
+    /// Deliberately not `contents()`: on Windows the same parsed grid comes back
+    /// as one long row with no separators, so a test that split that string
+    /// measured the whole screen as a single line and reported "row 0 is 1200
+    /// columns wide". Reading each cell makes the row structure explicit and
+    /// identical on every platform.
     fn screen(&self) -> String {
         let size = self.pty.get_size().expect("pty size");
         let mut parser = vt100::Parser::new(size.rows, size.cols, 0);
         parser.process(&self.output.lock().expect("output lock"));
-        parser.screen().contents()
+        let screen = parser.screen();
+        let (rows, cols) = screen.size();
+        (0..rows)
+            .map(|row| {
+                (0..cols)
+                    .map(|col| {
+                        screen
+                            .cell(row, col)
+                            .map(|cell| cell.contents())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn wait_for_screen(&self, needle: &str, timeout: Duration) -> bool {
