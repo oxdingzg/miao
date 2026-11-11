@@ -193,9 +193,17 @@ A new user message grants a fresh budget, so unfinished work can continue there.
 
 /// Request-only guidance once the budget is spent: the turn stays text-only so
 /// the transcript closes with a summary before the run pauses.
-pub(crate) const BUDGET_EXHAUSTED_PROMPT: &str = "CRITICAL - PROMPT TOKEN BUDGET EXHAUSTED
+/// The note a run carries once the agent manifest's soft per-prompt budget is
+/// spent. That budget counts tokens **billed** across the prompt's turns, which
+/// is a different quantity from how full the model's context window is: a long
+/// orchestration prompt can spend a multi-million-token budget while its context
+/// stays well inside the window. The note says so, because a model told only
+/// "budget exhausted" reports an exhausted context to the operator.
+pub(crate) const BUDGET_EXHAUSTED_PROMPT: &str = "CRITICAL - THE SOFT BILLED-TOKEN BUDGET FOR THIS PROMPT IS SPENT
 
-The token budget for this prompt has been exhausted. Tools are disabled until next user input. Respond with text only.
+This prompt has a soft budget over the tokens billed so far, and it is now spent. This is not a statement about the context window: the conversation may still sit well inside the model's window, so do not tell the operator the context is full or that compaction is due.
+
+Tools are disabled until the next user input. Respond with text only.
 
 STRICT REQUIREMENTS:
 1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
@@ -203,7 +211,7 @@ STRICT REQUIREMENTS:
 3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
 
 Response must include:
-- Statement that the prompt token budget has been exhausted
+- The fact that the soft billed-token budget for this prompt is spent, in those terms
 - Summary of what has been accomplished so far
 - List of any remaining tasks that were not completed
 - Recommendations for what should be done next
