@@ -586,6 +586,10 @@ pub struct App {
     themes: theme::Catalog,
     /// Live provider activity for the open Session.
     live: Option<Live>,
+    /// Whether this Session has already been told that automatic compaction is
+    /// paused. A tripped breaker skips a pass at every boundary, and repeating
+    /// the notice would bury the one time it mattered.
+    compaction_paused_notice: bool,
     /// A tool call the engine announced and has not completed yet.
     ///
     /// The provider's stream ends the moment the model stops talking, which is
@@ -731,6 +735,7 @@ impl App {
             startup,
             themes,
             live: None,
+            compaction_paused_notice: false,
             tool_running: None,
             backpressure: None,
             run_since: None,
@@ -4129,14 +4134,17 @@ impl App {
             // between provider turns. Without a phase of its own the strip kept
             // claiming the turn waited for an answer nobody was fetching, which
             // is the silence an operator reads as a stall.
-            "compaction.started" => LivePhase::Compacting {
-                segment: 1,
-                total: frame
-                    .get("segments")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(1)
-                    .max(1),
-            },
+            "compaction.started" => {
+                self.compaction_paused_notice = false;
+                LivePhase::Compacting {
+                    segment: 1,
+                    total: frame
+                        .get("segments")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(1)
+                        .max(1),
+                }
+            }
             "compaction.progress" => {
                 let total = frame
                     .get("total")
@@ -4149,6 +4157,38 @@ impl App {
                     .unwrap_or(1)
                     .clamp(1, total);
                 LivePhase::Compacting { segment, total }
+            }
+            // The pass stopped because the turn was interrupted. The summary it
+            // was building is not coming, so the strip must stop naming a
+            // compaction that is no longer running — otherwise Escape looks like
+            // it did nothing and a stopped pass reads exactly like a wedged one.
+            "compaction.cancelled" => {
+                self.notice("Compaction stopped");
+                LivePhase::Waiting
+            }
+            // A gate that keeps a pass idle never started one: only a stale
+            // Compacting phase from an earlier attempt has to end here.
+            "compaction.skipped" | "compaction.prefix.fallback" => {
+                // Gate ⑤ is the one skip an operator has to hear about: the
+                // summarizer kept failing, so no pass will run by itself and the
+                // history keeps growing until the endpoint refuses the turn.
+                // Everything else stays in the strip, where the figures live.
+                if frame.get("gate").and_then(Value::as_u64) == Some(5)
+                    && !self.compaction_paused_notice
+                {
+                    self.compaction_paused_notice = true;
+                    self.notice(
+                        "Automatic compaction is paused after repeated summarizer failures · /compact retries it",
+                    );
+                }
+                let compacting = matches!(
+                    self.live.as_ref().map(|live| &live.phase),
+                    Some(LivePhase::Compacting { .. })
+                );
+                if !compacting {
+                    return;
+                }
+                LivePhase::Waiting
             }
             // The summary landed or was refused, and the turn continues: the
             // next provider frame names what it is doing now.
@@ -7691,6 +7731,120 @@ mod tests {
             app.shell.title.status(),
             Some("Waiting for model · Esc interrupt")
         );
+    }
+
+    /// Escape during a pass cancels it, and the summary that was never built
+    /// must not leave the strip claiming compaction: a stopped pass that still
+    /// says "Compacting" is indistinguishable from a wedged one.
+    #[test]
+    fn a_cancelled_pass_stops_naming_itself_on_the_strip() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.started",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segments": 3,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Compacting context · segment 1 of 3 · Esc interrupt")
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.cancelled",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segment": 2,
+            "total": 3,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Waiting for model · Esc interrupt")
+        );
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("Compaction stopped")
+        );
+    }
+
+    /// A gate that keeps a pass idle never started one, so it must not invent a
+    /// phase; a stale Compacting phase from an attempt it superseded does end.
+    #[test]
+    fn a_skipped_pass_only_closes_a_phase_that_is_already_open() {
+        let mut app = running_app("run-1");
+        app.handle(provider_frame("provider.waiting"));
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.skipped",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "gate": 5,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Waiting for model · Esc interrupt"),
+            "a skipped gate adds nothing"
+        );
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.started",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segments": 2,
+        })));
+        app.update_status();
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.skipped",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "gate": 5,
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Waiting for model · Esc interrupt"),
+            "the stale compacting phase ends"
+        );
+    }
+
+    /// Gate ⑤ is the one skip an operator has to hear about: the summarizer kept
+    /// failing, so no pass runs by itself and the history grows until the
+    /// endpoint refuses the turn. Naming it once is what turns "nothing is
+    /// compacting" into an action.
+    #[test]
+    fn a_tripped_breaker_is_named_once_and_cleared_by_a_pass() {
+        let mut app = running_app("run-1");
+        let skipped = || {
+            AppEvent::Provider(serde_json::json!({
+                "kind": "compaction.skipped",
+                "session_id": "ses_1",
+                "run_id": "run-1",
+                "gate": 5,
+                "reason": "breaker_open",
+            }))
+        };
+        app.handle(skipped());
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some(
+                "Automatic compaction is paused after repeated summarizer failures · /compact retries it"
+            )
+        );
+        // The next boundary meets the same tripped breaker; repeating the notice
+        // every turn would bury the one time it mattered.
+        app.shell.composer.notice = None;
+        app.handle(skipped());
+        assert_eq!(app.shell.composer.notice, None);
+        // A pass that actually runs means the breaker is clear again.
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "compaction.started",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "segments": 2,
+        })));
+        app.shell.composer.notice = None;
+        app.handle(skipped());
+        assert!(app.shell.composer.notice.is_some(), "the new trip is named");
     }
 
     /// One segment has no counter to show, and the phase ledger records the
