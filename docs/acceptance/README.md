@@ -106,6 +106,7 @@ newer record is the one to read.
 | `2026-11-11-tui03-streaming-pins.md` | `origin/main` `e5d81835b9` on `xx04` | TUI-03 (text/reasoning channels, committed-stream refresh, `Running <tool>` progress and the settled call row re-pinned on the current tree; the record makes the call that parameters are displayed, and that live argument rendering is a separate feature; no stamp yet) |
 | `2026-11-11-ux02-keyboard-and-pointer.md` | `origin/main` `8fb7d1ad44` on `xx04` | UX-02 (keyboard reachability over the whole action set, drag/click/double-click selection with no accidental actions, and the focus/scroll/cursor knobs — the three rows the 2026-11-04 evidence left open; no stamp yet) |
 | `2026-11-11-perf0405-soak-window.md` | `test/perf04-soak-window` on `xx04` + `macmini` | PERF-04 and PERF-05 (a 300 s idle soak on Linux and macOS: 68 kB / 48 kB RSS growth, no descriptor growth, 1.3 % / 0.42 % of one core; the harness's `MIAO_SOAK_SECS` window is opt-in so CI keeps its 3 s budget; no stamp yet) |
+| `2026-11-11-agt03-net-benefit.md` | `feat/issue1968` | AGT-03 settlement half (a durable `delegation.settled` row per delegation with parent+child cost, combined totals, wall clock, and a verdict; the structured `report` object on the task result; a rework settlement closes delegation for the run so the work finishes in a single agent; the benefit experiment itself stays with VAL-04; no stamp yet) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`

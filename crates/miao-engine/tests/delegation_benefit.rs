@@ -247,8 +247,8 @@ async fn a_delivered_delegation_settles_positive_with_a_structured_report() {
         .into_iter()
         .find(|event| event.kind == "subagent_stop")
         .expect("subagent_stop recorded");
-    assert_eq!(stop.data["text"], "hello from child", "{stop}");
-    assert_eq!(stop.data["reason"], "completed", "{stop}");
+    assert_eq!(stop.data["text"], "hello from child", "{stop:?}");
+    assert_eq!(stop.data["reason"], "completed", "{stop:?}");
 }
 
 /// Child: an empty report on the first dispatch, a delivery on the retry.
