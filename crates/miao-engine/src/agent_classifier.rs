@@ -159,22 +159,7 @@ pub fn host_edit(resources: &[String], host: &crate::product::HostContext) -> Ve
 }
 
 pub fn bash(command: &str) -> Verdict {
-    // The engine runs every command through `bash -c` on every platform,
-    // Windows included (`process::Input::argv`), so bash syntax is exactly what
-    // Windows executes too and the same parse is the right analysis there. The
-    // length bound only turns a pathological parse into an ask instead of a
-    // stall.
-    if command.is_empty() || command.len() > 65536 {
-        return Verdict::Unknown;
-    }
-    let mut parser = tree_sitter::Parser::new();
-    if parser
-        .set_language(&tree_sitter_bash::LANGUAGE.into())
-        .is_err()
-    {
-        return Verdict::Unknown;
-    }
-    let Some(tree) = parser.parse(command, None) else {
+    let Some(tree) = parse(command) else {
         return Verdict::Unknown;
     };
     let root = tree.root_node();
@@ -210,6 +195,43 @@ pub fn argv(argv: &[String]) -> Verdict {
     } else {
         Verdict::Unknown
     }
+}
+
+/// Every command in a shell line, tokenized as [`bash`] classifies it. Callers
+/// that read the action out of the words rather than judging its safety — branch
+/// discipline, for one — share this extraction instead of parsing twice.
+pub(crate) fn words(command: &str) -> Option<Vec<Vec<String>>> {
+    let tree = parse(command)?;
+    let root = tree.root_node();
+    if root.has_error() {
+        return None;
+    }
+    let extracted: Vec<Vec<String>> = commands(root, command)
+        .into_iter()
+        .filter(|tokens| !tokens.is_empty())
+        .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
+        .collect();
+    if extracted.is_empty() {
+        None
+    } else {
+        Some(extracted)
+    }
+}
+
+fn parse(command: &str) -> Option<tree_sitter::Tree> {
+    // The engine runs every command through `bash -c` on every platform,
+    // Windows included (`process::Input::argv`), so bash syntax is exactly what
+    // Windows executes too and the same parse is the right analysis there. The
+    // length bound only turns a pathological parse into an ask instead of a
+    // stall.
+    if command.is_empty() || command.len() > 65536 {
+        return None;
+    }
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_bash::LANGUAGE.into())
+        .ok()?;
+    parser.parse(command, None)
 }
 
 fn has_descendant(root: Node<'_>, kinds: &[&str]) -> bool {

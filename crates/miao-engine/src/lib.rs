@@ -10,6 +10,7 @@ pub mod bedrock;
 mod bedrock_input;
 mod bedrock_stream;
 pub mod blob;
+pub mod branch_discipline;
 mod cache_affinity;
 pub mod children;
 pub mod cli;

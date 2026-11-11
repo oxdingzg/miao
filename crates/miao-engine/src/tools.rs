@@ -1358,6 +1358,12 @@ impl Tools {
         self.root.to_str().expect("validated UTF-8 Location")
     }
 
+    /// The branch this workspace's checkout records, so a permission decision can
+    /// name the branch a landing action would move.
+    pub(crate) fn head(&self) -> crate::branch_discipline::Head {
+        crate::branch_discipline::Head::observe(&self.directory)
+    }
+
     pub(crate) async fn verification_source(&self, scope: &crate::verification::Scope) -> Value {
         let directory = self.directory.clone();
         let scope = scope.clone();
