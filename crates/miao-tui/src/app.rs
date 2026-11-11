@@ -6205,8 +6205,17 @@ mod tests {
             .map(|(builtin, _)| builtin.name())
             .collect::<Vec<_>>();
         // Toggling the terminal title ships unbound on purpose: it is reachable
-        // only when the operator binds it.
-        assert_eq!(unbound, ["terminal-title"]);
+        // only when the operator binds it. Suspending to a shell is a Unix
+        // job-control concept, so `suspend` is unbound everywhere else —
+        // `keybinds.rs`'s `UNBOUND_BY_DEFAULT` already says so, and this
+        // assertion must not demand a binding that cannot exist on Windows.
+        let mut expected = vec!["terminal-title"];
+        #[cfg(not(unix))]
+        expected.push("suspend");
+        expected.sort_unstable();
+        let mut unbound = unbound;
+        unbound.sort_unstable();
+        assert_eq!(unbound, expected);
     }
 
     #[test]
