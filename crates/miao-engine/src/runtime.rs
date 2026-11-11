@@ -3679,6 +3679,9 @@ async fn execute(
             inner.refused_window_for(model.as_deref()).await,
         );
         let learned = inner.learned_limits(model.as_deref()).await;
+        // Window and occupancy: the usage events and the pause note read these, so
+        // they stay even though nothing announces the level any more.
+        let mut pressure = None;
         // The token count at which the compaction trigger would run. A pause that
         // spends a billing allowance prints it beside the window's own figures, so
         // that tally cannot be read as context occupancy (#2870).
@@ -3697,6 +3700,7 @@ async fn execute(
                     }
                     None => None,
                 };
+                pressure = counted.map(|counted| (limits.window, counted));
                 compaction_threshold = Some(limits.budget().threshold()).filter(|at| *at > 0);
                 bound_budget(
                     limits.window,
