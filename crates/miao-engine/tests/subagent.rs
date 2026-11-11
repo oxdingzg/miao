@@ -1885,6 +1885,9 @@ async fn recovery_closes_a_redispatch_that_stopped_once_before() {
         .initialize("parent", "parent", dir.path().to_str().unwrap())
         .await
         .unwrap();
+    // The counters read a child as this Session's own through the lineage edge,
+    // so the re-dispatch has to be for a child this Session actually forked.
+    store.fork("parent", "child", Some(0)).await.unwrap();
     for _ in 0..2 {
         store
             .record(
