@@ -7173,7 +7173,7 @@ async fn delegate(
                 // The watcher failing is still a terminal state the parent has
                 // to hear about: it records the same failed stop row, so the
                 // announcement points at something `task_result` can read.
-                announce_task(&background, &parent, &watcher_child, &call, "failed").await;
+                announce_task(&background, &parent, &watcher_child, &call).await;
             }
         });
         return Ok(json!({"session_id":child,"background":true,"status":"running"}));
@@ -7460,8 +7460,14 @@ async fn finish_delegation(
     // a completion lands when the parent would otherwise be idle instead of
     // cutting into a turn in flight, and the announcement points at the same
     // `subagent_stop` row `task_result` already reads.
-    if reason != "interrupted" {
-        announce_task(inner, parent, child, call, reason).await;
+    // Only a failure earns a wake-up. AGT-06 fixes the other half: a background
+    // child that delivered is a side question as far as the parent's turn is
+    // concerned — its answer stays out of the parent context and is fetched with
+    // `task_result`, so announcing a success would continue a parent that asked
+    // nothing. A failure is the case the parent cannot discover by reading, and
+    // the case #2862 reported as a silent stop.
+    if reason == "failed" {
+        announce_task(inner, parent, child, call).await;
     }
     if reason == "interrupted" {
         return Err(ToolError::Interrupted);
@@ -7473,14 +7479,9 @@ async fn finish_delegation(
 /// wake the parent so its drain promotes it. Best effort: an admission that fails
 /// (the parent Session was deleted or its inbox identity already settled) must not
 /// fail the child's own settlement, which is already durable.
-async fn announce_task(inner: &Arc<Inner>, parent: &str, child: &str, call: &str, reason: &str) {
-    let outcome = match reason {
-        "completed" => format!("Background task {child} finished."),
-        "cancelled" => format!("Background task {child} was cancelled."),
-        _ => format!(
-            "Background task {child} failed before delivering (reason: {reason}), so its work may be undone."
-        ),
-    };
+async fn announce_task(inner: &Arc<Inner>, parent: &str, child: &str, call: &str) {
+    let outcome =
+        format!("Background task {child} failed before delivering, so its work may be undone.");
     let admitted = inner
         .store
         .admit(Input {

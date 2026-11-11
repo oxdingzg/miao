@@ -15,9 +15,13 @@ Session by hand — the "静默终结" in `#2862`.
 
 ## Criterion — "A failed child is a receipt the parent receives, not silence."
 
-`finish_delegation` now announces the terminal state to the parent as a queued
+`finish_delegation` now announces a **failed** child to the parent as a queued
 input (`task:{call_id}:finished`) and wakes it, so the existing drain promotes
-the announcement at the parent's next safe boundary. It is `Delivery::Queue`,
+the announcement at the parent's next safe boundary. Only failure announces:
+AGT-06 fixes the other half, that a background child that delivered is a side
+question as far as the parent's turn goes — its answer stays out of the parent
+context and is fetched with `task_result`, so a success announcement would
+continue a parent that asked nothing (`a_side_question_never_enters_the_parent_context_by_itself`). It is `Delivery::Queue`,
 not a steer: a completion must not cut into a turn that is in flight. The
 announcement names the outcome and points at `task_result`, which reads the same
 `subagent_stop` row. The watcher's own failure path — the branch that records
