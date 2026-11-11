@@ -77,7 +77,17 @@ pub struct AgentManifest {
     pub request: Option<crate::request_options::Options>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steps: Option<u32>,
-    /// Soft per-prompt token budget, matching the TS agent `budget` setting.
+    /// A per-prompt allowance in provider-billed tokens, carried over from the
+    /// TS agent `budget` setting.
+    ///
+    /// It bounds billing, not context. The figure the run loop spends it against
+    /// is `billed_tokens(usage)` summed over every provider turn of one prompt:
+    /// input plus output, cache reads included, so a long orchestration prompt
+    /// crosses a modest allowance while its context window is nearly empty. The
+    /// window has its own measure and its own compaction threshold (see
+    /// `context_trigger`), and nothing here can bound or predict it. A Session
+    /// budget (`budget` in configuration, evaluated by `crate::budget`) is a
+    /// different declaration with its own accounting window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget: Option<u64>,
 }
