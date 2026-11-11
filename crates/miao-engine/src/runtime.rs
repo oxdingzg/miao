@@ -7051,7 +7051,7 @@ async fn delegate(
                 command: None,
                 session_id: child.clone(),
                 input_id: format!("{call}:subagent"),
-                prompt: format!("{references}{}", task.prompt),
+                prompt: format!("{}{references}{}", task.package(), task.prompt),
                 delivery: crate::protocol::Delivery::Steer,
             },
             context.attachments.to_vec(),

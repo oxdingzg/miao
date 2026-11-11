@@ -164,8 +164,55 @@ pub struct Input {
     /// Tools the parent withholds from this child's surface.
     #[serde(default)]
     pub deny_tools: Vec<String>,
+    /// What the delegated work is for. Optional: a caller that only has a
+    /// prompt still works, and this is what a report can be checked against
+    /// when the caller does state it.
+    #[serde(default)]
+    pub goal: Option<String>,
+    /// What the child has to be able to show for its work to count. Optional
+    /// for the same reason; when present the package asks the report to answer
+    /// each one with its evidence instead of pasting history.
+    #[serde(default)]
+    pub completion_criteria: Vec<String>,
 }
+
+/// Bounds for the optional part of a task package.
+pub const GOAL_LIMIT: usize = 512;
+pub const CRITERIA_LIMIT: usize = 16;
+pub const CRITERION_LIMIT: usize = 256;
+
 impl Input {
+    /// The structured part of a delegated prompt. A child forks empty, so the
+    /// goal and the acceptance conditions would otherwise exist only in the
+    /// parent's head; this states them once, above the instructions, in the
+    /// shape the child's final report is expected to answer. A package that
+    /// states neither renders nothing, which keeps a bare prompt unchanged.
+    pub fn package(&self) -> String {
+        let criteria: Vec<&String> = self
+            .completion_criteria
+            .iter()
+            .filter(|criterion| !criterion.trim().is_empty())
+            .collect();
+        if self.goal.is_none() && criteria.is_empty() {
+            return String::new();
+        }
+        let mut block = String::from("<task-package>\n");
+        if let Some(goal) = &self.goal {
+            block.push_str(&format!("Goal: {}\n", goal.trim()));
+        }
+        if !criteria.is_empty() {
+            block.push_str("Completion criteria:\n");
+            for (index, criterion) in criteria.iter().enumerate() {
+                block.push_str(&format!("{}. {}\n", index + 1, criterion.trim()));
+            }
+            block.push_str(
+                "Answer each criterion in the final report with the evidence that proves it. Keep the report short: name the commands, paths and observations, and do not paste long history.\n",
+            );
+        }
+        block.push_str("</task-package>\n");
+        block
+    }
+
     pub fn parse(input: Value) -> Result<Self, ToolError> {
         let parsed: Self = serde_json::from_value(input).map_err(|_| ToolError::InvalidInput)?;
         let reference_invalid = parsed.references.len() > REFERENCE_LIMIT
@@ -179,12 +226,19 @@ impl Input {
             || parsed.deny_tools.iter().any(|name| {
                 name.is_empty() || name.len() > MAX_TOOL_NAME || name.chars().any(char::is_control)
             });
+        let package_invalid = parsed.goal.as_ref().is_some_and(|goal| {
+            goal.trim().is_empty() || goal.len() > GOAL_LIMIT || goal.chars().any(char::is_control)
+        }) || parsed.completion_criteria.len() > CRITERIA_LIMIT
+            || parsed.completion_criteria.iter().any(|criterion| {
+                criterion.len() > CRITERION_LIMIT || criterion.chars().any(char::is_control)
+            });
         if parsed.agent.as_ref().is_some_and(|name| {
             name.is_empty() || name.len() > 128 || name.chars().any(char::is_control)
         }) || parsed.prompt.trim().is_empty()
             || parsed.prompt.len() > PROMPT_LIMIT
             || reference_invalid
             || deny_invalid
+            || package_invalid
             || parsed
                 .session_id
                 .as_deref()
@@ -216,5 +270,74 @@ impl Selector {
             return Err(ToolError::InvalidInput);
         }
         Ok(selector)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn package(input: Value) -> String {
+        Input::parse(input).expect("a valid package").package()
+    }
+
+    /// A caller that states its goal and its acceptance conditions gets them
+    /// stated to the child once, above the instructions, in the shape the
+    /// report is asked to answer — the child cannot see the parent's context.
+    #[test]
+    fn a_task_package_states_the_goal_and_the_criteria() {
+        let block = package(json!({
+            "prompt": "read the ledger and report",
+            "goal": "  find the double-charge  ",
+            "completion_criteria": ["cite the ledger rows", "  name the fix  "],
+        }));
+        assert!(block.starts_with("<task-package>\n"), "{block}");
+        assert!(
+            block.contains("Goal: find the double-charge\n"),
+            "the goal is trimmed: {block}"
+        );
+        assert!(block.contains("1. cite the ledger rows\n"), "{block}");
+        assert!(block.contains("2. name the fix\n"), "{block}");
+        assert!(
+            block.contains("Answer each criterion in the final report with the evidence"),
+            "the report is asked to answer them: {block}"
+        );
+        assert!(
+            block.contains("do not paste long history"),
+            "and to stay short: {block}"
+        );
+        assert!(block.ends_with("</task-package>\n"), "{block}");
+    }
+
+    /// A bare prompt is the whole package: nothing is added, so an existing
+    /// caller that passes only a prompt sends exactly what it sent before.
+    #[test]
+    fn a_bare_prompt_renders_no_package() {
+        assert_eq!(package(json!({"prompt": "just do it"})), "");
+        // Blank values are not a package either.
+        assert_eq!(
+            package(json!({"prompt": "just do it", "completion_criteria": ["  ", ""]})),
+            ""
+        );
+    }
+
+    #[test]
+    fn an_oversized_package_is_refused_rather_than_truncated() {
+        let long_goal = "x".repeat(GOAL_LIMIT + 1);
+        assert!(Input::parse(json!({"prompt": "p", "goal": long_goal})).is_err());
+        let long_criterion = "y".repeat(CRITERION_LIMIT + 1);
+        assert!(
+            Input::parse(json!({"prompt": "p", "completion_criteria": [long_criterion]})).is_err()
+        );
+        let many: Vec<String> = (0..=CRITERIA_LIMIT)
+            .map(|n| format!("criterion {n}"))
+            .collect();
+        assert!(Input::parse(json!({"prompt": "p", "completion_criteria": many})).is_err());
+        // The limit itself is allowed.
+        let at_limit: Vec<String> = (0..CRITERIA_LIMIT)
+            .map(|n| format!("criterion {n}"))
+            .collect();
+        assert!(Input::parse(json!({"prompt": "p", "completion_criteria": at_limit})).is_ok());
     }
 }
