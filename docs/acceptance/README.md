@@ -101,6 +101,7 @@ newer record is the one to read.
 | `2026-11-11-inp05-live-zed.md` | `test/inp05-live-zed` | INP-05 (the shipped binary reads a Zed-format database through the real probe in a pty, on Linux and macOS, and the selection is readable in the composer; removal stays pinned by the draft-level tests, Windows unexercised, no stamp yet) |
 | `2026-11-11-val03-six-tasks-and-rework.md` | `test/val03-error-cost` | VAL-03 (all six task baselines re-run on one tree with their printed numbers, and the mistakes/rework definition the product actually observes: rejected/cancelled actions and draft rewrites, replayed turns and tool-input rework; explicitly not a human-factors study; no stamp yet) |
 | `2026-11-11-agt03-task-package.md` | `feat/agt03-task-package` | AGT-03 (optional `goal` + `completion_criteria` that render as a `<task-package>` above the child's instructions and ask the report to answer each criterion; the delegation-cost policy stated in the tool; the net-benefit measurement stays with VAL-04; no stamp yet) |
+| `2026-11-11-agt06-side-question.md` | `test/agt06-side-question` | AGT-06 (a side question is a background child: its answer stays out of the parent context, its completion admits no input to the parent, and `task_result` is the only bring-back; cost lands on the child Session; no stamp yet) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`

@@ -439,6 +439,128 @@ async fn background_task_survives_the_parent_turn_and_reports_durably() {
     runtime.shutdown().await;
 }
 
+/// Parent: ask a side question in the background, then close the turn without
+/// reading the answer. The child reports "hello from child".
+struct SideQuestion {
+    step: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for SideQuestion {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let text = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("")
+            .to_owned();
+        if text.contains("say hello") {
+            return Ok(Reply {
+                content: json!([{"type":"text","text":"hello from child"}]),
+                usage: json!({"inputTokens": 30, "outputTokens": 5, "totalTokens": 35}),
+                needs_tools: false,
+            });
+        }
+        let step = self.step.fetch_add(1, Ordering::SeqCst);
+        // One delegation, then the parent keeps working and ends its turn
+        // without ever reading the answer.
+        let content = match step {
+            0 => {
+                json!([{"type":"tool_use","id":"ask","name":"task","input":{"prompt":"say hello","background":true}}])
+            }
+            _ => json!([{"type":"text","text":"carrying on with the main task"}]),
+        };
+        Ok(Reply {
+            content,
+            usage: json!({}),
+            needs_tools: step == 0,
+        })
+    }
+}
+
+/// AGT-06: a side question is a background child — its own lineage, billed to
+/// it — so its answer must not appear in the parent's context, and its
+/// completion must not admit an input that continues the parent either. The
+/// answer comes back only when it is asked for (`task_result`, pinned by
+/// `background_task_survives_the_parent_turn_and_reports_durably`).
+#[tokio::test]
+async fn a_side_question_never_enters_the_parent_context_by_itself() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(SideQuestion {
+            step: AtomicUsize::new(0),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "ask a side question".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    // Wait for the child to settle, so "no pollution" is asserted after the
+    // answer exists rather than before it could have arrived.
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let settled = store
+                .subagents("parent")
+                .await
+                .unwrap()
+                .into_iter()
+                .any(|task| task["status"] == "completed" && task["text"] == "hello from child");
+            if settled {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the side question settles");
+
+    let history = serde_json::to_string(&store.history("parent").await.unwrap()).unwrap();
+    assert!(
+        !history.contains("hello from child"),
+        "the answer stays out of the parent context until it is asked for: {history}"
+    );
+    let admitted = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == "input.admitted")
+        .count();
+    assert_eq!(
+        admitted, 1,
+        "a settled side question must not admit an input of its own"
+    );
+    runtime.shutdown().await;
+}
+
 /// Parent: read a file, then delegate with a reference to that read. Child:
 /// report whether the referenced material arrived, because a child forks empty.
 struct Referencing;
