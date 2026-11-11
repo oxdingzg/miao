@@ -539,6 +539,101 @@ impl Provider for FailingChild {
     }
 }
 
+/// A child that never answers: its run has no terminal event, so the only thing
+/// the parent can see is that the row is still `running`.
+struct Stalled;
+
+#[async_trait]
+impl Provider for Stalled {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let text = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("")
+            .to_owned();
+        if text.contains("please stall") {
+            std::future::pending::<()>().await;
+        }
+        Ok(Reply {
+            content: json!([{"type":"tool_use","id":"ask","name":"task","input":{"prompt":"please stall","background":true}}]),
+            usage: json!({}),
+            needs_tools: true,
+        })
+    }
+}
+
+/// #2862: a child that has gone quiet has no terminal event, so the row has to
+/// carry its age — otherwise "still working" and "wedged" read the same, and an
+/// orchestration waits on something that will never answer.
+#[tokio::test]
+async fn a_running_child_row_carries_its_age() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Stalled),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate something that stalls".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let running = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let tasks = store.subagents("parent").await.unwrap();
+            if let Some(task) = tasks.first().filter(|task| task["status"] == "running") {
+                return task.clone();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the child is scheduled");
+    assert!(
+        running["started_at_ms"].as_u64().unwrap_or(0) > 0,
+        "a running row says when it started: {running:?}"
+    );
+    let first = running["age_ms"]
+        .as_u64()
+        .expect("a running row says how long it has been running");
+    // The age is a live figure, not a constant captured at spawn.
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    let later = store.subagents("parent").await.unwrap()[0]["age_ms"]
+        .as_u64()
+        .unwrap_or(0);
+    assert!(
+        later >= first + 40,
+        "the age grows while the child stays silent: {first} -> {later}"
+    );
+    runtime.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_failed_background_child_tells_the_delegating_session() {
     let dir = tempfile::tempdir().unwrap();
