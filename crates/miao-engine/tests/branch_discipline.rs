@@ -126,7 +126,13 @@ async fn a_push_that_names_the_protected_branch_is_refused_without_a_prompt() {
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Shell("git push origin main".into())),
-        Tools::new(&workspace).await.unwrap(),
+        // The shell tool prepares against a sandbox runner. Nothing here ever
+        // reaches execution — the gate decides first — but the call has to get
+        // that far.
+        Tools::new(&workspace)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
         policy(),
     )
     .await
@@ -164,7 +170,13 @@ async fn the_same_push_from_a_topic_branch_stays_an_explicit_ask() {
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Shell("git push origin feat/topic".into())),
-        Tools::new(&workspace).await.unwrap(),
+        // The shell tool prepares against a sandbox runner. Nothing here ever
+        // reaches execution — the gate decides first — but the call has to get
+        // that far.
+        Tools::new(&workspace)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
         policy(),
     )
     .await
@@ -201,7 +213,13 @@ async fn a_bare_push_is_judged_by_the_recorded_branch() {
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Shell("git push".into())),
-        Tools::new(&workspace).await.unwrap(),
+        // The shell tool prepares against a sandbox runner. Nothing here ever
+        // reaches execution — the gate decides first — but the call has to get
+        // that far.
+        Tools::new(&workspace)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
         policy(),
     )
     .await
