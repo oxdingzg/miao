@@ -803,38 +803,6 @@ pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
     )
 }
 
-/// Context pressure over a known window: 0 below the compaction boundary, 3 in
-/// the turns just before it.
-///
-/// There used to be a ladder — advisory at 60%, actionable at 80% — and it was
-/// noise: compaction runs by itself at `window * ratio`, so a note at 80% only
-/// told the model "soon" between two turns without changing anything except the
-/// context it spent. The one note worth sending is the boundary one, which
-/// fires at 88% so the last turns before compaction can put state in files.
-pub(crate) fn pressure_level(window: u64, counted: u64) -> u8 {
-    let ratio = counted as f64 / window.max(1) as f64;
-    if ratio >= 0.88 {
-        3
-    } else {
-        0
-    }
-}
-
-/// The reminder body for a reached level: window and occupancy first, then the
-/// action for that level. The figures are re-measured every turn, so the note
-/// voids context numbers from earlier reminders instead of arming the model
-/// with a stale count it will defend.
-pub(crate) fn pressure_note(window: u64, counted: u64, level: u8) -> String {
-    let percent = counted.saturating_mul(100) / window.max(1);
-    let action = match level {
-        3 => "Automatic compaction will run at the next turn boundary: the conversation will be replaced by a summary and a restore-budget note will let you re-read what it omits. Wrap up the current step now, and make sure any state the next step needs is written to files.",
-        _ => "",
-    };
-    format!(
-        "<system-reminder>\nContext usage: about {counted} of {window} tokens ({percent}%). {action}\nThese figures are re-measured every turn; context numbers from earlier reminders are obsolete.\n</system-reminder>"
-    )
-}
-
 /// Where request-only guidance goes in the newest message: ahead of the user's
 /// own text, so the turn never ends with a note where the task should be, but
 /// after tool results, whose order and delivery boundary a provider checks.
@@ -1010,22 +978,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pressure_level_ladder() {
-        assert_eq!(pressure_level(1_000, 0), 0);
-        // 60% and 80% used to warn. They no longer do: compaction runs by
-        // itself, so a note before the boundary only spends context.
-        assert_eq!(pressure_level(1_000, 599), 0);
-        assert_eq!(pressure_level(1_000, 600), 0);
-        assert_eq!(pressure_level(1_000, 799), 0);
-        assert_eq!(pressure_level(1_000, 800), 0);
-        assert_eq!(pressure_level(1_000, 879), 0);
-        assert_eq!(pressure_level(1_000, 880), 3);
-        assert_eq!(pressure_level(1_000, 2_000), 3);
-        // A degenerate window stays defined instead of panicking on divide.
-        assert_eq!(pressure_level(0, 5), 3);
-    }
-
-    #[test]
     fn guidance_sits_ahead_of_the_user_text_and_after_tool_results() {
         let asked = json!([{"type": "text", "text": "do the thing"}]);
         assert_eq!(guidance_slot(asked.as_array().unwrap()), 0);
@@ -1034,18 +986,6 @@ mod tests {
             {"type": "text", "text": "and also this"},
         ]);
         assert_eq!(guidance_slot(answered.as_array().unwrap()), 2);
-    }
-
-    #[test]
-    fn pressure_note_leads_with_the_window_and_voids_stale_figures() {
-        let imminent = pressure_note(1_048_576, 950_000, 3);
-        assert!(imminent.contains("restore-budget"));
-        assert!(imminent.contains("re-measured every turn"));
-        assert!(imminent.contains("obsolete"));
-        // Only the boundary note exists now, so a level below it carries no
-        // body at all rather than a softer version of the same reminder.
-        let below = pressure_note(1_048_576, 630_000, 0);
-        assert!(!below.contains("Automatic compaction"));
     }
 
     #[test]
