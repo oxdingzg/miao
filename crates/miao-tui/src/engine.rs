@@ -233,11 +233,15 @@ pub enum Request {
         boundary_seq: u64,
     },
     /// Stage and commit a revert: the file set (when the engine has one) and
-    /// the conversation rewind land together.
+    /// the conversation rewind land together, unless `history` is false, which
+    /// restores the files and leaves the transcript alone. `force` overwrites
+    /// paths whose conflicts the confirmation already showed.
     Revert {
         session_id: String,
         boundary_seq: u64,
         files: bool,
+        history: bool,
+        force: bool,
     },
     /// Restore the messages the last revert hid.
     Redo {
@@ -569,11 +573,20 @@ impl Handle {
         });
     }
 
-    pub fn revert(&self, session_id: &str, boundary_seq: u64, files: bool) {
+    pub fn revert(
+        &self,
+        session_id: &str,
+        boundary_seq: u64,
+        files: bool,
+        history: bool,
+        force: bool,
+    ) {
         let _ = self.tx.send(Request::Revert {
             session_id: session_id.to_string(),
             boundary_seq,
             files,
+            history,
+            force,
         });
     }
 
@@ -1571,6 +1584,8 @@ async fn run(
                     session_id,
                     boundary_seq,
                     files,
+                    history,
+                    force,
                 } => {
                     let staged = client
                         .request(
@@ -1579,6 +1594,8 @@ async fn run(
                                 "session_id": session_id,
                                 "boundary_seq": boundary_seq,
                                 "files": files,
+                                "history": history,
+                                "force": force,
                             }),
                         )
                         .await;

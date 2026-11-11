@@ -403,6 +403,10 @@ pub struct App {
     dialog: Option<Dialog>,
     permission_generation: u64,
     workspace_changes_generation: u64,
+    /// The revert preview in flight and the scope that asked for it. Two
+    /// commands ask the same question and differ only in what the answer may
+    /// move, and the engine's reply names none of that.
+    pending_revert: Option<(u64, bool)>,
     /// A provider key was stored while a turn was running: the engine restarts
     /// to serve its models as soon as that turn ends, because a restart cancels
     /// whatever the engine is running.
@@ -627,6 +631,7 @@ impl App {
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
+            pending_revert: None,
             pending_routes_reload: false,
             leader: false,
             leader_since: None,
@@ -1274,7 +1279,17 @@ impl App {
                 if self.session_id().as_deref() != Some(session_id.as_str()) {
                     return;
                 }
-                self.open_dialog(Dialog::confirm_revert(boundary_seq, &plan));
+                let history = match self.pending_revert.take() {
+                    Some((asked, history)) if asked == boundary_seq => history,
+                    _ => true,
+                };
+                // A code-only revert has nothing to do at a boundary with no
+                // file record, and the engine would refuse it.
+                if !history && !plan.available {
+                    self.notice("this Session recorded no file changes at this boundary");
+                    return;
+                }
+                self.open_dialog(Dialog::confirm_revert(boundary_seq, &plan, history));
             }
             AppEvent::SavedPermissions { generation, result } => {
                 if let Some(Dialog::SavedPermissions(dialog)) = self.dialog.as_mut() {
@@ -1732,6 +1747,7 @@ impl App {
             Builtin::StashDraft => self.stash_current(),
             Builtin::Timeline => self.open_timeline(),
             Builtin::Undo => self.undo(),
+            Builtin::UndoFiles => self.undo_files(),
             Builtin::Redo => self.redo(),
             Builtin::Editor => self.open_editor(),
             Builtin::Help => self.open_help(),
@@ -2139,12 +2155,17 @@ impl App {
                     ConfirmKind::Revert {
                         boundary_seq,
                         files,
+                        history,
+                        force,
                     } => {
                         let Some(session_id) = self.session_id() else {
                             return;
                         };
-                        engine.revert(&session_id, boundary_seq, files);
-                        self.notice(&format!("reverted to #{boundary_seq}"));
+                        engine.revert(&session_id, boundary_seq, files, history, force);
+                        self.notice(&match history {
+                            true => format!("reverted to #{boundary_seq}"),
+                            false => format!("restored files to #{boundary_seq}"),
+                        });
                     }
                     ConfirmKind::StopAllJobs => {
                         let Some(session_id) = self.session_id() else {
@@ -2156,7 +2177,7 @@ impl App {
             }
             DialogAction::Revert(boundary_seq) => {
                 self.dialog = None;
-                self.preview_revert(boundary_seq);
+                self.preview_revert(boundary_seq, true);
             }
             DialogAction::StashRestore(index) => {
                 self.dialog = None;
@@ -3195,6 +3216,17 @@ impl App {
     /// Undo the last turn by rewinding to its user message, which removes that
     /// message and the work it started.
     fn undo(&mut self) {
+        self.undo_last_turn(true);
+    }
+
+    /// Undo the last turn's file changes and leave the transcript as it is: a
+    /// boundary with no file record has nothing to restore, so it says so
+    /// instead of staging a revert that moves nothing.
+    fn undo_files(&mut self) {
+        self.undo_last_turn(false);
+    }
+
+    fn undo_last_turn(&mut self, history: bool) {
         let Some(transcript) = self.shell.transcript() else {
             self.notice("open a Session to undo a turn");
             return;
@@ -3203,7 +3235,7 @@ impl App {
             self.notice("this Session has no turn to undo");
             return;
         };
-        self.preview_revert(boundary_seq);
+        self.preview_revert(boundary_seq, history);
     }
 
     fn redo(&mut self) {
@@ -3220,7 +3252,7 @@ impl App {
         }
     }
 
-    fn preview_revert(&mut self, boundary_seq: u64) {
+    fn preview_revert(&mut self, boundary_seq: u64, history: bool) {
         let Some(session_id) = self.session_id() else {
             self.notice("open a Session to revert it");
             return;
@@ -3229,6 +3261,9 @@ impl App {
             self.notice("stop the running turn before reverting");
             return;
         }
+        // The engine's answer names no scope, so the question remembers which
+        // boundary asked it.
+        self.pending_revert = Some((boundary_seq, history));
         if let Some(engine) = self.engine.as_ref() {
             engine.revert_preview(&session_id, boundary_seq);
         }
@@ -9952,6 +9987,70 @@ mod tests {
     }
 
     #[test]
+    fn undo_files_previews_the_same_turn_as_a_code_only_revert() {
+        let (mut app, mut requests) = revert_session_app();
+        app.run_builtin(Builtin::UndoFiles);
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::RevertPreview {
+                boundary_seq: 9,
+                ..
+            })
+        ));
+        assert!(app.dialog.is_none(), "the preview opens the dialog");
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_a".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::from_value(&serde_json::json!({
+                "available": true,
+                "restore": ["a.txt"],
+                "remove": []
+            })),
+        });
+        let Some(Dialog::Confirm(confirm)) = &app.dialog else {
+            panic!("expected a confirm dialog");
+        };
+        assert!(
+            confirm.message.contains("the transcript stays as it is"),
+            "{}",
+            confirm.message
+        );
+        app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(engine::Request::Revert {
+                boundary_seq: 9,
+                files: true,
+                history: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_code_only_undo_at_a_boundary_without_files_says_so_instead_of_asking() {
+        let (mut app, _requests) = revert_session_app();
+        app.run_builtin(Builtin::UndoFiles);
+        app.handle(AppEvent::RevertPreview {
+            session_id: "ses_a".into(),
+            boundary_seq: 9,
+            plan: RevertPlan::from_value(&serde_json::json!({
+                "available": false,
+                "reason": "no-file-snapshot"
+            })),
+        });
+        assert!(
+            app.dialog.is_none(),
+            "a code-only revert with nothing to restore asks nothing"
+        );
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("this Session recorded no file changes at this boundary")
+        );
+    }
+
+    #[test]
     fn undo_waits_for_the_running_turn_to_stop() {
         let (mut app, mut requests) = revert_session_app();
         app.state.active_run = Some("run-1".into());
@@ -10014,6 +10113,9 @@ mod tests {
             Ok(engine::Request::Revert {
                 boundary_seq: 9,
                 files: true,
+                history: true,
+                // Showing the outside edit is what lets the stage overwrite it.
+                force: true,
                 ..
             })
         ));
@@ -10034,7 +10136,12 @@ mod tests {
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(matches!(
             requests.try_recv(),
-            Ok(engine::Request::Revert { files: false, .. })
+            Ok(engine::Request::Revert {
+                files: false,
+                history: true,
+                force: false,
+                ..
+            })
         ));
     }
 

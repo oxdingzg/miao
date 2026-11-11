@@ -23,7 +23,9 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const APPLICATION_ID: u32 = 0x4d494145;
 // Older readers do not understand inactive semantic imports and could execute
 // a destination before its host has switched the authoritative placement.
-pub const SCHEMA_VERSION: u32 = 25;
+// 26 adds `engine_staged_revert.scope` (additive: an older engine keeps writing
+// the combined phases the default already names).
+pub const SCHEMA_VERSION: u32 = 26;
 
 /// How long a second engine waits for whoever holds the migration lock before
 /// giving up. The host times an engine request out at 60 s, so a wait that long
@@ -423,10 +425,21 @@ impl Store {
                     "CREATE TABLE IF NOT EXISTS engine_file_snapshot(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,kind TEXT NOT NULL,manifest TEXT NOT NULL);
                      CREATE INDEX IF NOT EXISTS engine_snapshot_boundary ON engine_file_snapshot(session_id,boundary_seq);
                      CREATE TABLE IF NOT EXISTS engine_file_touch(session_id TEXT NOT NULL REFERENCES engine_session(id),path TEXT NOT NULL,PRIMARY KEY(session_id,path));
-                     CREATE TABLE IF NOT EXISTS engine_staged_revert(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,snapshot_id INTEGER NOT NULL,restored TEXT NOT NULL,created TEXT NOT NULL,removed TEXT NOT NULL,previous TEXT NOT NULL);
+                     CREATE TABLE IF NOT EXISTS engine_staged_revert(session_id TEXT PRIMARY KEY REFERENCES engine_session(id),boundary_seq INTEGER NOT NULL,snapshot_id INTEGER NOT NULL,scope TEXT NOT NULL DEFAULT 'both',restored TEXT NOT NULL,created TEXT NOT NULL,removed TEXT NOT NULL,previous TEXT NOT NULL);
                      CREATE TABLE IF NOT EXISTS engine_migration(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES engine_session(id),direction TEXT NOT NULL,state TEXT NOT NULL,bundle_sha256 TEXT NOT NULL,source_high_seq INTEGER NOT NULL,created_ms INTEGER NOT NULL,updated_ms INTEGER NOT NULL);
                      CREATE INDEX IF NOT EXISTS engine_migration_session ON engine_migration(session_id,state);",
                 )?;
+                // ADR-0019 follow-up: a stage now records which halves its commit
+                // may move, so a code-only revert leaves the transcript alone.
+                // A stage written before the column existed was always a
+                // combined one, and the default says exactly that.
+                let has_scope:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_staged_revert') WHERE name='scope')",[],|r|r.get(0))?;
+                if !has_scope {
+                    conn.execute(
+                        "ALTER TABLE engine_staged_revert ADD COLUMN scope TEXT NOT NULL DEFAULT 'both'",
+                        [],
+                    )?;
+                }
                 let has_mode:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('engine_session') WHERE name='mode')",[],|r|r.get(0))?;
                 if !has_mode {
                     conn.execute(
@@ -2037,8 +2050,8 @@ impl Store {
                 [&session],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?)),
             )?;
             let preview=if metadata_only { metadata_preview(&tx,&session)? } else { None };
-            let staged_revert:Option<(i64,String)>=tx.query_row("SELECT boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,crate::snapshot::id_text(r.get(1)?)?))).optional()?;
-            let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id}));
+            let staged_revert:Option<(i64,String,String)>=tx.query_row("SELECT boundary_seq,snapshot_id,scope FROM engine_staged_revert WHERE session_id=?1",[&session],|r|Ok((r.get(0)?,crate::snapshot::id_text(r.get(1)?)?,r.get(2)?))).optional()?;
+            let staged_revert=staged_revert.map(|(boundary_seq,snapshot_id,scope)|json!({"boundary_seq":boundary_seq,"snapshot_id":snapshot_id,"scope":scope}));
             let event_base:u64=tx.query_row("SELECT CASE WHEN json_extract(bundle,'$.source.engine')='rust' THEN COALESCE(json_extract(bundle,'$.source.sequence'),0) ELSE 0 END FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?.unwrap_or(0);
             let transfer_import:Option<String>=tx.query_row("SELECT id FROM engine_transfer_import WHERE session_id=?1",[&session],|row|row.get(0)).optional()?;
             let mut snapshot=json!({"event_base":event_base,"transfer_import":transfer_import,"session_id":session,"parent_session_id":parent,"cursor":cursor,"message_count":message_count,"reverted_count":reverted_count,"location":location,"mode":mode,"title":title,"tag":tag,"created_at_ms":created_at_ms,"updated_at_ms":updated_at_ms,"archived_at_ms":archived_at_ms,"pinned_at_ms":pinned_at_ms,"preview":preview,"messages":messages,"selection":selection,"pending":pending,"active_run":active,"approvals":approvals,"context":context,"state":state,"questions":questions,"wakeups":wakeups,"crons":crons,"model_selection":model_selection,"account_selection":account_selection,"agent":agent,"staged_revert":staged_revert});

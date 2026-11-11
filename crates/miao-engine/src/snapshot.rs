@@ -91,6 +91,47 @@ fn read_blob(database: &Path, session: &str, hash: &str) -> Result<Vec<u8>, Erro
         .map_err(|_| Error::Invalid("file snapshot data is no longer available".into()))
 }
 
+/// Which halves of a Session a revert may move. The phases are independent:
+/// `stage` restores files and `commit` rewinds history, so a caller that wants
+/// only one of them says so and the other is left alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Phases {
+    pub files: bool,
+    pub history: bool,
+}
+
+impl Phases {
+    /// Refuse a revert that would move nothing rather than recording an intent
+    /// that can never change anything.
+    pub(crate) fn parse(files: bool, history: bool) -> Result<Self, Error> {
+        if !files && !history {
+            return Err(Error::Invalid(
+                "a revert must restore files, rewind history, or both".into(),
+            ));
+        }
+        Ok(Self { files, history })
+    }
+
+    /// The vocabulary every event and reply uses, so a client never has to
+    /// infer the boundary from two booleans.
+    pub(crate) fn scope(&self) -> &'static str {
+        match (self.files, self.history) {
+            (true, true) => "both",
+            (true, false) => "files",
+            (false, true) => "history",
+            (false, false) => "none",
+        }
+    }
+
+    /// Read a scope back out of the durable stage it was recorded in.
+    pub(crate) fn from_scope(scope: &str) -> Self {
+        Self {
+            files: scope != "history",
+            history: scope != "files",
+        }
+    }
+}
+
 /// A staged snapshot identity as text. Native captures store a numeric row id
 /// and assembled imports store a transfer identity, so both representations
 /// are legal in one column; a history-only stage stores no identity at all.
@@ -134,8 +175,10 @@ fn retain(conn: &rusqlite::Connection, database: &Path, session: &str) -> Result
             conn.execute("DELETE FROM engine_file_snapshot WHERE id=?1", [id])?;
         }
     }
-    if let Some((previous, ..)) = staged(conn, session)? {
-        if let Ok(previous) = serde_json::from_str::<BTreeMap<String, Option<String>>>(&previous) {
+    if let Some(staged) = staged(conn, session)? {
+        if let Ok(previous) =
+            serde_json::from_str::<BTreeMap<String, Option<String>>>(&staged.previous)
+        {
             keep.extend(previous.into_values().flatten());
         }
     }
@@ -427,21 +470,23 @@ fn resolve(
 }
 
 impl Store {
+    /// Stage a revert: restore the file set recorded at `boundary_seq` and
+    /// remember the intent durably. `phases` decides which halves the commit
+    /// that follows is allowed to move, so a code-only stage restores files and
+    /// leaves the transcript alone. An outside edit is refused unless `force`
+    /// says the caller already showed it to the operator.
     pub async fn revert_stage(
         &self,
         session: &str,
         boundary_seq: u64,
         files: bool,
+        history: bool,
+        force: bool,
     ) -> Result<Value, Error> {
         let (session, database) = (session.to_owned(), self.path().to_owned());
         self.call(move |conn| {
-            if conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",
-                [&session],
-                |row| row.get::<_, bool>(0),
-            )? {
-                return Err(Error::Invalid("revert requires an idle Session".into()));
-            }
+            let phases = Phases::parse(files, history)?;
+            require_idle(conn, &session)?;
             let root: String = conn
                 .query_row(
                     "SELECT root FROM engine_location WHERE session_id=?1",
@@ -452,29 +497,46 @@ impl Store {
             // A history-only stage deliberately skips the file record: the
             // caller asked to rewind the conversation and leave the workspace
             // alone, so a Session that never touched a file can still undo.
-            let (manifest, boundary, snapshot_id) = match (files, resolve(conn, &session, boundary_seq)?) {
+            let (manifest, boundary, snapshot_id) = match (
+                phases.files,
+                resolve(conn, &session, boundary_seq)?,
+            ) {
                 (false, _) => (BTreeMap::new(), boundary_seq as i64, String::new()),
                 (true, Some(resolved)) => resolved,
                 (true, None) => {
                     return Err(Error::Invalid("no file snapshot at this boundary".into()))
                 }
             };
+            let root = Path::new(&root);
+            let conflicts = workspace_plan(conn, &session, root, &manifest)?.2;
+            if !conflicts.is_empty() && !force {
+                let paths = conflicts
+                    .iter()
+                    .filter_map(|conflict| conflict["path"].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let count = conflicts.len();
+                return Err(Error::Invalid(format!(
+                    "refusing to overwrite {count} path(s) that changed outside this Session: {paths}; preview the revert and re-stage with force to overwrite them"
+                )));
+            }
             // One intent at a time: undo the previous staged restore first.
-            if let Some((previous, ..)) = staged(conn, &session)? {
-                let previous: BTreeMap<String, Option<String>> = serde_json::from_str(&previous)?;
-                restore_manifest(&database, &session, Path::new(&root), &previous)?;
+            if let Some(previous) = staged(conn, &session)? {
+                let previous: BTreeMap<String, Option<String>> =
+                    serde_json::from_str(&previous.previous)?;
+                restore_manifest(&database, &session, root, &previous)?;
                 conn.execute("DELETE FROM engine_staged_revert WHERE session_id=?1", [&session])?;
             }
-            let previous = preimage(&database, &session, Path::new(&root), &manifest)?;
-            let (restored, created, removed) =
-                restore_manifest(&database, &session, Path::new(&root), &manifest)?;
+            let previous = preimage(&database, &session, root, &manifest)?;
+            let (restored, created, removed) = restore_manifest(&database, &session, root, &manifest)?;
             let tx = write_tx(conn)?;
             tx.execute(
-                "INSERT INTO engine_staged_revert(session_id,boundary_seq,snapshot_id,restored,created,removed,previous) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                "INSERT INTO engine_staged_revert(session_id,boundary_seq,snapshot_id,scope,restored,created,removed,previous) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
                 params![
                     session,
                     boundary,
                     snapshot_id,
+                    phases.scope(),
                     serde_json::to_string(&restored)?,
                     serde_json::to_string(&created)?,
                     serde_json::to_string(&removed)?,
@@ -485,10 +547,10 @@ impl Store {
                 &tx,
                 &session,
                 "revert.staged",
-                json!({"boundary_seq":boundary,"snapshot_id":snapshot_id,"restored":restored,"created":created,"removed":removed}),
+                json!({"boundary_seq":boundary,"snapshot_id":snapshot_id,"scope":phases.scope(),"restored":restored,"created":created,"removed":removed}),
             )?;
             tx.commit()?;
-            Ok(json!({"boundary_seq":boundary,"snapshot_id":snapshot_id,"restored":restored,"created":created,"removed":removed}))
+            Ok(json!({"boundary_seq":boundary,"snapshot_id":snapshot_id,"scope":phases.scope(),"restored":restored,"created":created,"removed":removed,"conflicts_overwritten":conflicts}))
         })
         .await
     }
@@ -503,7 +565,7 @@ impl Store {
                 [&session],
                 |row| row.get(0),
             )?;
-            let previous: BTreeMap<String, Option<String>> = serde_json::from_str(&staged.0)?;
+            let previous: BTreeMap<String, Option<String>> = serde_json::from_str(&staged.previous)?;
             let (restored, created, removed) =
                 restore_manifest(&database, &session, Path::new(&root), &previous)?;
             let tx = write_tx(conn)?;
@@ -512,44 +574,47 @@ impl Store {
                 &tx,
                 &session,
                 "revert.cleared",
-                json!({"boundary_seq":staged.1,"restored":restored,"created":created,"removed":removed}),
+                json!({"boundary_seq":staged.boundary,"restored":restored,"created":created,"removed":removed}),
             )?;
             tx.commit()?;
-            Ok(json!({"boundary_seq":staged.1,"restored":restored,"created":created,"removed":removed}))
+            Ok(json!({"boundary_seq":staged.boundary,"restored":restored,"created":created,"removed":removed}))
         })
         .await
     }
 
+    /// Make a stage permanent. A combined revert rewinds the conversation
+    /// through the existing soft revert (rows are marked, not deleted, so
+    /// `unrevert` stays available); a code-only revert keeps the files the
+    /// stage restored and touches no message row.
     pub async fn revert_commit(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
             let staged = staged(conn, &session)?
                 .ok_or_else(|| Error::Invalid("no staged revert".into()))?;
-            if conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",
-                [&session],
-                |row| row.get::<_, bool>(0),
-            )? {
-                return Err(Error::Invalid("revert requires an idle Session".into()));
-            }
+            require_idle(conn, &session)?;
             let tx = write_tx(conn)?;
-            let reverted = tx.execute(
-                "UPDATE engine_message SET reverted=1 WHERE session_id=?1 AND seq>=?2 AND reverted=0",
-                params![session, staged.1],
-            )?;
-            tx.execute(
-                "DELETE FROM engine_compaction WHERE session_id=?1 AND through_seq>=?2",
-                params![session, staged.1],
-            )?;
+            let reverted = match Phases::from_scope(&staged.scope).history {
+                true => tx.execute(
+                    "UPDATE engine_message SET reverted=1 WHERE session_id=?1 AND seq>=?2 AND reverted=0",
+                    params![session, staged.boundary],
+                )?,
+                false => 0,
+            };
+            if reverted > 0 {
+                tx.execute(
+                    "DELETE FROM engine_compaction WHERE session_id=?1 AND through_seq>=?2",
+                    params![session, staged.boundary],
+                )?;
+            }
             let event = append(
                 &tx,
                 &session,
                 "revert.committed",
-                json!({"boundary_seq":staged.1,"snapshot_id":staged.2,"reverted":reverted}),
+                json!({"boundary_seq":staged.boundary,"snapshot_id":staged.snapshot_id,"scope":staged.scope,"reverted":reverted}),
             )?;
             tx.execute("DELETE FROM engine_staged_revert WHERE session_id=?1", [&session])?;
             tx.commit()?;
-            Ok(json!({"boundary_seq":staged.1,"snapshot_id":staged.2,"reverted":reverted,"seq":event.seq}))
+            Ok(json!({"boundary_seq":staged.boundary,"snapshot_id":staged.snapshot_id,"scope":staged.scope,"reverted":reverted,"seq":event.seq}))
         })
         .await
     }
@@ -557,10 +622,11 @@ impl Store {
     pub async fn staged_revert(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| match staged(conn, &session)? {
-            Some((previous, boundary, snapshot_id)) => Ok(json!({
-                "boundary_seq":boundary,
-                "snapshot_id":snapshot_id,
-                "paths":read_manifest(&previous)?.len(),
+            Some(staged) => Ok(json!({
+                "boundary_seq":staged.boundary,
+                "snapshot_id":staged.snapshot_id,
+                "scope":staged.scope,
+                "paths":read_manifest(&staged.previous)?.len(),
             })),
             None => Ok(Value::Null),
         })
@@ -568,21 +634,12 @@ impl Store {
     }
 
     /// What a revert to `boundary_seq` would do to the workspace, without doing
-    /// it. A path the Session never recorded has no entry, so the preview lists
-    /// only real writes and removals; a path whose current content matches
-    /// neither the restore target nor the newest content the Session recorded
-    /// changed outside the Session and is reported as a conflict so the caller
-    /// can confirm before it is overwritten.
+    /// it. The engine decides every path, so the preview a client shows is the
+    /// same plan the stage enforces.
     pub async fn revert_preview(&self, session: &str, boundary_seq: u64) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
-            if conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",
-                [&session],
-                |row| row.get::<_, bool>(0),
-            )? {
-                return Err(Error::Invalid("revert requires an idle Session".into()));
-            }
+            require_idle(conn, &session)?;
             let Some(root) = conn
                 .query_row(
                     "SELECT root FROM engine_location WHERE session_id=?1",
@@ -597,38 +654,8 @@ impl Store {
             else {
                 return Ok(json!({"available":false,"reason":"no-file-snapshot"}));
             };
-            let recorded = recorded_hashes(conn, &session)?;
             let root = Path::new(&root);
-            let (mut restore, mut remove, mut conflicts) = (Vec::new(), Vec::new(), Vec::new());
-            for (path, target) in &manifest {
-                let Some(relative) = valid_path(path) else {
-                    continue;
-                };
-                let disk = disk_hash(&root.join(relative));
-                if disk.as_deref() == target.as_deref() {
-                    continue;
-                }
-                let action = if target.is_some() {
-                    "restore"
-                } else {
-                    "remove"
-                };
-                if action == "restore" {
-                    restore.push(path.clone());
-                } else {
-                    remove.push(path.clone());
-                }
-                // A path the engine still believes holds the content it last
-                // recorded changed by this Session's own work, which a revert
-                // is meant to undo. Anything else is an outside edit.
-                if recorded.get(path) != Some(&disk) {
-                    conflicts.push(json!({
-                        "path": path,
-                        "action": action,
-                        "disk": if disk.is_some() { "modified" } else { "missing" },
-                    }));
-                }
-            }
+            let (restore, remove, conflicts) = workspace_plan(conn, &session, root, &manifest)?;
             Ok(json!({
                 "available": true,
                 "boundary_seq": boundary,
@@ -636,10 +663,71 @@ impl Store {
                 "restore": restore,
                 "remove": remove,
                 "conflicts": conflicts,
+                // Every scope rewinds files and/or history; none of them
+                // reverses what a turn did outside the workspace.
+                "external_side_effects": "not_reversible",
             }))
         })
         .await
     }
+}
+
+fn require_idle(conn: &rusqlite::Connection, session: &str) -> Result<(), Error> {
+    match conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM engine_run WHERE session_id=?1 AND state='running')",
+        [session],
+        |row| row.get::<_, bool>(0),
+    )? {
+        true => Err(Error::Invalid("revert requires an idle Session".into())),
+        false => Ok(()),
+    }
+}
+
+/// The paths a revert restores, the paths it removes, and the paths whose
+/// current content is neither the restore target nor what the Session last
+/// recorded. A path the Session never recorded has no entry, so only real
+/// writes and removals are named.
+type Workspace = (Vec<String>, Vec<String>, Vec<Value>);
+
+fn workspace_plan(
+    conn: &rusqlite::Connection,
+    session: &str,
+    root: &Path,
+    manifest: &BTreeMap<String, Option<String>>,
+) -> Result<Workspace, Error> {
+    let recorded = recorded_hashes(conn, session)?;
+    let (mut restore, mut remove, mut conflicts) = (Vec::new(), Vec::new(), Vec::new());
+    for (path, target) in manifest {
+        let Some(relative) = valid_path(path) else {
+            continue;
+        };
+        let disk = disk_hash(&root.join(relative));
+        if disk.as_deref() == target.as_deref() {
+            continue;
+        }
+        let action = match target.is_some() {
+            true => "restore",
+            false => "remove",
+        };
+        if action == "restore" {
+            restore.push(path.clone());
+        } else {
+            remove.push(path.clone());
+        }
+        // A path the engine still believes holds the content it last recorded
+        // changed by this Session's own work, which a revert is meant to undo.
+        // Anything else is an outside edit. A path with no record at all has no
+        // baseline to compare against, so it is not evidence of an outside
+        // edit: an imported manifest is the case that reaches this.
+        if recorded.get(path).is_some_and(|newest| newest != &disk) {
+            conflicts.push(json!({
+                "path": path,
+                "action": action,
+                "disk": if disk.is_some() { "modified" } else { "missing" },
+            }));
+        }
+    }
+    Ok((restore, remove, conflicts))
 }
 
 /// The newest content each path is recorded to have, across the Session's
@@ -674,23 +762,30 @@ fn disk_hash(path: &Path) -> Option<String> {
 
 type AssembledImport = (String, BTreeMap<String, Option<String>>);
 
-/// `(previous manifest, boundary_seq, snapshot_id)`
-fn staged(
-    conn: &rusqlite::Connection,
-    session: &str,
-) -> Result<Option<(String, i64, String)>, Error> {
+/// The one staged revert intent a Session may hold: the workspace state to
+/// reverse a `clear` to, the boundary it targets, the snapshot it came from,
+/// and which phases its commit may move.
+struct Staged {
+    previous: String,
+    boundary: i64,
+    snapshot_id: String,
+    scope: String,
+}
+
+fn staged(conn: &rusqlite::Connection, session: &str) -> Result<Option<Staged>, Error> {
     Ok(conn
         .query_row(
-            "SELECT previous,boundary_seq,snapshot_id FROM engine_staged_revert WHERE session_id=?1",
+            "SELECT previous,boundary_seq,snapshot_id,scope FROM engine_staged_revert WHERE session_id=?1",
             [session],
             // Native captures store a numeric row id; assembled imports store
             // the transfer identity, so accept either stored representation.
             |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    id_text(row.get(2)?)?,
-                ))
+                Ok(Staged {
+                    previous: row.get(0)?,
+                    boundary: row.get(1)?,
+                    snapshot_id: id_text(row.get(2)?)?,
+                    scope: row.get(3)?,
+                })
             },
         )
         .optional()?)

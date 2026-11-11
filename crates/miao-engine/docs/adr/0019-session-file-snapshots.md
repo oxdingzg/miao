@@ -1,6 +1,6 @@
 # 0019. Session-owned file snapshots and three-phase revert
 
-Status: accepted (implemented; schema 16)
+Status: accepted (implemented; schema 26)
 
 ## Context
 
@@ -44,10 +44,12 @@ pruned snapshot reports `available: false` instead of lying.
 
 ### The three phases
 
-- `Command::RevertStage { session_id, boundary_seq }` restores the workspace to
-  the snapshot at (or before) that boundary and records a **staged revert** —
-  `revert.staged {boundary_seq, snapshot_id, restored: [...], created: [...],
-  removed: [...]}` — as durable state. It touches no conversation row.
+- `Command::RevertStage { session_id, boundary_seq, files, history, force }`
+  restores the workspace to the snapshot at (or before) that boundary, as far as
+  `files` asks, and records a **staged revert** —
+  `revert.staged {boundary_seq, snapshot_id, scope, restored: [...],
+  created: [...], removed: [...]}` — as durable state. It touches no
+  conversation row.
 - `Command::RevertClear { session_id }` reverses the staged restore exactly (the
   same file set, in the opposite direction) and records `revert.cleared`. It
   refuses when there is no staged revert, and is idempotent per stage.
@@ -62,10 +64,29 @@ leaves at most one intent to reconcile. On startup the engine reports staged
 reverts through the existing recovery surface rather than silently completing or
 discarding them.
 
-`RevertStage` takes `files: bool` (default `true`). A Session that never wrote a
-file has no snapshot at any boundary, and refusing its revert would make a pure
-conversation read-only; `files: false` stages the intent with an empty file set,
-so `commit` still rewinds history and nothing on disk is asserted about.
+### The three boundaries
+
+`RevertStage` takes `files: bool` (default `true`) and `history: bool` (default
+`true`), and the pair names the boundary the caller asked for:
+
+| `files` | `history` | boundary | files | conversation |
+| --- | --- | --- | --- | --- |
+| `true` | `true` | combined (`scope: "both"`) | restored to the boundary | rewound by `commit` |
+| `true` | `false` | code only (`scope: "files"`) | restored to the boundary | untouched |
+| `false` | `true` | history only (`scope: "history"`) | untouched | rewound by `commit` |
+| `false` | `false` | none | — | — |
+
+The last row is refused rather than recorded: a stage that may move nothing is
+an intent that can never change anything. A Session that never wrote a file has
+no snapshot at any boundary, and refusing its revert would make a pure
+conversation read-only, which is the third row: the stage records an empty file
+set and `commit` still rewinds history.
+
+The boundary is durable, not inferred. The stage row stores it in
+`engine_staged_revert.scope` (schema 26, additive: a row written before the
+column existed was always combined, and the default says so), `commit` reads it
+from there, and every reply and `revert.*` event names it as `scope`, so no
+client has to reconstruct the boundary from two booleans after a restart.
 
 ### Preview
 
@@ -79,6 +100,25 @@ so a client must show it before confirming. A path whose disk content equals the
 Session's own last record is this Session's own work, which is the thing a revert
 exists to undo, and is not reported as a conflict. The preview refuses while a
 run is active, exactly like a stage.
+
+The preview is also the gate. `RevertStage` computes the same plan through the
+same function and **refuses while a conflict exists** unless the caller passes
+`force: true`, naming the paths it would have overwritten. A caller sets `force`
+only after it has shown those paths to the operator, which is what keeps the
+preview and the stage from drifting into advice the engine never checks. The
+reply reports what was overwritten as `conflicts_overwritten`. A path whose
+write has not reached a settled boundary yet is not in the Session's record, so
+it reads as an outside edit; capture and the gate therefore share one ordering,
+and a client that stages without a preview still cannot lose an operator edit.
+A path with no record at all has no baseline to be an outside edit against, so
+it is not a conflict. Native manifests only contain touched-and-captured paths,
+which makes that case an imported manifest: a transfer brings files this engine
+never captured, and refusing every one of them would make an import
+unrestorable.
+
+The preview also states `external_side_effects: "not_reversible"`, so the
+payload itself — not just a client's own copy — says that shell commands and
+other external effects are outside every boundary.
 
 `snapshot` replies carry `reverted_count`, the number of soft-reverted rows a
 `unrevert` would restore. It is the durable signal a redo affordance reads:
@@ -94,12 +134,16 @@ than imply a full undo:
 | --- | --- | --- | --- |
 | `stage` | restored to the boundary | unchanged | `clear` |
 | `clear` | reversed to the pre-stage state | unchanged | — |
-| `commit` | unchanged since stage | rewound (soft) | `unrevert` |
+| `commit` (combined) | unchanged since stage | rewound (soft) | `unrevert` |
+| `commit` (code only) | unchanged since stage | **untouched** | — |
+| `commit` (history only) | untouched | rewound (soft) | `unrevert` |
 | `unrevert` | **not** re-applied | restored | — |
 
 So a TUI "undo" is stage-then-commit: it both moves files and rewinds history,
 and its redo (`unrevert`) brings the messages back but leaves the workspace as
-the revert left it. Shell commands, network calls, and any other external side
+the revert left it. The code-only boundary is `undo-files`: the same stage with
+`history: false`, its commit touches no message row, and its `reverted` count is
+0, so there is nothing for a redo to bring back. Shell commands, network calls, and any other external side
 effect a turn performed are outside every one of these phases and are never
 reversed; a confirm dialog says so.
 
@@ -117,6 +161,9 @@ reversed; a confirm dialog says so.
    reusing the path policy the edit tools already enforce.
 5. **Retention is deterministic.** The pruning rule is a function of the stored
    records, not of wall-clock timing, so the same history prunes identically.
+6. **An outside edit is never overwritten silently.** A stage that would
+   overwrite a path the engine did not record as this Session's own work fails
+   until the caller passes `force`, and the refusal names the paths.
 
 ## Rejected alternatives
 
@@ -140,9 +187,9 @@ reversed; a confirm dialog says so.
 2. Runtime: capture hook next to compaction/agent application; `stage`/`clear`/
    `commit` with the file-set report; recovery reporting for a staged revert.
 3. Protocol: the three commands plus their event shapes, `revert_preview`, the
-   history-only `files: false` stage, `reverted_count` in `snapshot` replies, and
-   the snapshot record in `snapshot` replies as available/unavailable with its
-   boundary.
+   `files`/`history` stage flags with their `scope` vocabulary, the `force` gate,
+   `reverted_count` in `snapshot` replies, and the snapshot record in `snapshot`
+   replies as available/unavailable with its boundary.
 4. Facade: `session.revert.stage/clear/commit` serve native placements; the
    product projection maps the new events onto its revert state.
 5. Tests: engine (capture/restore round trip, staged-clear symmetry, commit
