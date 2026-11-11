@@ -197,6 +197,12 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     pub budget: &'a Budget,
     /// Summarizer passes carry at most this many selected messages.
     pub per_pass: usize,
+    /// The run's own cancellation. One pass is one summarizer call per
+    /// `per_pass` messages, so a long Session plans hundreds of sequential
+    /// calls: an interrupt has to end the pass at the next segment instead of
+    /// after the last one. A cancelled pass is the operator's decision rather
+    /// than a summarizer failure, so it never feeds gate ⑤.
+    pub cancel: tokio_util::sync::CancellationToken,
     pub breaker: &'a mut Breaker,
     /// Gate-6 notices flow through this sink.
     pub notify: &'a mut P,
@@ -213,6 +219,12 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
 /// How long one summarizer pass may take before the gate gives up on it.
 /// A provider that accepts the request and never answers must not hold a turn.
 const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The deadline a summarizer call that missed `SUMMARY_TIMEOUT` earns on its
+/// retry. A reasoning model can spend more than twenty seconds on a long
+/// summary, and one slow answer must not discard the minutes a pass already
+/// spent on the segments before it.
+const SUMMARY_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub async fn maybe_compact<S, F, P>(
     store: &Store,
@@ -252,6 +264,7 @@ where
         forced,
         budget,
         per_pass,
+        cancel,
         breaker,
         notify,
         count,
@@ -260,6 +273,12 @@ where
     // the operator asked, and everything newer stays in the prefix verbatim.
     let boundary = through.unwrap_or(boundary);
     let channel = |kind: &str| json!({"session_id": session, "run_id": run, "kind": kind});
+    // A pass belongs to the turn that asked for it. An interrupt already said
+    // this turn is over, so it must not start spending summarizer calls that
+    // only the end of the turn would abandon.
+    if cancel.is_cancelled() {
+        return Ok(false);
+    }
     // Gate ①: the anchor is the newest usage report's normalized context plus
     // the message it counted. Only the messages appended after that report are
     // still uncounted, and for those gate ② prefers the provider's own count
@@ -381,7 +400,16 @@ where
                 < window
         })
     {
-        match tokio::time::timeout(SUMMARY_TIMEOUT, prefix()).await {
+        let outcome = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => None,
+            outcome = tokio::time::timeout(SUMMARY_TIMEOUT, prefix()) => Some(outcome),
+        };
+        let Some(outcome) = outcome else {
+            notify(channel("compaction.cancelled"));
+            return Ok(false);
+        };
+        match outcome {
             Ok(Some(Ok(summary))) if !summary.trim().is_empty() => {
                 parts.push(summary);
                 notify(
@@ -403,6 +431,18 @@ where
     }
     if parts.is_empty() {
         for (nth, (start, end)) in plan.segments.iter().enumerate() {
+            // One pass plans one summarizer call per `per_pass` messages, so a
+            // long Session is minutes of quiet work. An interrupt ends it here:
+            // the operator asked to stop this turn, and stopping is not a
+            // summarizer failure, so gate ⑤ must not count it.
+            if cancel.is_cancelled() {
+                notify(json!({
+                    "session_id": session, "run_id": run,
+                    "kind": "compaction.cancelled",
+                    "segment": nth, "total": plan.segments.len(),
+                }));
+                return Ok(false);
+            }
             let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
             // A retention target is an operator instruction, not a replacement
             // for the durable block: the checkpoint carries both.
@@ -414,8 +454,16 @@ where
             };
             // A summarizer that never returns must not hold the turn: the call is
             // bounded, and a timeout degrades like any other summary failure.
-            match tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction)).await {
-                Err(_) => {
+            match summarize_segment(&mut summarize, &instruction, &cancel).await {
+                Segment::Cancelled => {
+                    notify(json!({
+                        "session_id": session, "run_id": run,
+                        "kind": "compaction.cancelled",
+                        "segment": nth, "total": plan.segments.len(),
+                    }));
+                    return Ok(false);
+                }
+                Segment::Slow => {
                     breaker.rejected(context.saturating_add(pending_tokens));
                     notify(json!({
                         "session_id": session, "run_id": run,
@@ -423,14 +471,14 @@ where
                     }));
                     return Ok(false);
                 }
-                Ok(Ok(part)) => {
+                Segment::Answered(Ok(part)) => {
                     parts.push(part);
                     notify(json!({
                         "session_id": session, "run_id": run,
                         "kind": "compaction.progress", "segment": nth + 1, "total": plan.segments.len(),
                     }));
                 }
-                Ok(Err(reason)) => {
+                Segment::Answered(Err(reason)) => {
                     // The summarizer must send the very history that overflowed
                     // the Session, so it can overflow too — and then the Session
                     // stays stuck retrying the same doomed slice. Retry once
@@ -457,14 +505,22 @@ where
                     let instruction = format!(
                         "Summarize this portion of the conversation; older history was truncated to fit the model window, so keep facts, decisions and the durable state block:\n{trimmed}"
                     );
-                    match tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction)).await {
-                        Ok(Ok(part)) => {
+                    match summarize_segment(&mut summarize, &instruction, &cancel).await {
+                        Segment::Answered(Ok(part)) => {
                             parts.push(part);
                             notify(json!({
                                 "session_id": session, "run_id": run,
                                 "kind": "compaction.progress", "segment": nth + 1,
                                 "total": plan.segments.len(), "truncated": true,
                             }));
+                        }
+                        Segment::Cancelled => {
+                            notify(json!({
+                                "session_id": session, "run_id": run,
+                                "kind": "compaction.cancelled",
+                                "segment": nth, "total": plan.segments.len(),
+                            }));
+                            return Ok(false);
                         }
                         _ => {
                             breaker.rejected(context.saturating_add(pending_tokens));
@@ -504,6 +560,56 @@ where
             Ok(false)
         }
     }
+}
+
+/// How one segment's summarizer call ended.
+enum Segment {
+    /// The summarizer answered: its text, or why the text was unusable.
+    Answered(Result<String, String>),
+    /// The call ran out of both deadlines.
+    Slow,
+    /// The pass was interrupted while the call was in flight.
+    Cancelled,
+}
+
+/// Summarize one segment under the pass deadlines, retrying a missed deadline
+/// once. Reaching the caller as a failure used to mean the whole pass — every
+/// segment summarized before it — was thrown away and counted against gate ⑤.
+async fn summarize_segment<S, F>(
+    summarize: &mut S,
+    instruction: &str,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Segment
+where
+    S: FnMut(String) -> F,
+    F: Future<Output = Result<String, String>>,
+{
+    if let Ok(answered) =
+        tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction.to_owned())).await
+    {
+        return settled(answered, cancel);
+    }
+    if cancel.is_cancelled() {
+        return Segment::Cancelled;
+    }
+    match tokio::time::timeout(SUMMARY_RETRY_TIMEOUT, summarize(instruction.to_owned())).await {
+        Ok(answered) => settled(answered, cancel),
+        Err(_) if cancel.is_cancelled() => Segment::Cancelled,
+        Err(_) => Segment::Slow,
+    }
+}
+
+/// A summarizer call the interrupt aborted reports a transport error, and that
+/// is the stop the operator asked for rather than a summarizer failure: only a
+/// call that failed on its own may feed gate ⑤.
+fn settled(
+    answered: Result<String, String>,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Segment {
+    if answered.is_err() && cancel.is_cancelled() {
+        return Segment::Cancelled;
+    }
+    Segment::Answered(answered)
 }
 
 /// Per-message cap on what one summarizer pass reads from a stored message.
@@ -1176,6 +1282,27 @@ impl Store {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A summarizer call the interrupt aborted reports a transport error. Read
+    /// as a summarizer failure it would feed gate ⑤, so an operator stopping a
+    /// turn three times closed compaction for the rest of the Session.
+    #[test]
+    fn an_aborted_summarizer_call_is_an_interrupt_not_a_failure() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        assert!(matches!(
+            settled(Err("transport closed".into()), &cancel),
+            Segment::Answered(Err(_))
+        ));
+        cancel.cancel();
+        assert!(matches!(
+            settled(Err("transport closed".into()), &cancel),
+            Segment::Cancelled
+        ));
+        assert!(matches!(
+            settled(Ok("summary".into()), &cancel),
+            Segment::Answered(Ok(_))
+        ));
+    }
 
     fn text_message(role: &str, body: &str) -> Message {
         Message {

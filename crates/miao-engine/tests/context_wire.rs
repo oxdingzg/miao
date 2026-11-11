@@ -92,6 +92,7 @@ async fn below_threshold_leaves_the_session_untouched() {
             forced: false,
             budget: &budget(),
             per_pass: 8,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
             count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
@@ -150,6 +151,7 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
             forced: false,
             budget: &budget(),
             per_pass: 1,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
             count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
@@ -227,6 +229,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             forced: false,
             budget: &budget(),
             per_pass: 1,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
             count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
@@ -256,6 +259,7 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             forced: false,
             budget: &budget(),
             per_pass: 1,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
             count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
@@ -305,6 +309,7 @@ async fn gate_two_counts_the_delta_since_the_anchor() {
             forced: false,
             budget: &budget(),
             per_pass: 1,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |notice: Value| notices.push(notice),
             count: &mut |messages| {
@@ -358,6 +363,7 @@ async fn a_report_without_the_anchor_marker_prices_the_whole_history() {
             forced: false,
             budget: &budget(),
             per_pass: 1,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |_: Value| {},
             count: &mut |_messages| {
@@ -403,6 +409,7 @@ async fn an_unsupported_count_falls_back_to_the_delta_estimate() {
             forced: false,
             budget: &budget(),
             per_pass: 1,
+            cancel: tokio_util::sync::CancellationToken::new(),
             breaker: &mut breaker,
             notify: &mut |_: Value| {},
             count: &mut |_messages| Box::pin(async { CountTokens::Failed("refused".into()) }),
@@ -416,4 +423,61 @@ async fn an_unsupported_count_falls_back_to_the_delta_estimate() {
     .unwrap();
     assert!(committed, "the anchored 2000 already crosses the limit");
     assert!(calls > 0, "the summary ran");
+}
+
+/// One pass is one summarizer call per `per_pass` messages, so on a long
+/// Session it is minutes of quiet work with no token coming back. Escape
+/// cancels the run, and that has to end the pass at the next segment instead of
+/// waiting for the last one: a History of 2,400 messages plans three hundred
+/// sequential calls. An interrupt is the operator's decision, not the
+/// summarizer failing, so it must not feed gate ⑤ either.
+#[tokio::test]
+async fn an_interrupt_ends_the_pass_between_segments() {
+    let (_dir, store, boundary, _counted) = seeded().await;
+    let mut notices: Vec<Value> = Vec::new();
+    let mut breaker = Breaker::new(2);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let mut calls = 0;
+    let committed = maybe_compact(
+        &store,
+        CompactRequest {
+            session: "s",
+            run: "run",
+            boundary,
+            through: None,
+            focus: None,
+            forced: true,
+            budget: &budget(),
+            per_pass: 1,
+            cancel: cancel.clone(),
+            breaker: &mut breaker,
+            notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
+        },
+        |_body| {
+            calls += 1;
+            cancel.cancel();
+            async { Ok("summary".into()) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!committed, "an interrupted pass commits nothing");
+    assert_eq!(calls, 1, "the pass stops at the segment it was in");
+    assert!(
+        notices
+            .iter()
+            .any(|notice| notice["kind"] == "compaction.cancelled"),
+        "the stop is reported instead of vanishing: {notices:?}"
+    );
+    assert!(
+        !notices
+            .iter()
+            .any(|notice| notice["kind"] == "compaction.failed"),
+        "an interrupt is not a failure: {notices:?}"
+    );
+    assert!(
+        breaker.allows(),
+        "an interrupt must not count against gate ⑤"
+    );
 }
