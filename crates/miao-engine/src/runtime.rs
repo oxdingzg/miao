@@ -335,10 +335,6 @@ struct Inner {
     /// restore budget note. Process-local and request-scoped, like the host
     /// runner's `turns` map.
     restore_pending: Mutex<std::collections::HashSet<String>>,
-    /// The last context-pressure level a Session was reminded about, so each
-    /// rung of the ladder notifies once instead of on every request. Cleared
-    /// when a compaction checkpoint drops usage below the ladder.
-    pressure_notified: Mutex<std::collections::HashMap<String, u8>>,
 }
 
 struct Actor {
@@ -817,7 +813,6 @@ impl Runtime {
                 breakers: Mutex::new(std::collections::HashMap::new()),
                 learned_window: Mutex::new(std::collections::BTreeMap::new()),
                 restore_pending: Mutex::new(std::collections::HashSet::new()),
-                pressure_notified: Mutex::new(std::collections::HashMap::new()),
             }),
         };
         if let Some(agent) = &runtime.inner.default_agent {
@@ -3684,6 +3679,8 @@ async fn execute(
             inner.refused_window_for(model.as_deref()).await,
         );
         let learned = inner.learned_limits(model.as_deref()).await;
+        // Window and occupancy: the usage events and the pause note read these, so
+        // they stay even though nothing announces the level any more.
         let mut pressure = None;
         // The token count at which the compaction trigger would run. A pause that
         // spends a billing allowance prints it beside the window's own figures, so
@@ -3796,35 +3793,6 @@ async fn execute(
                     recorded_at_ms: None,
                 },
             );
-        }
-        // The context-pressure ladder rides the Session's own requests only:
-        // the anchor figures belong to this Session's window, not a delegated
-        // child's. Each rung notifies once; a drop (compaction) re-arms it.
-        if !delegated {
-            if let Some((window, counted)) = pressure {
-                let level = crate::context::pressure_level(window, counted);
-                let seen = {
-                    let mut notified = inner.pressure_notified.lock().await;
-                    let seen = notified.get(session).copied().unwrap_or(0);
-                    notified.insert(session.to_owned(), level);
-                    seen
-                };
-                if level > seen {
-                    if let Some(blocks) = history
-                        .last_mut()
-                        .and_then(|message| message.content.as_array_mut())
-                    {
-                        let index = crate::context::guidance_slot(blocks);
-                        blocks.insert(
-                            index,
-                            json!({
-                                "type": "text",
-                                "text": crate::context::pressure_note(window, counted, level),
-                            }),
-                        );
-                    }
-                }
-            }
         }
         // Request-only guidance goes after the final tool results, preserving
         // their order and delivery boundary, and ahead of the user's own text, so
@@ -5247,10 +5215,6 @@ command: None,
                     .lock()
                     .await
                     .insert(session.to_owned());
-                // Usage drops far below the ladder after a checkpoint, so the
-                // per-level reminders re-arm instead of latching the level the
-                // pre-compaction history reached.
-                inner.pressure_notified.lock().await.remove(session);
             }
             if let Some(request) = requested {
                 // One attempt answers the request either way, so a summarizer the
