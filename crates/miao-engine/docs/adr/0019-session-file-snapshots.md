@@ -110,6 +110,11 @@ reply reports what was overwritten as `conflicts_overwritten`. A path whose
 write has not reached a settled boundary yet is not in the Session's record, so
 it reads as an outside edit; capture and the gate therefore share one ordering,
 and a client that stages without a preview still cannot lose an operator edit.
+A path with no record at all has no baseline to be an outside edit against, so
+it is not a conflict. Native manifests only contain touched-and-captured paths,
+which makes that case an imported manifest: a transfer brings files this engine
+never captured, and refusing every one of them would make an import
+unrestorable.
 
 The preview also states `external_side_effects: "not_reversible"`, so the
 payload itself — not just a client's own copy — says that shell commands and
