@@ -97,6 +97,7 @@ newer record is the one to read.
 | `2026-11-11-rus02-retirement.md` | `chore/rus02-retirement-record` | RUS-02 (the TS execution path is gone: inventory targets deleted, client/data acceptance and the rollback drill cited, the last CI references to `packages/miao` removed with the dead integration runner) |
 | `2026-11-11-his03-shell-side-effects.md` | `test/his03-shell-disclaimer` | HIS-03 (the revert's shell/external side-effect disclaimer on both boundary kinds and in the confirmation dialog, re-verified on the current tree; the release stamp for v0.3.60 is recorded in the file) |
 | `2026-11-11-agt04-plan-display.md` | `feat/his05-plan-display` | AGT-04 (the plan's own sidebar section between the Goal and the checklist, decoded from `session.state.plan`; the three durable rows stay separate; no release stamp yet because no published release contains this tree) |
+| `2026-11-11-inp05-live-zed.md` | `test/inp05-live-zed` | INP-05 (the shipped binary reads a Zed-format database through the real probe in a pty, on Linux and macOS, and the selection is readable in the composer; removal stays pinned by the draft-level tests, Windows unexercised, no stamp yet) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
