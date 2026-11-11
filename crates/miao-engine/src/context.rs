@@ -803,18 +803,18 @@ pub(crate) fn progress_reminder(history: &[Message]) -> Option<&'static str> {
     )
 }
 
-/// Context-pressure ladder over a known window: 0 below attention, 1 advisory
-/// at 60%, 2 actionable at 80%, 3 compaction-imminent at 88%. The compaction
-/// trigger itself plans against window * ratio (0.9 for a derived window), so
-/// level 3 fires in the turns just before that boundary instead of after it.
+/// Context pressure over a known window: 0 below the compaction boundary, 3 in
+/// the turns just before it.
+///
+/// There used to be a ladder — advisory at 60%, actionable at 80% — and it was
+/// noise: compaction runs by itself at `window * ratio`, so a note at 80% only
+/// told the model "soon" between two turns without changing anything except the
+/// context it spent. The one note worth sending is the boundary one, which
+/// fires at 88% so the last turns before compaction can put state in files.
 pub(crate) fn pressure_level(window: u64, counted: u64) -> u8 {
     let ratio = counted as f64 / window.max(1) as f64;
     if ratio >= 0.88 {
         3
-    } else if ratio >= 0.8 {
-        2
-    } else if ratio >= 0.6 {
-        1
     } else {
         0
     }
@@ -828,8 +828,7 @@ pub(crate) fn pressure_note(window: u64, counted: u64, level: u8) -> String {
     let percent = counted.saturating_mul(100) / window.max(1);
     let action = match level {
         3 => "Automatic compaction will run at the next turn boundary: the conversation will be replaced by a summary and a restore-budget note will let you re-read what it omits. Wrap up the current step now, and make sure any state the next step needs is written to files.",
-        2 => "Automatic compaction triggers at a turn boundary once usage passes about 90% of the window. Finish the current operation cleanly, keep durable state in files rather than in conversation, and prefer targeted reads over broad exploration.",
-        _ => "Keep reads targeted and tool outputs concise so the approach of automatic compaction stays gradual.",
+        _ => "",
     };
     format!(
         "<system-reminder>\nContext usage: about {counted} of {window} tokens ({percent}%). {action}\nThese figures are re-measured every turn; context numbers from earlier reminders are obsolete.\n</system-reminder>"
@@ -1013,11 +1012,13 @@ mod tests {
     #[test]
     fn pressure_level_ladder() {
         assert_eq!(pressure_level(1_000, 0), 0);
+        // 60% and 80% used to warn. They no longer do: compaction runs by
+        // itself, so a note before the boundary only spends context.
         assert_eq!(pressure_level(1_000, 599), 0);
-        assert_eq!(pressure_level(1_000, 600), 1);
-        assert_eq!(pressure_level(1_000, 799), 1);
-        assert_eq!(pressure_level(1_000, 800), 2);
-        assert_eq!(pressure_level(1_000, 879), 2);
+        assert_eq!(pressure_level(1_000, 600), 0);
+        assert_eq!(pressure_level(1_000, 799), 0);
+        assert_eq!(pressure_level(1_000, 800), 0);
+        assert_eq!(pressure_level(1_000, 879), 0);
         assert_eq!(pressure_level(1_000, 880), 3);
         assert_eq!(pressure_level(1_000, 2_000), 3);
         // A degenerate window stays defined instead of panicking on divide.
@@ -1037,16 +1038,14 @@ mod tests {
 
     #[test]
     fn pressure_note_leads_with_the_window_and_voids_stale_figures() {
-        let note = pressure_note(1_048_576, 630_000, 1);
-        assert!(note.starts_with(
-            "<system-reminder>\nContext usage: about 630000 of 1048576 tokens (60%). "
-        ));
-        assert!(note.contains("re-measured every turn"));
-        assert!(note.contains("obsolete"));
-        let high = pressure_note(1_048_576, 900_000, 2);
-        assert!(high.contains("90% of the window"));
         let imminent = pressure_note(1_048_576, 950_000, 3);
         assert!(imminent.contains("restore-budget"));
+        assert!(imminent.contains("re-measured every turn"));
+        assert!(imminent.contains("obsolete"));
+        // Only the boundary note exists now, so a level below it carries no
+        // body at all rather than a softer version of the same reminder.
+        let below = pressure_note(1_048_576, 630_000, 0);
+        assert!(!below.contains("Automatic compaction"));
     }
 
     #[test]
