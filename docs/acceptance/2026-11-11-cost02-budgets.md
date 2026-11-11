@@ -1,12 +1,15 @@
 # Acceptance record — COST-02 cost, time, and turn budgets stop a run
 
 Item: `COST-02` (#1972). Tree: branch `feat/issue1972`, PR #2861, rebased onto
-`main` at `e5d81835b9` (five commits: the budget algebra, the Goal's money axis,
-the Session declaration derived from configuration, the run-loop enforcement,
-and the integration pins). Commands ran from `crates/miao-engine` on the tree this
-PR's CI workflow builds; the observed cells cite that PR's CI run
-`42945728445` and the engine shard jobs inside it. Rust is not compiled on the
-workstation, so CI is the only evidence this record can cite.
+`main` at `69d637a4aa` (the budget algebra, the Goal's money axis, the Session
+declaration derived from configuration, the run-loop enforcement, the
+integration pins, and this record). Commands run from `crates/miao-engine` on
+the tree this PR's CI workflow builds; every observed cell below cites CI run
+[`42954059284`](https://github.com/oxdingzg/miao/actions/runs/42954059284) on
+head `89b87a2aee`, whose engine shards are the evidence. Rust is not compiled on
+the workstation, so CI is the only evidence this record can cite; this record's
+own commit changes no engine code, so the engine shards of that run are the ones
+the commands ran on.
 
 ## What changed, in one paragraph
 
@@ -25,7 +28,9 @@ durable inbox for the next run. Enforcement never touches model selection.
 
 **Command:** `cargo test --test cost_budget`
 
-**Observed:** pending — will cite CI run `42945728445`.
+**Observed:** `test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0
+filtered out; finished in 2.68s` — `tests/cost_budget.rs`, engine shard 2/4 of
+run `42954059284`.
 
 Pinned by these tests in that suite:
 
@@ -54,7 +59,9 @@ up ($0.60 spent)`.
 
 **Command:** `cargo test --test cost_budget a_budget_warns_once_at_four_fifths_with_what_is_left a_cost_budget_discloses_a_turn_whose_charge_was_not_reported`
 
-**Observed:** pending — same CI run.
+**Observed:** the same suite, `9 passed` on the same run; `cargo test --lib`
+printed `test result: ok. 477 passed; 0 failed; 0 ignored` on shard 1/4 of that
+run, which is where the budget unit tests run.
 
 - `a_budget_warns_once_at_four_fifths_with_what_is_left` — five 200-token turns
   against `tokens: 1000`: the warning appears exactly once, at 800 tokens, and
@@ -80,7 +87,9 @@ and the note says so: "Close the operation in progress and summarize".
 
 **Command:** `cargo test --test cost_budget a_budget_stop_leaves_admitted_input_queued a_budget_stop_leaves_the_model_selection_alone`
 
-**Observed:** pending — same CI run.
+**Observed:** `a_budget_stop_leaves_admitted_input_queued` and
+`a_budget_stop_leaves_the_model_selection_alone` both passed inside the same
+`9 passed` of `tests/cost_budget.rs` on run `42954059284`.
 
 - `a_budget_stop_leaves_admitted_input_queued` — with `turns: 1`, a queued input
   admitted beside the running prompt is still listed by `pending_inputs` after
@@ -94,7 +103,8 @@ and the note says so: "Close the operation in progress and summarize".
 ## Criterion 4 — "Link implementation PR, offline or real client acceptance records, and applicable versions; attach quality, cost, or latency evidence for optimizations."
 
 **Observed:** this record is the offline acceptance evidence; the implementation
-PR is #2861 and it references issue #1972. The engine's own `usage` report and
+PR is #2861 and it references issue #1972, and its engine evidence is CI run
+`42954059284`. The engine's own `usage` report and
 `budget.state` events are the client-facing surface, exercised by
 `the_usage_report_carries_the_remaining_amount`; a real-client acceptance pass
 for the sidebar row that paints the remainder is not part of this PR and stays
@@ -105,7 +115,15 @@ claimed and none is attached.
 
 **Command:** `cargo test --lib`, `cargo test --test state`, `cargo test --test accuracy`, `cargo test --test config_golden`, `cargo test --test turn_budget`
 
-**Observed:** pending — same CI run and its engine shards.
+**Observed:** from run `42954059284`: `cargo test --lib` → `477 passed; 0
+failed`; `cargo test --test state` → `13 passed`; `cargo test --test
+config_golden` → `6 passed`; `cargo test --test accuracy` → `4 passed`; `cargo
+test --test turn_budget` → `3 passed`. Engine shard 1/3/4 and the Windows
+compile passed on the first attempt; shard 2/4 passed on a rerun of the same run
+id after `tests/media.rs`'s
+`capability_mismatch_refuses_media_consistently_and_keeps_bytes_recoverable`
+failed with `Busy` — a store-handle race inside that test (it reopens the same
+SQLite path it just shut down), unrelated to this change and green on rerun.
 
 - `cargo test --lib goal_budget_is_a_structured_boundary_not_prose` re-runs the
   Goal budget's write surface, which now also refuses a `cost_usd` of zero, a
