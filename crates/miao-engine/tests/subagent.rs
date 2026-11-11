@@ -1649,3 +1649,127 @@ async fn recovery_leaves_finished_subagents_alone() {
     assert_eq!(after[0]["status"], "completed");
     assert_eq!(after[0]["text"], "ok");
 }
+
+/// A background child that fails is a receipt the parent has to receive. The
+/// child's terminal state was already durable in `subagent_stop`, but nothing
+/// woke the parent, so an orchestrating Session sat idle and only an operator
+/// polling the worktree noticed — #2862 problems two and three.
+struct FailingChild {
+    step: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for FailingChild {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let text = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("");
+        if text.contains("say fail") {
+            // Not retryable, so the child settles at once instead of spending
+            // the retry window on a fixture that cannot recover.
+            return Err(ProviderError::Stream(
+                "the fixture child cannot answer".into(),
+            ));
+        }
+        let step = self.step.fetch_add(1, Ordering::SeqCst);
+        let content = match step {
+            0 => {
+                json!([{"type":"tool_use","id":"start","name":"task","input":{"prompt":"say fail","background":true}}])
+            }
+            _ => json!([{"type":"text","text":"parent moved on"}]),
+        };
+        Ok(Reply {
+            content,
+            usage: json!({}),
+            needs_tools: step == 0,
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_failed_background_child_leaves_the_parent_a_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(FailingChild {
+            step: AtomicUsize::new(0),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate in background".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    // The announcement is what wakes the parent, and it arrives once the child's
+    // watcher settles, so waiting for it is waiting for the child's terminal
+    // state itself rather than racing the run.
+    let receipt = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let receipt = store
+                .input_status("parent", "task:start:finished")
+                .await
+                .unwrap();
+            if receipt["state"] != "unknown" {
+                break receipt;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the failed child announces itself to the parent");
+    assert_eq!(
+        receipt["delivery"], "queue",
+        "a completion must not cut into a turn in flight: {receipt}"
+    );
+    let tasks = store.subagents("parent").await.unwrap();
+    assert_eq!(tasks.len(), 1, "{tasks:?}");
+    assert_eq!(tasks[0]["status"], "failed", "{tasks:?}");
+    // A receipt the parent never reads leaves it exactly as stuck as silence
+    // did, so the announcement has to reach the parent's own history.
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            if let Ok(messages) = store.history("parent").await {
+                if messages.iter().any(|message| {
+                    message
+                        .content
+                        .to_string()
+                        .contains("failed before delivering")
+                }) {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the parent reads the receipt it was woken for");
+    runtime.shutdown().await;
+}

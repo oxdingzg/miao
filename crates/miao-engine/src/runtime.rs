@@ -7170,6 +7170,10 @@ async fn delegate(
                         json!({"run_id":run,"subagent_id":watcher_child,"call_id":call,"reason":"failed","text":error.to_string()}),
                     )
                     .await;
+                // The watcher failing is still a terminal state the parent has
+                // to hear about: it records the same failed stop row, so the
+                // announcement points at something `task_result` can read.
+                announce_task(&background, &parent, &watcher_child, &call, "failed").await;
             }
         });
         return Ok(json!({"session_id":child,"background":true,"status":"running"}));
@@ -7450,10 +7454,49 @@ async fn finish_delegation(
         )
         .await
         .map_err(|_| ToolError::External("subagent stop could not be recorded".into()))?;
+    // A background child's terminal state is a receipt the parent has to
+    // receive: without this an idle parent only learns about it by polling the
+    // child's Session, which is what #2862 reported. The admission is queued so
+    // a completion lands when the parent would otherwise be idle instead of
+    // cutting into a turn in flight, and the announcement points at the same
+    // `subagent_stop` row `task_result` already reads.
+    if reason != "interrupted" {
+        announce_task(inner, parent, child, call, reason).await;
+    }
     if reason == "interrupted" {
         return Err(ToolError::Interrupted);
     }
     Ok(json!({"text":text,"report":report}))
+}
+
+/// Hand a background child's terminal state to its parent as a queued input, then
+/// wake the parent so its drain promotes it. Best effort: an admission that fails
+/// (the parent Session was deleted or its inbox identity already settled) must not
+/// fail the child's own settlement, which is already durable.
+async fn announce_task(inner: &Arc<Inner>, parent: &str, child: &str, call: &str, reason: &str) {
+    let outcome = match reason {
+        "completed" => format!("Background task {child} finished."),
+        "cancelled" => format!("Background task {child} was cancelled."),
+        _ => format!(
+            "Background task {child} failed before delivering (reason: {reason}), so its work may be undone."
+        ),
+    };
+    let admitted = inner
+        .store
+        .admit(Input {
+            agent_references: Default::default(),
+            command: None,
+            session_id: parent.to_owned(),
+            input_id: format!("task:{call}:finished"),
+            prompt: format!(
+                "{outcome} Read its durable report with task_result before continuing."
+            ),
+            delivery: crate::protocol::Delivery::Queue,
+        })
+        .await;
+    if admitted.is_ok() {
+        let _ = wake_session(inner, parent, false).await;
+    }
 }
 
 async fn wake_session(inner: &Arc<Inner>, session: &str, force: bool) -> Result<(), Error> {
