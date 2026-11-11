@@ -245,6 +245,9 @@ async fn preview_reports_the_file_plan_without_touching_the_workspace() {
     // The current content is exactly what the Session last recorded, so no
     // path reads as an outside edit.
     assert_eq!(preview["conflicts"], serde_json::json!([]));
+    // The plan itself says what no boundary reverses, so a client does not have
+    // to own the sentence about shell work.
+    assert_eq!(preview["external_side_effects"], "not_reversible");
     // A preview is a read: the workspace and the stage are untouched.
     assert_eq!(fs::read_to_string(workspace.join("a.txt")).unwrap(), "two");
     assert!(store.staged_revert("s").await.unwrap().is_null());
