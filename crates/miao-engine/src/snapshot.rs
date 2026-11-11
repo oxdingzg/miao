@@ -515,9 +515,9 @@ impl Store {
                     .filter_map(|conflict| conflict["path"].as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
+                let count = conflicts.len();
                 return Err(Error::Invalid(format!(
-                    "refusing to overwrite {} path(s) that changed outside this Session: {paths}; preview the revert and re-stage with force to overwrite them",
-                    conflicts.len()
+                    "refusing to overwrite {count} path(s) that changed outside this Session: {paths}; preview the revert and re-stage with force to overwrite them"
                 )));
             }
             // One intent at a time: undo the previous staged restore first.
