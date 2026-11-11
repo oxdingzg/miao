@@ -125,23 +125,8 @@ fn tool_result_count(request: &ModelRequest) -> usize {
         .count()
 }
 
-/// The child Session ID a settled delegation reported, read from the tool
-/// result the parent already received.
-fn child_from(request: &ModelRequest, call: &str) -> String {
-    request
-        .messages
-        .iter()
-        .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
-        .find(|part| part["type"] == "tool_result" && part["tool_use_id"] == json!(call))
-        .and_then(|part| {
-            part["content"]
-                .as_str()
-                .and_then(|content| serde_json::from_str::<Value>(content).ok())
-        })
-        .and_then(|result| result["session_id"].as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
+/// Children answer their prompts directly and never see the task tool; the
+/// delegating parent drives the scenario by its settled tool results.
 fn text_reply(text: &str, input: u64, output: u64) -> Reply {
     Reply {
         content: json!([{"type":"text","text":text}]),
@@ -251,7 +236,7 @@ async fn a_delivered_delegation_settles_positive_with_a_structured_report() {
     assert_eq!(stop.data["reason"], "completed", "{stop:?}");
 }
 
-/// Child: an empty report on the first dispatch, a delivery on the retry.
+/// Parent: delegate to a named child that fails, then retry the same child.
 struct Rework;
 #[async_trait]
 impl Provider for Rework {
@@ -262,22 +247,21 @@ impl Provider for Rework {
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
         let last = last_user_text(&request);
+        if last.contains("explode") {
+            return Err(ProviderError::Transport("boom".into()));
+        }
         if last.contains("say hello") {
             return Ok(text_reply("hello from child", 30, 5));
         }
-        if last.contains("report nothing") {
-            return Ok(text_reply("   ", 10, 1));
-        }
         match tool_result_count(&request) {
-            0 => Ok(task_call("d1", json!({"prompt":"report nothing"}))),
-            1 => {
-                let child = child_from(&request, "d1");
-                assert!(!child.is_empty(), "the first result names the child");
-                Ok(task_call(
-                    "d2",
-                    json!({"prompt":"say hello","session_id":child}),
-                ))
-            }
+            0 => Ok(task_call(
+                "d1",
+                json!({"prompt":"explode the build","session_id":"child-x"}),
+            )),
+            1 => Ok(task_call(
+                "d2",
+                json!({"prompt":"say hello","session_id":"child-x"}),
+            )),
             2 => Ok(task_call("d3", json!({"prompt":"say hello"}))),
             _ => Ok(text_reply("parent done", 0, 0)),
         }
@@ -285,7 +269,7 @@ impl Provider for Rework {
 }
 
 #[tokio::test]
-async fn an_empty_report_reads_no_result_and_the_retry_settles_rework_then_delegation_closes() {
+async fn a_failed_first_dispatch_and_its_retry_settle_rework_then_delegation_closes() {
     let (_dir, store, runtime) = engine(Arc::new(Rework)).await;
     delegate_and_settle(&store, &runtime).await;
     runtime.shutdown().await;
@@ -294,8 +278,11 @@ async fn an_empty_report_reads_no_result_and_the_retry_settles_rework_then_deleg
     assert_eq!(settled.len(), 2, "{settled:?}");
     assert_eq!(settled[0]["verdict"], "insufficient", "{settled:?}");
     assert_eq!(settled[0]["verdict_reason"], "no_result", "{settled:?}");
+    assert_eq!(settled[0]["reason"], "failed", "{settled:?}");
     assert_eq!(settled[0]["recommendation"], "single_agent", "{settled:?}");
-    // The retry delivered, but the same task was paid for twice: rework.
+    // The retry delivered, but the same child was paid for twice: rework.
+    // Its cumulative spend covers the failed attempt too — no usage rode the
+    // failed turn, so the row shows the retry's own 30.
     assert_eq!(settled[1]["verdict"], "insufficient", "{settled:?}");
     assert_eq!(settled[1]["verdict_reason"], "rework", "{settled:?}");
     assert_eq!(settled[1]["redispatched"], true, "{settled:?}");
