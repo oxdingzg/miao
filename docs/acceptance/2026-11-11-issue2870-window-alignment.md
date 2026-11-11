@@ -1,11 +1,11 @@
 # Acceptance record — #2870 the pause is aligned with the window it is not
 
 Issue: #2870 ("budget reminder out of step with real context usage: cumulative billed
-tokens vs the model's window, reported as 'budget exhausted'"). Tree: the code commit of
-`fix/issue2870-budget-alignment` (PR #2881) as CI ran it in run `42997642616`, rebased onto
-`main` after #2877; this record and its index row landed in the docs-only commit that
-followed it. The behavioural checks ran on the macOS build host `macmini` from
-`crates/miao-engine`, `cargo 1.99.1`.
+tokens vs the model's window, reported as 'budget exhausted'"). Tree: `f55ad57b92`, the last
+head of `fix/issue2870-budget-alignment` before PR #2881 was squash-merged as `ef0424a44d`,
+rebased onto `main` after #2877. The behavioural checks ran on the macOS build host
+`macmini` from `crates/miao-engine`, `cargo 1.99.1`; CI run `42998019112` verified that head
+green, all four engine shards included.
 
 ## What #2877 settled, and what is left
 
@@ -51,8 +51,14 @@ window is.
 | format and lints | `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` | clean; `Finished` with no warnings |
 
 The whole-tree record is CI run
-[`42997642616`](https://github.com/oxdingzg/miao/actions/runs/42997642616) on that commit;
-the docs-only commit after it carries no behavioural change.
+[`42998019112`](https://github.com/oxdingzg/miao/actions/runs/42998019112) on `f55ad57b92`:
+every job green, the four engine shards included. The run for the earlier commit of the same
+branch, `42997642616`, reads `cancelled`: `ci.yml`'s `concurrency` group cancelled it when the
+next commit was pushed, after it had reported `policy`, the engine reference corpus, all three
+blackbox shards, `typecheck` and `unit` green with the engine shards still running. Citing a
+partial run would have made a green tree look unverified, and citing a `cancelled` one would
+have made a citation that does not resolve, so the record names the completed run and says
+what the other one did.
 
 ## What this record does not claim
 
