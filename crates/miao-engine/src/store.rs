@@ -4461,13 +4461,14 @@ impl Store {
         let session = session.to_owned();
         self.call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT kind,data FROM engine_event WHERE session_id=?1 AND kind IN ('subagent_start','subagent_stop') ORDER BY seq",
+                "SELECT kind,data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind IN ('subagent_start','subagent_stop') ORDER BY seq",
             )?;
             let mut rows = stmt.query(params![session])?;
             let mut tasks: Vec<Value> = Vec::new();
             while let Some(row) = rows.next()? {
                 let kind: String = row.get(0)?;
                 let data: Value = serde_json::from_str(&row.get::<_, String>(1)?)?;
+                let recorded_at_ms: Option<u64> = row.get(2)?;
                 let Some(id) = data["subagent_id"].as_str() else {
                     continue;
                 };
@@ -4475,12 +4476,21 @@ impl Store {
                     if data["background"] != true {
                         continue;
                     }
+                    // A running row carries its age: a child that is working and
+                    // one that has gone silent look identical without it, and an
+                    // orchestration waiting on the row cannot tell which it has
+                    // (#2862).
+                    let age_ms = recorded_at_ms.map(|started| {
+                        now_ms().saturating_sub(started)
+                    });
                     tasks.push(json!({
                         "id":id,
                         "session_id":id,
                         "description":data["description"].as_str().unwrap_or("subagent"),
                         "status":"running",
                         "text":Value::Null,
+                        "started_at_ms":recorded_at_ms,
+                        "age_ms":age_ms,
                     }));
                     continue;
                 }
