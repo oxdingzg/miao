@@ -33,7 +33,7 @@ terminal event is what three readers consume:
 | the parent's journal and the child's run both name it | `cargo test --test delegation_failure a_failed_child_reports_its_cause_to_the_waiting_parent` | ok — `subagent_stop.reason == "failed"` with a `message`, and the child's `run.finished` says `failed` with the same cause |
 | the failure terminal state is queryable | `cargo test --test delegation_failure a_failed_child_is_queryable_with_its_cause` | ok — `children` reports `run.state == "failed"`, `run.reason == "failed"`, `run.message` carrying the `429` body |
 | a child that delivered is not dressed up as a failure | `cargo test --test delegation_failure a_child_that_delivered_reports_a_completion_and_no_cause` | ok — `run.reason == "completed"` and `run.message` null |
-| the engine crate still builds and its suites pass | CI workflow `ci`, run `42998196848` | see the run for the per-shard verdicts; local Rust compilation is blocked on this workstation (`~/.config/miao/no-local-cargo.sh`), so CI is the compile and test authority for this record |
+| the engine crate still builds and its suites pass | CI workflow `ci`, run [`42998704776`](https://github.com/oxdingzg/miao/actions/runs/42998704776) | `success` — the run's own conclusion; its engine shard ran `tests/delegation_failure.rs` (`3 passed; 0 failed`), and every other engine shard, `unit`, `typecheck`, `cli` and the Windows compile job reported `success`. The run first written here (`42998196848`) was superseded and cancelled, so it was not evidence. Local Rust compilation is blocked on this workstation (`~/.config/miao/no-local-cargo.sh`), which is why CI is the compile and test authority for this record |
 
 The commands above are run from `crates/miao-engine`.
 
