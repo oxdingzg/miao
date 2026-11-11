@@ -221,6 +221,30 @@ pub fn runnable_state(state: &Value) -> Result<Vec<String>, Error> {
         .collect())
 }
 
+/// The todo list's meaning: which items exist and what state each is in.
+/// Prose, priority and dependency decoration are excluded on purpose — the
+/// continuation loop asks whether a turn moved the work, and rewriting a todo's
+/// words moves nothing. Ordered by the list's own order so a re-sort alone is
+/// not progress either.
+pub fn todo_signature(state: &Value) -> String {
+    state["todos"]["value"]["todos"]
+        .as_array()
+        .map(|todos| {
+            todos
+                .iter()
+                .map(|todo| {
+                    format!(
+                        "{}:{}",
+                        todo["id"].as_str().unwrap_or_default(),
+                        todo["status"].as_str().unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<String>>()
+                .join(",")
+        })
+        .unwrap_or_default()
+}
+
 /// The task-list protocol the system prompt carries, mirroring the
 /// instructions in the TypeScript `SessionTodo.context` block
 /// (`packages/core/src/session/todo.ts`).
