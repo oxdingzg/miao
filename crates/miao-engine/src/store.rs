@@ -3314,7 +3314,8 @@ impl Store {
     }
 
     pub async fn finish_run(&self, session: &str, run: &str, reason: &str) -> Result<Event, Error> {
-        self.finish_run_inner(session, run, reason, None).await
+        self.finish_run_inner(session, run, reason, None, None)
+            .await
     }
 
     /// `finish_run` under a Session claim: only the current owner closes its run.
@@ -3325,7 +3326,23 @@ impl Store {
         reason: &str,
         lease: &SessionLease,
     ) -> Result<Event, Error> {
-        self.finish_run_inner(session, run, reason, Some(lease.clone()))
+        self.finish_run_inner(session, run, reason, None, Some(lease.clone()))
+            .await
+    }
+
+    /// `finish_run_fenced`, carrying why the run ended. The run's own terminal
+    /// event is the one durable place a failure is readable, and a delegating
+    /// parent that can see only `failed` has to rediscover the cause by polling
+    /// the worktree (issue #2862).
+    pub async fn finish_run_fenced_with_message(
+        &self,
+        session: &str,
+        run: &str,
+        reason: &str,
+        message: Option<&str>,
+        lease: &SessionLease,
+    ) -> Result<Event, Error> {
+        self.finish_run_inner(session, run, reason, message, Some(lease.clone()))
             .await
     }
 
@@ -3334,12 +3351,21 @@ impl Store {
         session: &str,
         run: &str,
         reason: &str,
+        message: Option<&str>,
         lease: Option<SessionLease>,
     ) -> Result<Event, Error> {
         let (session, run, reason) = (session.to_owned(), run.to_owned(), reason.to_owned());
+        let message = message.map(str::to_owned);
         self.call(move |conn| {
             let tx = write_tx(conn)?;
-            let e = finish_run_tx(&tx, &session, &run, &reason, lease.as_ref())?;
+            let e = finish_run_tx(
+                &tx,
+                &session,
+                &run,
+                &reason,
+                message.as_deref(),
+                lease.as_ref(),
+            )?;
             tx.commit()?;
             Ok(e)
         })
@@ -4426,6 +4452,9 @@ impl Store {
                         _ => "interrupted",
                     });
                     task["text"] = json!(data["text"].as_str().unwrap_or(""));
+                    // Why the child failed, when it did: a failed task has no
+                    // report to return, so the cause is the whole answer.
+                    task["message"] = json!(data["message"].as_str());
                 }
             }
             Ok(tasks)
@@ -5317,6 +5346,7 @@ pub(crate) fn finish_run_tx(
     session: &str,
     run: &str,
     reason: &str,
+    message: Option<&str>,
     lease: Option<&SessionLease>,
 ) -> Result<Event, Error> {
     if let Some(lease) = lease {
@@ -5385,7 +5415,7 @@ pub(crate) fn finish_run_tx(
         tx,
         session,
         "run.finished",
-        json!({"run_id":run,"reason":reason}),
+        json!({"run_id":run,"reason":reason,"message":message}),
     )?;
     Ok(event)
 }
