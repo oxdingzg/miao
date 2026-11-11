@@ -203,12 +203,27 @@ async fn a_delivered_delegation_settles_positive_with_a_structured_report() {
     // clock — and a pointer to the child instead of copied history.
     assert_eq!(result["report"]["status"], "completed", "{result}");
     assert_eq!(result["report"]["result"], "hello from child", "{result}");
-    assert!(result["report"]["wallclock_ms"].as_u64().is_some(), "{result}");
-    assert_eq!(result["report"]["cost"]["child"]["input_tokens"], 30, "{result}");
-    assert_eq!(result["report"]["cost"]["child"]["output_tokens"], 5, "{result}");
+    assert!(
+        result["report"]["wallclock_ms"].as_u64().is_some(),
+        "{result}"
+    );
+    assert_eq!(
+        result["report"]["cost"]["child"]["input_tokens"], 30,
+        "{result}"
+    );
+    assert_eq!(
+        result["report"]["cost"]["child"]["output_tokens"], 5,
+        "{result}"
+    );
     // Parent 100 + child 30; the parent's output 10 + the child's 5.
-    assert_eq!(result["report"]["cost"]["combined"]["inputTokens"], 130, "{result}");
-    assert_eq!(result["report"]["cost"]["combined"]["outputTokens"], 15, "{result}");
+    assert_eq!(
+        result["report"]["cost"]["combined"]["inputTokens"], 130,
+        "{result}"
+    );
+    assert_eq!(
+        result["report"]["cost"]["combined"]["outputTokens"], 15,
+        "{result}"
+    );
     assert!(result["report"]["history"].as_str().is_some(), "{result}");
 
     let settled = settlements(&store).await;

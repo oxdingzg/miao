@@ -4434,8 +4434,11 @@ impl Store {
                 "SELECT data FROM engine_event WHERE session_id=?1 AND kind='delegation.settled' AND json_extract(data,'$.run_id')=?2 ORDER BY seq",
             )?;
             let rows = stmt.query_map(params![session, run_id], |row| row.get::<_, String>(0))?;
-            rows.map(|data| Ok(serde_json::from_str(&data?)))
-                .collect()
+            let mut settlements = Vec::new();
+            for data in rows {
+                settlements.push(serde_json::from_str(&data?)?);
+            }
+            Ok(settlements)
         })
         .await
     }

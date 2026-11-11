@@ -395,7 +395,11 @@ mod tests {
 
     #[test]
     fn spend_without_a_result_reads_insufficient() {
-        for (reason, report) in [("failed", ""), ("cancelled", "partial"), ("completed", "   ")] {
+        for (reason, report) in [
+            ("failed", ""),
+            ("cancelled", "partial"),
+            ("completed", "   "),
+        ] {
             let benefit = NetBenefit::judge(reason, report, false);
             assert_eq!(benefit.verdict, VERDICT_INSUFFICIENT, "{reason}/{report}");
             assert_eq!(benefit.reason, BENEFIT_NO_RESULT, "{reason}/{report}");

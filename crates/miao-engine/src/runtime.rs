@@ -7339,8 +7339,11 @@ async fn finish_delegation(
     // An axis a provider never reported stays unknown in the settlement; a
     // zero would read as free.
     let observed = |report: &Value, key: &str| {
-        (report["providerUsage"]["coverage"][key].as_u64().unwrap_or(0) > 0)
-            .then(|| report["providerUsage"]["tokens"][key].as_u64().unwrap_or(0))
+        (report["providerUsage"]["coverage"][key]
+            .as_u64()
+            .unwrap_or(0)
+            > 0)
+        .then(|| report["providerUsage"]["tokens"][key].as_u64().unwrap_or(0))
     };
     let child_cost = json!({
         "input_tokens": observed(&usage, "input"),
