@@ -1111,15 +1111,17 @@ fn ctrl_o_switches_the_pinned_account() {
     );
     harness.write(b"\x0f");
     assert!(
-        wait_for_plain(&harness, "all accounts", Duration::from_secs(3)),
-        "the provider accounts dialog did not render:\n{}",
+        wait_for_plain(&harness, "all keys", Duration::from_secs(3)),
+        "the provider key list did not render:\n{}",
         plain(&harness.text())
     );
     // The flat list of every credential is one Enter below the provider rows.
+    // The fixture serves credentials the store does not hold, which is the
+    // read-only case: the row says where it comes from and stays selectable.
     harness.write(b"\r");
     assert!(
         wait_for_plain(&harness, "cred_a", Duration::from_secs(3)),
-        "the account dialog did not render the catalog:\n{}",
+        "the key dialog did not render the catalog:\n{}",
         plain(&harness.text())
     );
     // The second row is the other credential.
