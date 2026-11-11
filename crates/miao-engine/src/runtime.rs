@@ -40,6 +40,13 @@ const MAX_IDENTICAL_TOOL_CALLS: u32 = 5;
 /// and would otherwise be re-asked forever (a Flash-tier model kept doing it
 /// for three hours and 275 provider turns on a ~750K-token context).
 const MAX_IDENTICAL_REFUSALS: u32 = 3;
+/// Continuation turns that may leave the todo list's *meaning* untouched. A
+/// turn that rewrites a todo's words, re-sorts the list, or runs tools without
+/// moving any todo's state is not progress, and treating it as progress is what
+/// let an idle Session be re-prompted forever (the repeated fixed continuation
+/// prompt). The faster text-only stop stays at two turns; this one bounds the
+/// shapes that stop cannot see.
+const MAX_FLAT_CONTINUATIONS: usize = 24;
 
 /// How often a dispatched-but-unsettled tool call re-announces itself on the
 /// ephemeral progress channel. Long reads, language servers, MCP servers and
@@ -3248,6 +3255,11 @@ async fn execute(
     let mut internal_inputs = HashSet::new();
     let mut goal_iterations = 0;
     let mut goal_stalls = 0;
+    // Continuation turns that left the todo list's *meaning* where it was, with
+    // or without a tool batch and whatever prose the turn rewrote. See
+    // `MAX_FLAT_CONTINUATIONS`.
+    let mut goal_flat = 0usize;
+    let mut goal_flat_signature: Option<String> = None;
     let mut goal_polls = 0u32;
     let mut goal_last: Option<std::time::Instant> = None;
     let mut goal_signature = None;
@@ -4208,6 +4220,8 @@ command: None,
                             verification_failures = 0;
                             goal_iterations = 0;
                             goal_stalls = 0;
+                            goal_flat = 0;
+                            goal_flat_signature = None;
                             goal_signature = None;
                         }
                         inner
@@ -5263,8 +5277,26 @@ command: None,
             // off switch; completion notifications arrive as promoted inputs
             // either way.
             let loop_allowed = goal["status"].is_null() || goal["status"] == "active";
-            if loop_allowed && !crate::state::runnable_state(&state)?.is_empty() {
+            // A pause only the operator can end: the message a pause injected
+            // started the next drain, and without this the loop resumed with
+            // fresh counters and repeated itself (a bound of 24 reached 48).
+            let paused_for_operator = inner.store.loop_paused_for_operator(session).await?;
+            if loop_allowed
+                && !paused_for_operator
+                && !crate::state::runnable_state(&state)?.is_empty()
+            {
                 let signature = serde_json::to_string(&state["todos"]["value"]["todos"])?;
+                // The list's meaning, not its prose: a turn that rewrites a
+                // todo's words or re-sends the same list in another shape has
+                // made no progress, and counting that as progress is what let an
+                // idle Session be re-prompted indefinitely.
+                let flat = crate::state::todo_signature(&state);
+                goal_flat = if goal_flat_signature.as_ref() == Some(&flat) {
+                    goal_flat + 1
+                } else {
+                    0
+                };
+                goal_flat_signature = Some(flat);
                 // Tool calls are real work *for the turn that dispatched
                 // them*: a model that ran bash, read a file, or called any tool
                 // between two text-only replies is not stalled, and that turn
@@ -5351,6 +5383,8 @@ command: None,
                     Some("waiting")
                 } else if goal_stalls >= 2 && waited >= min_no_progress_secs {
                     Some("no-progress")
+                } else if goal_flat >= MAX_FLAT_CONTINUATIONS {
+                    Some("flat")
                 } else {
                     None
                 };
@@ -5401,6 +5435,13 @@ command: None,
                                 pending.join(" and ")
                             )
                         }
+                        // The bound that a churning todo list cannot defeat: a
+                        // turn that rewrote words, or ran tools without moving
+                        // any todo's state, is not progress, and this is where
+                        // the loop stops re-prompting itself for it.
+                        "flat" => format!(
+                            "Task paused: {goal_flat} continuation turns ran without any todo changing state, so the loop stopped repeating itself. Nothing is running now and it will not resume on its own. Change a todo's state or send a message with the next step."
+                        ),
                         _ => format!(
                             "Task paused: the todo list stayed unchanged for {goal_stalls} continuation turns over {waited}s, so the loop stopped waiting for it to move: another continuation would repeat the same work. Nothing is running now and it will not resume on its own. Add or update a todo, then send a message with the next step."
                         ),
@@ -5409,6 +5450,14 @@ command: None,
                         .store
                         .inject(session, &format!("loop-paused-{run}"), &pause, "engine")
                         .await?;
+                    // A continuation this run already admitted must not outlive
+                    // the pause: a queued `goal:` input left behind is promoted by
+                    // the next drain and starts a fresh run with fresh counters,
+                    // which is how a paused loop used to restart itself and watch
+                    // its own bound expire in instalments.
+                    for input_id in internal_inputs.iter() {
+                        let _ = inner.store.cancel_input(session, input_id).await;
+                    }
                 } else {
                     // While the Session owns running background work, the
                     // completion notifications wake the drain on their own;
@@ -5703,6 +5752,8 @@ command: None,
                 loop_reported.clear();
                 goal_iterations = 0;
                 goal_stalls = 0;
+                goal_flat = 0;
+                goal_flat_signature = None;
                 goal_signature = None;
             }
         }

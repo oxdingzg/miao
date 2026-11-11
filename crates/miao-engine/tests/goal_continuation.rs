@@ -348,7 +348,9 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
         Tools::new(dir.path()).await.unwrap(),
         Policy::new(Config {
             continuation_min_interval_ms: 0,
-            max_provider_turns: Some(25),
+            // Below the flat cap on purpose: this test is about the allowance,
+            // and a churning list is bounded by `MAX_FLAT_CONTINUATIONS` now.
+            max_provider_turns: Some(5),
             ..Config::default()
         })
         .unwrap(),
@@ -357,7 +359,7 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
     .unwrap();
     runtime.resume("s").await.unwrap();
     finished(&store).await;
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 25);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 5);
     let events = store.events("s", 0, 5000).await.unwrap();
     assert!(events
         .iter()
@@ -370,7 +372,7 @@ async fn changing_progress_does_not_refill_the_provider_allowance() {
 }
 
 #[tokio::test]
-async fn unlimited_product_tasks_keep_continuing_past_twenty_five_goal_iterations() {
+async fn a_churning_todo_list_is_bounded_instead_of_running_forever() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();
     setup(&store, "active", true, true, dir.path()).await;
@@ -395,15 +397,30 @@ async fn unlimited_product_tasks_keep_continuing_past_twenty_five_goal_iteration
     .unwrap();
     runtime.resume("s").await.unwrap();
     finished(&store).await;
-    assert_eq!(provider.calls.load(Ordering::SeqCst), 62);
-    assert!(!store
-        .events("s", 0, 5000)
-        .await
-        .unwrap()
-        .iter()
-        .any(|event| event.kind == "loop.stopped"));
+    // Rewriting the same todo's words is not progress: the loop stops once the
+    // flat cap is reached instead of churning until the list is emptied. Each
+    // continuation here costs two provider turns (a todowrite, then the text
+    // that ends the turn), so the cap of 24 shows up as one initial pair plus
+    // 24 pairs.
+    const FLAT_CAP: usize = 24;
+    assert_eq!(provider.calls.load(Ordering::SeqCst), (FLAT_CAP + 1) * 2);
+    let events = store.events("s", 0, 5000).await.unwrap();
     assert!(
-        miao_engine::state::runnable_state(&store.state("s").await.unwrap())
+        events
+            .iter()
+            .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "flat"),
+        "the churning loop pauses as flat progress rather than running on"
+    );
+    assert!(events.iter().any(|event| event.kind == "message.synthetic"
+        && event.data["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("without any todo changing state")));
+    // The loop stops with the work still listed: that is the point of the cap —
+    // the operator is asked, instead of a model that never closes the list being
+    // re-prompted forever.
+    assert!(
+        !miao_engine::state::runnable_state(&store.state("s").await.unwrap())
             .unwrap()
             .is_empty()
     );

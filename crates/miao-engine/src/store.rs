@@ -4566,6 +4566,63 @@ impl Store {
         .await
     }
 
+    /// Continuation turns this Session was given since the operator last spoke.
+    ///
+    /// The continuation bound has to survive a run ending: a pause injects an
+    /// engine message, that message starts the next drain, and a per-run counter
+    /// starts over — which is how a churning loop bounded at 24 kept running to
+    /// 48. Counting the durable `loop.continuation` rows after the newest
+    /// operator promotion is monotonic across runs, so the bound cannot be
+    /// escaped by restarting.
+    pub async fn continuations_since_operator(&self, session: &str) -> Result<u64, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let count: u64 = conn.query_row(
+                "SELECT COUNT(*) FROM engine_event
+                 WHERE session_id=?1 AND kind='loop.continuation' AND seq > COALESCE((
+                    SELECT MAX(seq) FROM engine_event
+                    WHERE session_id=?1 AND kind='input.promoted'
+                      AND json_extract(data,'$.input_id') NOT LIKE 'goal:%'
+                      AND json_extract(data,'$.input_id') NOT LIKE 'loop-paused-%'
+                      AND json_extract(data,'$.input_id') NOT LIKE 'task:%'
+                 ), 0)",
+                params![session],
+                |row| row.get(0),
+            )?;
+            Ok(count)
+        })
+        .await
+    }
+
+    /// Whether this Session is parked on a pause only the operator can end.
+    ///
+    /// A pause used to be a message plus a per-run counter, so the message it
+    /// injected started the next drain and the loop resumed with fresh counters:
+    /// a churning task bounded at 24 reached 48 by restarting itself. A pause is
+    /// therefore a durable fact that outlives the run, and only a promotion the
+    /// operator caused clears it.
+    pub async fn loop_paused_for_operator(&self, session: &str) -> Result<bool, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let paused: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engine_event
+                 WHERE session_id=?1 AND kind='loop.stopped'
+                   AND json_extract(data,'$.reason') IN ('flat','no-progress')
+                   AND seq > COALESCE((
+                    SELECT MAX(seq) FROM engine_event
+                    WHERE session_id=?1 AND kind='input.promoted'
+                      AND json_extract(data,'$.input_id') NOT LIKE 'goal:%'
+                      AND json_extract(data,'$.input_id') NOT LIKE 'loop-paused-%'
+                      AND json_extract(data,'$.input_id') NOT LIKE 'task:%'
+                 ), 0))",
+                params![session],
+                |row| row.get(0),
+            )?;
+            Ok(paused)
+        })
+        .await
+    }
+
     /// The net-benefit settlements one parent run has recorded (AGT-03). The
     /// delegation gate reads this ledger: a rework settlement — the same task
     /// paid for twice — closes further delegation for the run.
