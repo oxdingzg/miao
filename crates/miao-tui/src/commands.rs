@@ -34,6 +34,7 @@ pub enum Builtin {
     StashDraft,
     Timeline,
     Undo,
+    UndoFiles,
     Redo,
     Editor,
     Redraw,
@@ -45,7 +46,7 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 25] = [
+    pub const ALL: [Builtin; 26] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
@@ -63,6 +64,7 @@ impl Builtin {
         Builtin::StashDraft,
         Builtin::Timeline,
         Builtin::Undo,
+        Builtin::UndoFiles,
         Builtin::Redo,
         Builtin::Editor,
         Builtin::Redraw,
@@ -93,6 +95,7 @@ impl Builtin {
             Builtin::StashDraft => "stash-draft",
             Builtin::Timeline => "timeline",
             Builtin::Undo => "undo",
+            Builtin::UndoFiles => "undo-files",
             Builtin::Redo => "redo",
             Builtin::Editor => "editor",
             Builtin::Redraw => "redraw",
@@ -133,6 +136,7 @@ impl Builtin {
             Builtin::StashDraft => "Stash the current prompt",
             Builtin::Timeline => "Rewind to an earlier message",
             Builtin::Undo => "Undo the last turn",
+            Builtin::UndoFiles => "Restore the files the last turn changed, keep the transcript",
             Builtin::Redo => "Restore the last undone turn",
             Builtin::Editor => "Compose the prompt in $EDITOR",
             Builtin::Redraw => "Redraw terminal",
@@ -172,6 +176,7 @@ impl Builtin {
             Builtin::StashDraft => Some(Action::StashDraft),
             Builtin::Timeline => None,
             Builtin::Undo => None,
+            Builtin::UndoFiles => None,
             Builtin::Redo => None,
             Builtin::Editor => Some(Action::EditorOpen),
             Builtin::Redraw => Some(Action::TerminalRedraw),

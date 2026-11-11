@@ -648,10 +648,15 @@ pub enum ConfirmKind {
     /// Remove one git worktree by name.
     RemoveWorktree(String),
     /// Rewind the transcript to a user message, with or without restoring the
-    /// file set the Session recorded at that boundary.
+    /// file set the Session recorded at that boundary, and with or without the
+    /// transcript rewind itself.
     Revert {
         boundary_seq: u64,
         files: bool,
+        history: bool,
+        /// The operator was shown the preview's outside edits, so the stage is
+        /// allowed to overwrite them.
+        force: bool,
     },
     /// Forget one stored key: the named account of one integration. The
     /// provider's other keys stay, which is what makes deleting a single key
@@ -1569,15 +1574,24 @@ impl Dialog {
 
     /// Ask before a revert lands. The plan comes from the engine, so the
     /// dialog states what will actually change, including paths this Session
-    /// did not edit itself.
-    pub fn confirm_revert(boundary_seq: u64, plan: &crate::session::RevertPlan) -> Self {
+    /// did not edit itself. `history` says whether the transcript leaves too,
+    /// so a code-only revert says it does not.
+    pub fn confirm_revert(
+        boundary_seq: u64,
+        plan: &crate::session::RevertPlan,
+        history: bool,
+    ) -> Self {
         Dialog::Confirm(ConfirmDialog {
             title: "revert",
-            message: plan.summary(),
+            message: plan.summary(history),
             confirmed: false,
             kind: ConfirmKind::Revert {
                 boundary_seq,
                 files: plan.files(),
+                history,
+                // Showing the outside edits is the confirmation the engine
+                // gates on, so the dialog is what turns the gate off.
+                force: !plan.conflicts.is_empty(),
             },
         })
     }
@@ -2331,9 +2345,13 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
                 ConfirmKind::Revert {
                     boundary_seq,
                     files,
+                    history,
+                    force,
                 } => ConfirmKind::Revert {
                     boundary_seq: *boundary_seq,
                     files: *files,
+                    history: *history,
+                    force: *force,
                 },
                 ConfirmKind::RemoveKey { provider, label } => ConfirmKind::RemoveKey {
                     provider: provider.clone(),
@@ -3192,13 +3210,13 @@ mod tests {
         assert!(!confirm.confirmed, "the safe answer starts focused");
 
         let plan = crate::session::RevertPlan::default();
-        let revert = Dialog::confirm_revert(4, &plan);
+        let revert = Dialog::confirm_revert(4, &plan, true);
         let Dialog::Confirm(confirm) = &revert else {
             panic!("a revert asks first");
         };
         assert_eq!(
             confirm.message,
-            plan.summary(),
+            plan.summary(true),
             "the prompt is the engine's own plan, not a generic warning"
         );
         assert!(!confirm.confirmed);
@@ -3213,7 +3231,7 @@ mod tests {
             "available": false,
             "reason": "no-file-snapshot"
         }));
-        let revert = Dialog::confirm_revert(4, &plan);
+        let revert = Dialog::confirm_revert(4, &plan, true);
         let Dialog::Confirm(confirm) = &revert else {
             panic!("a revert asks first");
         };

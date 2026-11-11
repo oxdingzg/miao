@@ -523,9 +523,16 @@ impl RevertPlan {
     }
 
     /// One sentence for the confirm dialog. The dialog renders a single
-    /// wrapped line, so this stays a paragraph rather than a list.
-    pub fn summary(&self) -> String {
-        let head = "Revert to this message: it and everything after it leave the transcript.";
+    /// wrapped line, so this stays a paragraph rather than a list. `history`
+    /// says whether the transcript is rewound as well: a code-only revert must
+    /// never claim the conversation leaves.
+    pub fn summary(&self, history: bool) -> String {
+        let head = match history {
+            true => "Revert to this message: it and everything after it leave the transcript.",
+            false => {
+                "Revert this Session's file changes to this boundary: the transcript stays as it is."
+            }
+        };
         if !self.available {
             return format!(
                 "{head} The Session recorded no file changes at this boundary, so the workspace stays as it is. Shell commands and other side effects cannot be undone."
@@ -1562,7 +1569,7 @@ mod tests {
             "conflicts": [{ "path": "a.txt", "action": "restore", "disk": "modified" }]
         }));
         assert!(plan.files());
-        let summary = plan.summary();
+        let summary = plan.summary(true);
         assert!(summary.contains("Restore 2 file(s), remove 1"));
         assert!(summary.contains("a.txt (modified)"), "got {summary}");
         assert!(summary.contains("cannot be undone"), "got {summary}");
@@ -1575,7 +1582,7 @@ mod tests {
             "reason": "no-file-snapshot"
         }));
         assert!(!plan.files(), "the engine would refuse a file revert");
-        assert!(plan.summary().contains("workspace stays as it is"));
+        assert!(plan.summary(true).contains("workspace stays as it is"));
     }
 
     #[test]
@@ -1586,7 +1593,7 @@ mod tests {
             "available": false,
             "reason": "no-file-snapshot"
         }));
-        let summary = plan.summary();
+        let summary = plan.summary(true);
         assert!(
             summary.contains("Shell commands and other side effects cannot be undone."),
             "got {summary}"
@@ -1605,7 +1612,7 @@ mod tests {
             "restore": ["a.txt"],
             "remove": []
         }));
-        let summary = plan.summary();
+        let summary = plan.summary(true);
         assert!(
             summary.contains("Shell commands and other side effects cannot be undone."),
             "got {summary}"
@@ -1614,6 +1621,39 @@ mod tests {
             !summary.contains("no file changes"),
             "a file boundary must not claim the workspace stays as it is: {summary}"
         );
+    }
+
+    #[test]
+    fn a_code_only_revert_says_the_transcript_stays() {
+        // HIS-03: the third boundary. The same file plan, a prompt that does
+        // not claim the conversation leaves, and the side-effect disclaimer
+        // that no boundary can lift.
+        let plan = RevertPlan::from_value(&json!({
+            "available": true,
+            "boundary_seq": 8,
+            "restore": ["a.txt"],
+            "remove": [],
+            "conflicts": []
+        }));
+        let summary = plan.summary(false);
+        assert!(
+            summary.contains("the transcript stays as it is"),
+            "got {summary}"
+        );
+        assert!(
+            !summary.contains("leave the transcript"),
+            "a code-only revert must not claim the conversation is rewound: {summary}"
+        );
+        assert!(summary.contains("Restore 1 file(s), remove 0"), "got {summary}");
+        assert!(
+            summary.contains("Shell commands and other side effects cannot be undone."),
+            "got {summary}"
+        );
+        // The combined boundary keeps saying the opposite, so the two cannot be
+        // confused for one another.
+        assert!(plan
+            .summary(true)
+            .contains("it and everything after it leave the transcript"));
     }
 
     #[test]
