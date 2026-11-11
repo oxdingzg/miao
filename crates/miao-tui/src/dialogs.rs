@@ -3423,7 +3423,7 @@ mod tests {
         ));
         // The editor itself is a text dialog: it takes keys and has a title, so
         // the generic renderer paints it like the other prompts.
-        let mut editor = Dialog::schedule_edit("cron", "c1");
+        let editor = Dialog::schedule_edit("cron", "c1");
         assert_eq!(editor.title(), "edit schedule");
         assert!(editor.rename_input().is_some());
     }
