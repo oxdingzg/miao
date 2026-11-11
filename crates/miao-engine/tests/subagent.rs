@@ -1870,3 +1870,311 @@ async fn recovery_leaves_finished_subagents_alone() {
     assert_eq!(after[0]["status"], "completed");
     assert_eq!(after[0]["text"], "ok");
 }
+
+/// AGT-06: a side question is about work that is already in progress, so the
+/// branch starts from a copy of the mainline's history instead of being told
+/// about it again. The provider tells the two roles apart by what each Session
+/// was asked: the parent is asked to start the mainline and then to ask the side
+/// question, while the child is asked the question itself and answers with
+/// whether the mainline's marker was already in its context. The question never
+/// names the marker, so the copy is the only way the child can know it.
+struct Exploring {
+    explore: bool,
+    background: bool,
+    turns: Option<u32>,
+}
+
+#[async_trait]
+impl Provider for Exploring {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let texts = |role: &str| -> Vec<String> {
+            request
+                .messages
+                .iter()
+                .filter(|message| message.role == role)
+                .flat_map(|message| message.content.as_array().cloned().unwrap_or_default())
+                .filter_map(|part| part["text"].as_str().map(str::to_owned))
+                .collect()
+        };
+        // The parent's own prompt stays the newest text part after the tool
+        // result arrives, so the result is what says the delegation already
+        // happened: without it this would delegate on every turn.
+        let has_result = request.messages.iter().any(|message| {
+            message
+                .content
+                .as_array()
+                .is_some_and(|parts| parts.iter().any(|part| part["type"] == "tool_result"))
+        });
+        let last_user = texts("user").pop().unwrap_or_default();
+        if last_user.contains("does the ledger parse") {
+            // The mainline's marker is what its own turn *answered*, so the copy
+            // carries it in an assistant message: looking only at user prompts
+            // would report the copy missing for every branch, including a
+            // correct one.
+            let present = ["user", "assistant"].iter().any(|role| {
+                texts(role)
+                    .iter()
+                    .any(|text| text.contains("mainline marker"))
+            });
+            let answer = if present {
+                "context present"
+            } else {
+                "context absent"
+            };
+            return Ok(Reply {
+                content: json!([{"type":"text","text":answer}]),
+                usage: json!({}),
+                needs_tools: false,
+            });
+        }
+        if last_user.contains("ask the side question") && !has_result {
+            let mut input = json!({
+                "prompt": "does the ledger parse",
+                "explore": self.explore,
+                "background": self.background,
+            });
+            if let Some(turns) = self.turns {
+                input["budget"] = json!({"max_turns": turns});
+            }
+            return Ok(Reply {
+                content: json!([{"type":"tool_use","id":"side","name":"task","input":input}]),
+                usage: json!({}),
+                needs_tools: true,
+            });
+        }
+        Ok(Reply {
+            content: json!([{"type":"text","text":"mainline marker: the ledger has three rows"}]),
+            usage: json!({}),
+            needs_tools: false,
+        })
+    }
+}
+
+/// Run one mainline turn, then ask the side question on top of it. Returns the
+/// parent's store, the branch id, and the two events that describe the branch.
+async fn explore_run(provider: Exploring) -> (Store, String, Value) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(provider),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    for (input_id, prompt) in [
+        ("one", "start the main line"),
+        ("two", "ask the side question"),
+    ] {
+        runtime
+            .admit(
+                Input {
+                    agent_references: Default::default(),
+                    command: None,
+                    session_id: "parent".into(),
+                    input_id: input_id.into(),
+                    prompt: prompt.into(),
+                    delivery: Delivery::Steer,
+                },
+                true,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let finished = store
+                    .events("parent", 0, 500)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .filter(|event| event.kind == "run.finished")
+                    .count();
+                let expected = if input_id == "one" { 1 } else { 2 };
+                if finished >= expected {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the mainline turn finished");
+    }
+    // A branch settles on the delegating Session's journal either way: a
+    // synchronous delegation is absent from `subagents`, which lists only the
+    // background ones, so the stop event is what both shapes share.
+    let (start, stop) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let events = store.events("parent", 0, 500).await.unwrap();
+            let Some(start) = events.iter().find(|event| event.kind == "subagent_start") else {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                continue;
+            };
+            let id = start.data["subagent_id"].as_str().unwrap_or_default();
+            let settled = events.iter().find(|event| {
+                event.kind == "subagent_stop" && event.data["subagent_id"].as_str() == Some(id)
+            });
+            match settled {
+                Some(stop) => return (start.data.clone(), stop.data.clone()),
+                None => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+            }
+        }
+    })
+    .await
+    .expect("the branch settled");
+    let child = start["subagent_id"].as_str().unwrap().to_string();
+    runtime.shutdown().await;
+    (store, child, json!({"start": start, "stop": stop}))
+}
+
+/// The branch is a copy of the mainline, so the question can be about work that
+/// is already done here without restating it, and the answer comes back through
+/// the call that asked for it. A plain delegation of the same question cannot
+/// answer at all, which is what makes the copy the load-bearing part.
+#[tokio::test]
+async fn an_exploration_branch_answers_from_the_mainline_without_restating_it() {
+    let (store, child, reported) = explore_run(Exploring {
+        explore: true,
+        background: false,
+        turns: None,
+    })
+    .await;
+    let point = store.lineage_point(&child).await.unwrap();
+    assert!(
+        point.is_some_and(|point| point > 0),
+        "the branch starts at a closed boundary of the mainline, not empty: {point:?}"
+    );
+    assert_eq!(
+        reported["start"]["forked_at"].as_u64(),
+        point,
+        "the delegation records the boundary it copied"
+    );
+    assert_eq!(reported["start"]["explore"], json!(true));
+    let child_history = serde_json::to_string(&store.history(&child).await.unwrap()).unwrap();
+    assert!(
+        child_history.contains("mainline marker: the ledger has three rows"),
+        "the copy carries the mainline's own work: {child_history}"
+    );
+    assert_eq!(
+        reported["stop"]["text"], "context present",
+        "the branch answered from the copy: {reported}"
+    );
+    let parent_history = serde_json::to_string(&store.history("parent").await.unwrap()).unwrap();
+    assert!(
+        parent_history.contains("context present"),
+        "the conclusion enters the mainline through the call that asked for it: {parent_history}"
+    );
+
+    let (store, child, reported) = explore_run(Exploring {
+        explore: false,
+        background: false,
+        turns: None,
+    })
+    .await;
+    assert_eq!(
+        store.lineage_point(&child).await.unwrap(),
+        Some(0),
+        "a plain delegation still forks empty"
+    );
+    let child_history = serde_json::to_string(&store.history(&child).await.unwrap()).unwrap();
+    assert!(
+        !child_history.contains("mainline marker"),
+        "a plain child is told nothing about this Session: {child_history}"
+    );
+    assert_eq!(
+        reported["stop"]["text"], "context absent",
+        "and cannot answer a question about it: {reported}"
+    );
+}
+
+/// A side question is bounded as one: it gets the exploration allowance rather
+/// than the working-session one, and a budget the parent states still wins,
+/// because asking for more is a decision this default must not overrule.
+#[tokio::test]
+async fn an_exploration_branch_is_bounded_as_a_side_question() {
+    let (store, child, _) = explore_run(Exploring {
+        explore: true,
+        background: false,
+        turns: None,
+    })
+    .await;
+    let boundary = store
+        .events(&child, 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "delegation.boundary")
+        .expect("the branch records its own boundary")
+        .data;
+    assert_eq!(
+        boundary["max_turns"],
+        json!(miao_engine::subagent::EXPLORE_TURN_LIMIT),
+        "a side question does not get a working session's allowance: {boundary}"
+    );
+    assert_eq!(boundary["source"], "explore", "{boundary}");
+
+    let (store, child, _) = explore_run(Exploring {
+        explore: true,
+        background: false,
+        turns: Some(3),
+    })
+    .await;
+    let boundary = store
+        .events(&child, 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "delegation.boundary")
+        .expect("the branch records its own boundary")
+        .data;
+    assert_eq!(boundary["max_turns"], json!(3), "{boundary}");
+    assert_eq!(boundary["source"], "parent", "{boundary}");
+}
+
+/// A background branch is answered when it is asked for and never on its own:
+/// settling admits no input to the mainline, so dropping it needs no cleanup and
+/// the mainline cannot start running again because a side question finished.
+#[tokio::test]
+async fn an_exploration_branch_leaves_the_mainline_to_finish_its_own_work() {
+    let (store, child, reported) = explore_run(Exploring {
+        explore: true,
+        background: true,
+        turns: None,
+    })
+    .await;
+    assert_eq!(reported["stop"]["text"], "context present", "{reported}");
+    let parent_history = serde_json::to_string(&store.history("parent").await.unwrap()).unwrap();
+    assert!(
+        !parent_history.contains("context present"),
+        "the conclusion stays in the branch until it is asked for: {parent_history}"
+    );
+    let admitted = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == "input.admitted")
+        .count();
+    assert_eq!(
+        admitted, 2,
+        "settling a branch admits nothing: only the two prompts the operator sent"
+    );
+    let runs = store
+        .events("parent", 0, 500)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == "run.started")
+        .count();
+    assert_eq!(runs, 2, "a settled branch does not start a run of its own");
+    assert_eq!(
+        store.lineage_parent(&child).await.unwrap().as_deref(),
+        Some("parent"),
+        "the branch belongs to the mainline it copied"
+    );
+}
