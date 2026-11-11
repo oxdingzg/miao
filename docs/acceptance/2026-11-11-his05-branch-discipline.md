@@ -1,11 +1,15 @@
 # Acceptance record — HIS-05 closed-loop review and verification receipts: branch discipline
 
 Item: `HIS-05` (#1985). Tree: the pull-request head for branch `feat/issue1985`
-(PR #2852), commit `86165a356c`, parent `origin/main` `3fdf81b016`. Commands ran from
+(PR #2852), commit `9e37eda9c8`, parent `origin/main` `3fdf81b016`. Commands ran from
 `crates/miao-engine` on the macOS build host in a synced copy of this tree,
 `cargo 1.99.1`, debug profile, and the same tree's CI run
-[`42931496869`](https://github.com/oxdingzg/miao/actions/runs/42931496869) is green.
-A reviewer runs the same commands from the same directory anywhere.
+[`42933518854`](https://github.com/oxdingzg/miao/actions/runs/42933518854) is green.
+A reviewer runs the same commands from the same directory anywhere. The commit that
+carries this record changes only this file and one comment, so the run for the branch tip
+is reported on the pull request rather than re-recorded here; the branch was afterwards
+rebased onto `origin/main` with no conflicts, so the tree those commands ran on is the
+patch this pull request carries.
 
 The earlier record `2026-11-11-his05-verification-receipts.md` (#2846) accepted the
 `review` state on every completion receipt and named one part of the third criterion as
@@ -30,9 +34,10 @@ to execute, which branch a landing action would move:
 The permission gate (`crates/miao-engine/src/runtime.rs`, the `Decision::Ask` arm) refuses
 a finding that lands on `main` or `master` and records
 `permission_denied {reason: "branch_discipline", action, target}` instead of raising an
-approval prompt. A configured allow rule and a saved grant both return before that point,
-because an explicit standing authorization is not the thing the engine is substituting
-for.
+approval prompt. A configured allow rule and a projected saved allow rule both return before
+that point, because an explicit standing authorization is not the thing the engine is
+substituting for; the floor deliberately precedes the durable-grant check, so a grant
+recorded before it existed cannot lift it either.
 
 A target the engine cannot observe keeps its ordinary ask, so an unreadable checkout can
 never fabricate a refusal: a detached checkout, a linked worktree (whose `.git` is a file
@@ -88,7 +93,7 @@ What this criterion still does not claim:
 | --- | --- |
 | implementation PR | #2852 (`feat/issue1985`), body opens `Implements HIS-05 (#1985): …` |
 | offline record | this file, with the receipts record it builds on |
-| CI tree | run [`42931496869`](https://github.com/oxdingzg/miao/actions/runs/42931496869) on `86165a356c` |
+| CI tree | run [`42933518854`](https://github.com/oxdingzg/miao/actions/runs/42933518854) on `9e37eda9c8` |
 | target version | none claimed: no release contains this tree yet |
 | quality / cost / duration | none claimed: this change optimises nothing, so there is no measurement to attach |
 | live client acceptance | not exercised here — see below |
