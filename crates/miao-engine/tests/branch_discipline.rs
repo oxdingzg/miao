@@ -69,13 +69,17 @@ fn input() -> Input {
     }
 }
 
-/// A checkout whose `HEAD` is `branch`, which is all branch discipline reads.
-fn checkout(branch: &str) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    let git = dir.path().join(".git");
+/// A workspace whose checkout `HEAD` is `branch`, which is all branch
+/// discipline reads. A process-enabled runtime keeps its database outside the
+/// workspace, so the directory that holds it is the one returned with the
+/// workspace.
+fn checkout(branch: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("workspace");
+    let git = workspace.join(".git");
     std::fs::create_dir_all(&git).unwrap();
     std::fs::write(git.join("HEAD"), format!("ref: refs/heads/{branch}\n")).unwrap();
-    dir
+    (root, workspace)
 }
 
 async fn kinds(store: &Store) -> Vec<String> {
@@ -117,12 +121,12 @@ async fn wait_for(store: &Store, kind: &str) -> bool {
 /// branch it would have moved.
 #[tokio::test]
 async fn a_push_that_names_the_protected_branch_is_refused_without_a_prompt() {
-    let dir = checkout("feat/topic");
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let (root, workspace) = checkout("feat/topic");
+    let store = Store::open(root.path().join("engine.db")).await.unwrap();
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Shell("git push origin main".into())),
-        Tools::new(dir.path()).await.unwrap(),
+        Tools::new(&workspace).await.unwrap(),
         policy(),
     )
     .await
@@ -155,12 +159,12 @@ async fn a_push_that_names_the_protected_branch_is_refused_without_a_prompt() {
 /// the refusal follows the observed branch rather than the command shape.
 #[tokio::test]
 async fn the_same_push_from_a_topic_branch_stays_an_explicit_ask() {
-    let dir = checkout("feat/topic");
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let (root, workspace) = checkout("feat/topic");
+    let store = Store::open(root.path().join("engine.db")).await.unwrap();
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Shell("git push origin feat/topic".into())),
-        Tools::new(dir.path()).await.unwrap(),
+        Tools::new(&workspace).await.unwrap(),
         policy(),
     )
     .await
@@ -192,12 +196,12 @@ async fn the_same_push_from_a_topic_branch_stays_an_explicit_ask() {
 /// words are refused on the protected branch and asked for anywhere else.
 #[tokio::test]
 async fn a_bare_push_is_judged_by_the_recorded_branch() {
-    let dir = checkout("main");
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let (root, workspace) = checkout("main");
+    let store = Store::open(root.path().join("engine.db")).await.unwrap();
     let runtime = Runtime::with_policy(
         store.clone(),
         Arc::new(Shell("git push".into())),
-        Tools::new(dir.path()).await.unwrap(),
+        Tools::new(&workspace).await.unwrap(),
         policy(),
     )
     .await
