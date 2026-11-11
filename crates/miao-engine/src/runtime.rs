@@ -3215,9 +3215,12 @@ async fn execute(
 ) -> Result<(), Error> {
     let mut step = 0;
     let mut allowance = inner.policy().max_provider_turns();
-    // Billed tokens this prompt has spent. The soft budget is per prompt, so
-    // the same external admission that refills the allowance resets it.
-    let mut budget_spent = 0u64;
+    // What this prompt has been billed: the sum of the input and output tokens
+    // the provider reported over its turns, and how many turns carried them. It
+    // is a billing tally and not context occupancy (#2870), and it is per prompt
+    // — the same external admission that refills the turn allowance resets it.
+    let mut billed_tokens_spent = 0u64;
+    let mut billed_turns = 0u64;
     let mut reset_allowance = true;
     let mut input_corrections = 0;
     let mut transport_continuations = 0;
@@ -3351,7 +3354,8 @@ async fn execute(
         // allowance, even if that input also switched agents. Internal loop
         // continuations never reset it.
         if reset_allowance {
-            budget_spent = 0;
+            billed_tokens_spent = 0;
+            billed_turns = 0;
         }
         allowance = if reset_allowance {
             policy.max_provider_turns()
@@ -3374,14 +3378,24 @@ async fn execute(
             allowance = Some(turns.min(allowance.unwrap_or(u32::MAX)));
         }
         reset_allowance = false;
-        // The soft budget is advisory: at the wrap-up share the model is asked
-        // to close the turn, and once spent the request goes text-only so the
-        // run pauses with a summary instead of stopping mid-operation. Same
-        // thresholds and strings as the TS runner.
-        let budget = manifest.and_then(|manifest| manifest.budget);
-        let budget_exhausted = budget.is_some_and(|budget| budget_spent >= budget);
-        let budget_wrap_up = !budget_exhausted
-            && budget.is_some_and(|budget| budget_spent >= budget.saturating_mul(8) / 10);
+        // The provider-billed token allowance an agent manifest may state is
+        // advisory and per prompt: at the wrap-up share the model is asked to
+        // close the turn, and once spent the request goes text-only so the run
+        // pauses with a summary instead of stopping mid-operation.
+        //
+        // This tally is billing, not context occupancy (#2870): `billed_tokens`
+        // sums input and output over every provider turn of the prompt, so a long
+        // orchestration run crosses a modest allowance while its window is nearly
+        // empty. Every note and pause below names the measurement and prints the
+        // window's own figures beside it, which the context trigger already
+        // computes for the compaction decision.
+        let billed_allowance = manifest.and_then(|manifest| manifest.budget);
+        let billed_allowance_spent =
+            billed_allowance.is_some_and(|allowance| billed_tokens_spent >= allowance);
+        let billed_allowance_near = !billed_allowance_spent
+            && billed_allowance
+                .is_some_and(|allowance| billed_tokens_spent >= allowance.saturating_mul(8) / 10);
+
         if allowance == Some(0) {
             // Exhausting the allowance pauses the drain; it is not a provider
             // failure. End the run cleanly and leave a visible history fact so
@@ -3410,8 +3424,8 @@ async fn execute(
         // request carries the TS runner's step wrap-up, so the transcript ends
         // with a summary instead of stopping mid-operation. Internal
         // continuations are withheld for the same reason.
-        let final_turn = allowance == Some(0) && !budget_exhausted;
-        let text_only = budget_exhausted || final_turn;
+        let final_turn = allowance == Some(0) && !billed_allowance_spent;
+        let text_only = billed_allowance_spent || final_turn;
         let binding = match (inner.store.model_selection(session).await?, agent.as_ref()) {
             (Some(selection), _) => Some(selection),
             (None, Some((manifest, _))) => manifest.model.clone(),
@@ -3658,6 +3672,10 @@ async fn execute(
         );
         let learned = inner.learned_limits(model.as_deref()).await;
         let mut pressure = None;
+        // The token count at which the compaction trigger would run. A pause that
+        // spends a billing allowance prints it beside the window's own figures, so
+        // that tally cannot be read as context occupancy (#2870).
+        let mut compaction_threshold = None;
         let bound = match resolve_limits(configured, declared, learned) {
             Some(limits) => {
                 let counted = match inner.store.context_anchor(session).await? {
@@ -3673,6 +3691,7 @@ async fn execute(
                     None => None,
                 };
                 pressure = counted.map(|counted| (limits.window, counted));
+                compaction_threshold = Some(limits.budget().threshold()).filter(|at| *at > 0);
                 bound_budget(
                     limits.window,
                     limits.headroom,
@@ -3827,11 +3846,11 @@ async fn execute(
         };
         // Wrap-up guidance rides the request after the durable history as an
         // assistant note, matching the TS runner's message shape.
-        if let Some(note) = if budget_exhausted {
+        if let Some(note) = if billed_allowance_spent {
             Some(crate::history::BUDGET_EXHAUSTED_PROMPT)
         } else if final_turn {
             Some(crate::history::MAX_STEPS_PROMPT)
-        } else if budget_wrap_up {
+        } else if billed_allowance_near {
             Some(crate::history::BUDGET_WRAP_UP_NOTE)
         } else {
             None
@@ -4336,7 +4355,9 @@ command: None,
                 json!({"run_id":run,"step":step,"usage":reply.usage,"model":model.as_deref(),"route":route,"cost":cost,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?,"context_window":pressure.map(|(window,_)|json!(window)),"context_tokens":pressure.map(|(_,counted)|json!(counted))}),
             )
             .await?;
-        budget_spent = budget_spent.saturating_add(crate::budget::billed_tokens(&reply.usage));
+        billed_tokens_spent =
+            billed_tokens_spent.saturating_add(crate::budget::billed_tokens(&reply.usage));
+        billed_turns = billed_turns.saturating_add(1);
         if !budgets.is_empty() {
             inner
                 .store
@@ -5315,8 +5336,12 @@ command: None,
                     .filter(|task| task["status"] == "running")
                     .filter_map(|task| task["id"].as_str().map(str::to_owned))
                     .collect();
+                // A pause names the bound that actually fired. The provider turn
+                // allowance, the provider-billed token allowance, and the context
+                // window are three different measures (#2870), so a drained turn
+                // count is recorded as "turns" rather than as a spent budget.
                 let reason = if allowance == Some(0) {
-                    Some("budget")
+                    Some("turns")
                 } else if !waiting_jobs.is_empty() || !waiting_tasks.is_empty() {
                     Some("waiting")
                 } else if goal_stalls >= 2 && waited >= min_no_progress_secs {
@@ -5341,17 +5366,34 @@ command: None,
                     // happens now. A pause that only reports "no progress" reads
                     // like a background failure the operator has to diagnose.
                     let pause = match reason {
-                        "budget" => format!(
-                            "Task paused: the provider turn limit ({} turns) is used up after {} continuation turns. Nothing is running now and it will not resume on its own. Send a message to continue with a fresh allowance.",
+                        "turns" => format!(
+                            "Task paused: the provider turn allowance for this prompt ({} turns) is used up after {} continuation turns. This is a count of turns, not a token budget and not a context limit, so the window is unaffected. Nothing is running now and it will not resume on its own. Send a message to continue with a fresh allowance.",
                             allowance.unwrap_or(0),
                             goal_iterations
                         ),
                         "waiting" => {
-                            let ids = waiting_jobs.join(", ");
+                            // A running delegated subagent is not a background
+                            // job: it finishes into its own notification, and an
+                            // operator told "background job(s)" would go looking
+                            // for a job that does not exist.
+                            let mut pending: Vec<String> = Vec::new();
+                            if !waiting_jobs.is_empty() {
+                                pending.push(format!(
+                                    "{} background job(s) still running ({})",
+                                    waiting_jobs.len(),
+                                    waiting_jobs.join(", ")
+                                ));
+                            }
+                            if !waiting_tasks.is_empty() {
+                                pending.push(format!(
+                                    "{} delegated subagent task(s) still running ({})",
+                                    waiting_tasks.len(),
+                                    waiting_tasks.join(", ")
+                                ));
+                            }
                             format!(
-                                "Task paused: {} background job(s) still pending ({}). The session resumes automatically as each one finishes — no action needed.",
-                                waiting_jobs.len(),
-                                ids
+                                "Task paused: {}. The session resumes automatically as each one finishes — no action needed.",
+                                pending.join(" and ")
                             )
                         }
                         _ => format!(
@@ -5599,20 +5641,18 @@ command: None,
         // the surface was withheld, so none of them may run. The pause is
         // visible in history and the next external input re-arms it.
         if (text_only || !reply.needs_tools) && promoted.is_empty() {
-            if budget_exhausted {
+            if let Some(allowance) = billed_allowance.filter(|_| billed_allowance_spent) {
                 // The budget counts tokens billed across the prompt's turns,
                 // which is not how full the context window is: an orchestration
                 // prompt can bill tens of millions while its context stays well
                 // inside a large window. Naming the quantity keeps a spent
-                // billing cap from reading as an exhausted context.
-                let note = match budget {
-                    Some(budget) => format!(
-                        "Task paused: this prompt's soft billed-token budget is spent ({budget_spent} tokens billed of {budget}). That is a cumulative billing cap, not the context window — the conversation may still sit well inside the model's window. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget."
-                    ),
-                    None => format!(
-                        "Task paused: this prompt's soft billed-token budget is spent ({budget_spent} tokens billed). That is a cumulative billing cap, not the context window — the conversation may still sit well inside the model's window. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget."
-                    ),
-                };
+                // billing cap from reading as an exhausted context, and the
+                // window's own figures beside it say what the window actually
+                // holds against the threshold compaction plans against (#2870).
+                let note = format!(
+                    "Task paused: this prompt's soft billed-token budget is spent ({billed_tokens_spent} tokens billed over {billed_turns} provider turns against a cap of {allowance}). That is a cumulative billing cap, not the context window: {}. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget.",
+                    crate::context_trigger::window_note(pressure, compaction_threshold)
+                );
                 inner
                     .store
                     .inject(session, &format!("prompt-budget-{run}"), &note, "engine")

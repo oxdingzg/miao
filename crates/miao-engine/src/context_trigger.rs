@@ -75,6 +75,29 @@ impl Budget {
     }
 }
 
+/// How the context window stands, in the terms the compaction trigger plans
+/// against.
+///
+/// A pause that spends a billing allowance prints this beside that tally: the
+/// allowance is the sum of what the provider charged on every turn of a prompt,
+/// while occupancy is what the next request would carry, so a figure that grows
+/// with the length of a prompt must never be read as a nearly full window
+/// (#2870). An unknown occupancy or threshold is said out loud instead of being
+/// left out, because silence reads as "the window is not the reason" only if the
+/// reader already knows that no copy of the note can confirm it.
+pub fn window_note(occupancy: Option<(u64, u64)>, threshold: Option<u64>) -> String {
+    let Some((window, counted)) = occupancy else {
+        return "the engine has no measured occupancy for this window".into();
+    };
+    let percent = counted.saturating_mul(100) / window.max(1);
+    match threshold {
+        Some(threshold) => format!(
+            "the context window carries {counted} of {window} tokens ({percent}%), against a compaction threshold of {threshold} tokens"
+        ),
+        None => format!("the context window carries {counted} of {window} tokens ({percent}%)"),
+    }
+}
+
 /// Conservative char-based estimate for messages a provider has not counted
 /// yet. Deliberately coarse (≈3 chars/token, rounded up) so the trigger errs
 /// toward compacting; gate ② replaces it with the provider's own count.

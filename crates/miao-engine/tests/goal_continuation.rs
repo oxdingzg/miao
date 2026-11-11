@@ -547,8 +547,9 @@ async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the
             json!([{"type":"tool_use","id":"audit-run","name":"bash","input":{"command":"true"}}]),
         )],
     });
-    // The leash keeps the retired-guard failure fast: it spends the whole
-    // allowance and closes as "budget" instead of parking as "no-progress".
+    // The leash keeps the retired-guard failure fast: it spends the whole turn
+    // allowance and closes on that allowance instead of parking as
+    // "no-progress".
     let runtime = Runtime::with_policy(
         store.clone(),
         provider.clone(),
@@ -581,9 +582,17 @@ async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the
             .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "no-progress"),
         "an idle Session must pause as no-progress, not spend its allowance"
     );
+    // A drained turn count is recorded as "turns", never as a spent budget
+    // (#2870), and the allowance closes a drain with its own note: neither may
+    // appear in a run that paused for no-progress.
     assert!(!events
         .iter()
-        .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "budget"));
+        .any(|event| event.kind == "loop.stopped" && event.data["reason"] == "turns"));
+    assert!(!events.iter().any(|event| {
+        event.data["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("provider turn allowance for this prompt"))
+    }));
     // The tool turn, two idling replies, and the reply that answers the pause.
     assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
     runtime.shutdown().await;

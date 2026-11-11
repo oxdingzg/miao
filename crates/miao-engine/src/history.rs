@@ -179,19 +179,25 @@ pub(crate) fn restore_note() -> String {
         .to_owned()
 }
 
-/// Request-only guidance once an agent's soft per-prompt token budget is
-/// nearly spent, mirrored from the TS runner so the model closes the turn
-/// itself instead of being cut off mid-operation.
-pub(crate) const BUDGET_WRAP_UP_NOTE: &str = "PROMPT BUDGET WRAP-UP
+/// Request-only guidance once the agent manifest's soft billed-token budget for
+/// the prompt is nearly spent, so the model closes the turn itself instead of
+/// being cut off mid-operation.
+///
+/// That budget counts tokens **billed** across the prompt's turns, which is a
+/// different quantity from how full the context window is (#2870): a long
+/// orchestration prompt can spend a multi-million-token budget while its context
+/// stays well inside the window. The note says so, because a model that read it
+/// as a full window would summarise history that is not at risk.
+pub(crate) const BUDGET_WRAP_UP_NOTE: &str = "BILLED TOKEN BUDGET WRAP-UP
 
-The token budget for this prompt is nearly exhausted. Start wrapping up now:
+The soft budget over the tokens billed for this prompt is nearly spent. That figure adds up what the provider charged on every turn of this prompt; it is not how full the context window is, which the engine measures separately and compacts on its own threshold. Start wrapping up now:
 1. Finish only the operation currently in progress; do not start new investigations or batches of tool calls
 2. Prefer targeted reads over broad exploration
 3. End with a summary of what was accomplished, the current state, and the concrete remaining work
 
 A new user message grants a fresh budget, so unfinished work can continue there.";
 
-/// Request-only guidance once the budget is spent: the turn stays text-only so
+/// Request-only guidance once the allowance is spent: the turn stays text-only so
 /// the transcript closes with a summary before the run pauses.
 /// The note a run carries once the agent manifest's soft per-prompt budget is
 /// spent. That budget counts tokens **billed** across the prompt's turns, which
@@ -216,7 +222,7 @@ Response must include:
 - List of any remaining tasks that were not completed
 - Recommendations for what should be done next
 
-A new user message grants a fresh budget. Any attempt to use tools is a critical violation. Respond with text ONLY.";
+A new user message grants a fresh allowance. Any attempt to use tools is a critical violation. Respond with text ONLY.";
 
 /// Request-only guidance on the last provider turn an agent's step allowance
 /// permits, mirrored from the TS runner: the step is spent closing the prompt
