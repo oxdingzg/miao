@@ -5367,9 +5367,20 @@ command: None,
                     // completion notifications wake the drain on their own;
                     // injecting the continuation prompt now would only burn
                     // turns re-reading an unchanged todo list.
-                    let background_active = inner.store.jobs(session).await?.iter().any(|job| {
-                        matches!(job["state"].as_str(), Some("queued") | Some("running"))
-                    });
+                    // In-flight background work means the model has nothing
+                    // to do until it finishes: job completion admits an input
+                    // that wakes this drain, and a finishing subagent does the
+                    // same. Re-injecting the continuation prompt while a child
+                    // still runs only burns turns re-reading an unchanged todo
+                    // list — the waiting loop the #2862 analysis measured.
+                    let background_active = {
+                        let jobs = inner.store.jobs(session).await?;
+                        let jobs_live = jobs.iter().any(|job| {
+                            matches!(job["state"].as_str(), Some("queued") | Some("running"))
+                        });
+                        let tasks = inner.store.subagents(session).await?;
+                        jobs_live || tasks.iter().any(|task| task["status"] == "running")
+                    };
                     if background_active {
                         continue;
                     }
