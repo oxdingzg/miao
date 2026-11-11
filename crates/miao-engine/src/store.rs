@@ -1796,6 +1796,49 @@ impl Store {
         }).await
     }
 
+    /// Tell a delegating Session that a background child failed.
+    ///
+    /// A completed child stays silent on purpose: AGT-06 measured that a settled
+    /// background task admits no input, and its answer is read on demand through
+    /// `task_result`. A **failed** child is the opposite case — nothing will ever
+    /// arrive to read, and an orchestration that only polls looks stalled. The
+    /// notice mirrors the one a finished background job admits, so one shape
+    /// covers both kinds of background work.
+    pub async fn admit_subagent_failure(
+        &self,
+        parent: &str,
+        child: &str,
+        error: &str,
+    ) -> Result<Option<Admission>, Error> {
+        let parent = parent.to_owned();
+        let child = child.to_owned();
+        let mut text = error.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.chars().count() > 512 {
+            text = text.chars().take(512).collect::<String>() + "…";
+        }
+        self.call(move |conn| {
+            let tx = write_tx(conn)?;
+            let admission = admit_input(
+                &tx,
+                &Input {
+                    agent_references: Default::default(),
+                    command: None,
+                    session_id: parent,
+                    input_id: format!("subagent:{child}:failed"),
+                    prompt: format!(
+                        "Background task {child} failed: {text} Read its stored result with task_result; it does not resume on its own."
+                    ),
+                    delivery: Delivery::Steer,
+                },
+                None,
+                &[],
+            )?;
+            tx.commit()?;
+            Ok(Some(admission))
+        })
+        .await
+    }
+
     pub async fn finish_job(
         &self,
         session: &str,

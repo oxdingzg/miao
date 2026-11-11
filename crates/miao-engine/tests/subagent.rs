@@ -490,6 +490,132 @@ impl Provider for SideQuestion {
     }
 }
 
+/// #2862: a background child that fails is the one settle the delegating
+/// Session has to hear about. A completed child stays silent (AGT-06 pins that);
+/// a failed one admits one notice naming it, so an orchestration that only polls
+/// is not left reading a stalled child as an idle one.
+struct FailingChild {
+    step: AtomicUsize,
+}
+
+#[async_trait]
+impl Provider for FailingChild {
+    async fn stream(
+        &self,
+        request: ModelRequest,
+        _: mpsc::Sender<Value>,
+        _: CancellationToken,
+    ) -> Result<Reply, ProviderError> {
+        let text = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role == "user")
+            .and_then(|message| {
+                message
+                    .content
+                    .as_array()
+                    .and_then(|parts| parts.iter().find_map(|part| part["text"].as_str()))
+            })
+            .unwrap_or("")
+            .to_owned();
+        if text.contains("please fail") {
+            return Err(ProviderError::Transport(
+                "provider HTTP 429 · retry-after: 30s · overloaded".into(),
+            ));
+        }
+        let step = self.step.fetch_add(1, Ordering::SeqCst);
+        let content = match step {
+            0 => {
+                json!([{"type":"tool_use","id":"ask","name":"task","input":{"prompt":"please fail","background":true}}])
+            }
+            _ => json!([{"type":"text","text":"carrying on"}]),
+        };
+        Ok(Reply {
+            content,
+            usage: json!({}),
+            needs_tools: step == 0,
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_failed_background_child_tells_the_delegating_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(FailingChild {
+            step: AtomicUsize::new(0),
+        }),
+        Tools::new(dir.path()).await.unwrap(),
+        policy(true),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "parent".into(),
+                input_id: "one".into(),
+                prompt: "delegate something that fails".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    // The notice is the observable: it arrives only once the child has settled
+    // as failed, so waiting for it also waits for the terminal state.
+    let notice = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let note = store
+                .events("parent", 0, 1000)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|event| {
+                    event.kind == "input.admitted"
+                        && event.data["input_id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .ends_with(":failed")
+                })
+                .map(|event| event.data.clone());
+            if let Some(note) = note {
+                return note;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a failed child tells its parent");
+    let prompt = notice["prompt"].as_str().unwrap_or_default();
+    assert!(prompt.contains("Background task"), "{prompt}");
+    assert!(prompt.contains("failed:"), "{prompt}");
+    assert!(prompt.contains("task_result"), "{prompt}");
+    assert!(
+        prompt.contains("429"),
+        "the child's own words reach the parent: {prompt}"
+    );
+    // And the child's terminal state is readable from the parent's side.
+    let tasks = store.subagents("parent").await.unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["status"], "failed");
+    // The row's own field for the cause is #2882's `message`; what this test
+    // adds is that the parent was *told*, not merely able to look.
+    assert!(
+        tasks[0]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("429"),
+        "the row says why it failed: {tasks:?}"
+    );
+    runtime.shutdown().await;
+}
+
 /// AGT-06: a side question is a background child — its own lineage, billed to
 /// it — so its answer must not appear in the parent's context, and its
 /// completion must not admit an input that continues the parent either. The
