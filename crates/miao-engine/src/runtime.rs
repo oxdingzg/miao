@@ -7113,9 +7113,29 @@ async fn delegate(
         .session_id
         .clone()
         .unwrap_or_else(|| format!("{parent}/sub-{}", uuid::Uuid::new_v4()));
+    // A plain delegation forks empty: the child is handed its work, not this
+    // Session. An exploration branch for a side question is the opposite — the
+    // question is about work already in progress, so the child copies the
+    // history up to a closed boundary and the parent states only the question.
+    // An exact retry reuses the boundary it was created at, because the parent
+    // may have committed more since and a different cursor is a conflict.
+    let fork_at = match inner
+        .store
+        .lineage_point(&child)
+        .await
+        .map_err(|_| ToolError::External("subagent lineage unavailable".into()))?
+    {
+        Some(point) => point,
+        None if task.explore => inner
+            .store
+            .fork_point(parent)
+            .await
+            .map_err(|_| ToolError::External("exploration boundary unavailable".into()))?,
+        None => 0,
+    };
     let fork = inner
         .store
-        .fork(parent, &child, Some(0))
+        .fork(parent, &child, Some(fork_at))
         .await
         .map_err(|_| ToolError::External("subagent session could not be created".into()))?;
     if fork["duplicate"] != true {
@@ -7178,6 +7198,8 @@ async fn delegate(
             crate::events::Lifecycle::SubagentStart.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"background":task.background,
                    "agent":selected.as_ref().map(|agent|agent.name.as_str()).unwrap_or("subagent"),
+                   "explore":task.explore,
+                   "forked_at":fork_at,
                    "description":description}),
         )
         .await
@@ -7203,8 +7225,10 @@ async fn delegate(
         .await
         .map_err(|_| ToolError::External("delegation boundary could not be recorded".into()))?;
 
-    // A child forks empty, so material of the delegating Session reaches it by
-    // reference: each handle is resolved here and injected as a bounded window.
+    // A plain child forks empty, so material of the delegating Session reaches
+    // it by reference: each handle is resolved here and injected as a bounded
+    // window. An exploration branch already holds that history, so a reference
+    // there is only what the caller wants emphasised on top of the copy.
     let references = reference_block(inner, parent, &task.references).await;
     let admission = inner
         .store
@@ -7276,7 +7300,10 @@ async fn delegate(
                 }
             }
         });
-        return Ok(json!({"session_id":child,"background":true,"status":"running"}));
+        return Ok(
+            json!({"session_id":child,"background":true,"status":"running",
+                         "explore":task.explore,"forked_at":fork_at}),
+        );
     }
     let mut result = finish_delegation(
         inner,
@@ -7291,6 +7318,10 @@ async fn delegate(
     )
     .await?;
     result["session_id"] = json!(child);
+    // A side question's answer is the whole return, so the caller is told what
+    // it is holding: a conclusion from a branch, not work done on its behalf.
+    result["explore"] = json!(task.explore);
+    result["forked_at"] = json!(fork_at);
     Ok(result)
 }
 
@@ -7306,7 +7337,11 @@ async fn delegation_boundary(
     context: &Delegation<'_>,
 ) -> Result<ResolvedBoundary, ToolError> {
     let stated_turns = task.budget.as_ref().and_then(|budget| budget.max_turns);
-    let goal_turns = if stated_turns.is_none() {
+    // An exploration branch is a look-aside, not work: its small allowance is
+    // the point, so the parent's goal budget does not inflate it. A budget the
+    // parent states still wins, because a caller that asks for more is making a
+    // decision this default should not overrule.
+    let goal_turns = if stated_turns.is_none() && !task.explore {
         goal_budget_turns(inner, parent).await?
     } else {
         None
@@ -7314,14 +7349,18 @@ async fn delegation_boundary(
     let capped = |turns: u32| turns.min(context.turns_left.unwrap_or(u32::MAX));
     let (max_turns, source) = match (stated_turns, goal_turns) {
         (Some(turns), _) => (Some(capped(turns)), "parent"),
+        (None, _) if task.explore => (Some(capped(crate::subagent::EXPLORE_TURN_LIMIT)), "explore"),
         (None, Some(turns)) => (Some(capped(turns)), "goal"),
         (None, None) => (None, "default"),
     };
-    let wallclock_ms = task
-        .budget
-        .as_ref()
-        .and_then(|budget| budget.wallclock_ms)
-        .map(|ms| ms.min(context.wallclock_left_ms.unwrap_or(u64::MAX)));
+    let wallclock_ms = match task.budget.as_ref().and_then(|budget| budget.wallclock_ms) {
+        Some(ms) => Some(ms.min(context.wallclock_left_ms.unwrap_or(u64::MAX))),
+        None if task.explore => Some(
+            (crate::subagent::EXPLORE_TIME_LIMIT_SECS * 1000)
+                .min(context.wallclock_left_ms.unwrap_or(u64::MAX)),
+        ),
+        None => None,
+    };
     Ok(ResolvedBoundary {
         max_turns,
         wallclock_ms,

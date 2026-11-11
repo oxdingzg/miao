@@ -2127,6 +2127,57 @@ impl Store {
         .await
     }
 
+    /// The boundary a Session was forked at, when it is a fork at all. An exact
+    /// retry of a delegation reconciles against it: the parent may have
+    /// committed more history since the child was created, and forking again at
+    /// a newer boundary would read as a conflicting request for the same child.
+    pub async fn lineage_point(&self, session: &str) -> Result<Option<u64>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT message_seq FROM engine_lineage WHERE session_id=?1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
+    }
+
+    /// The newest boundary of a Session's history that is closed on its own:
+    /// the last message before which every tool call has its result. An
+    /// exploration branch copies that prefix, so its context is the mainline's
+    /// without the work that is still in flight, and a Session that committed
+    /// nothing closed yet has 0 — the empty branch a plain delegation starts
+    /// from.
+    pub async fn fork_point(&self, session: &str) -> Result<u64, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let tx = conn.transaction()?;
+            let watermark: u64 = tx
+                .query_row(
+                    "SELECT next_seq FROM engine_session WHERE id=?1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| Error::Invalid("Session does not exist".into()))?;
+            let mut pending = std::collections::HashSet::new();
+            let point = projected(&tx, &session, watermark, false)?
+                .iter()
+                .try_fold(0u64, |point, message| -> Result<u64, Error> {
+                    track_tools(&mut pending, &message["content"])?;
+                    Ok(match (pending.is_empty(), message["seq"].as_u64()) {
+                        (true, Some(seq)) => seq,
+                        _ => point,
+                    })
+                })?;
+            Ok(point)
+        })
+        .await
+    }
+
     /// A fork may propose only a completed parent prefix at its own cursor.
     /// The provider checks exact wire parameters/history before using the hint.
     /// Proofs live in a side table: the replay-pinned journal never carries them.

@@ -21,6 +21,14 @@ pub const PER_SESSION_LIMIT: usize = 2;
 /// session; an explicit `budget` remains the way to grant more or less.
 pub const TURN_LIMIT: u32 = 96;
 pub const TIME_LIMIT_SECS: u64 = 3600;
+/// A delegation is sized for work the child has to carry: read, implement,
+/// test, iterate. An exploration branch is a look-aside on work that is already
+/// running, and a side question that turns into a working session defeats the
+/// point of asking it aside, so an unbounded exploration branch gets this
+/// smaller allowance instead. A `budget` the parent states still wins: the
+/// ceiling exists to keep the default cheap, not to overrule a decision.
+pub const EXPLORE_TURN_LIMIT: u32 = 12;
+pub const EXPLORE_TIME_LIMIT_SECS: u64 = 300;
 /// A parent may state a child's bounds explicitly, but a stated bound may not
 /// exceed what the host could ever honour: `0` is not a bound, and a larger
 /// value is refused rather than silently clamped.
@@ -142,8 +150,10 @@ impl Boundary {
 }
 
 /// The `task` tool input: a prompt delegated to a child Session, optionally with
-/// references to material of the delegating Session that a child cannot see
-/// because it forks empty.
+/// references to material of the delegating Session that a plain child cannot
+/// see because it forks empty. An exploration branch (`explore`) is the other
+/// way to reach that material: the child starts from a copy of the parent's
+/// history instead of being told about it.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
@@ -174,29 +184,50 @@ pub struct Input {
     /// each one with its evidence instead of pasting history.
     #[serde(default)]
     pub completion_criteria: Vec<String>,
+    /// Start an exploration branch: a side question or a trial line of work
+    /// that must not interrupt the delegating Session. The child begins from a
+    /// copy of the parent's history at its newest closed boundary, so the
+    /// question can be asked without restating the context it is about; it is
+    /// asked for one conclusion rather than a report, and it is bounded by the
+    /// exploration allowance unless the parent states a budget.
+    #[serde(default)]
+    pub explore: bool,
 }
 
 /// Bounds for the optional part of a task package.
 pub const GOAL_LIMIT: usize = 512;
 pub const CRITERIA_LIMIT: usize = 16;
 pub const CRITERION_LIMIT: usize = 256;
+/// What an exploration branch is told about itself. The copy of the history
+/// already tells the child what the work is, so this states only what the copy
+/// cannot: that its conclusion is the whole deliverable, that the mainline does
+/// not read it unless asked, and that discarding it costs the mainline nothing.
+pub const EXPLORE_FRAME: &str = "<exploration-branch>
+This is a side question on a copy of the delegating Session's history, taken at a closed boundary. That Session keeps working without you: nothing you say here enters its context unless it asks for it with task_result, and abandoning this branch costs it nothing.
+Answer the question and stop. Give one short conclusion and the observation or command that supports it; do not continue the Session's task, do not restate this history, and change no files unless the question asks for a change.
+</exploration-branch>
+";
 
 impl Input {
-    /// The structured part of a delegated prompt. A child forks empty, so the
-    /// goal and the acceptance conditions would otherwise exist only in the
+    /// The structured part of a delegated prompt. A plain child forks empty, so
+    /// the goal and the acceptance conditions would otherwise exist only in the
     /// parent's head; this states them once, above the instructions, in the
-    /// shape the child's final report is expected to answer. A package that
-    /// states neither renders nothing, which keeps a bare prompt unchanged.
+    /// shape the child's final report is expected to answer. An exploration
+    /// branch carries that history itself, so it is framed with what the copy
+    /// cannot say instead. A plain prompt that states neither renders nothing,
+    /// which keeps an existing caller's payload unchanged.
     pub fn package(&self) -> String {
         let criteria: Vec<&String> = self
             .completion_criteria
             .iter()
             .filter(|criterion| !criterion.trim().is_empty())
             .collect();
+        let frame = if self.explore { EXPLORE_FRAME } else { "" };
         if self.goal.is_none() && criteria.is_empty() {
-            return String::new();
+            return frame.to_owned();
         }
-        let mut block = String::from("<task-package>\n");
+        let mut block = String::from(frame);
+        block.push_str("<task-package>\n");
         if let Some(goal) = &self.goal {
             block.push_str(&format!("Goal: {}\n", goal.trim()));
         }
@@ -364,6 +395,58 @@ mod tests {
             package(json!({"prompt": "just do it", "completion_criteria": ["  ", ""]})),
             ""
         );
+    }
+
+    /// A side question is not delegated work, so it is framed as one: the copy
+    /// of the history says what the work is, and the frame says that its
+    /// conclusion is the deliverable and that the mainline does not read it
+    /// unless it asks. A bare explore prompt still gets the frame, because the
+    /// frame is what distinguishes the branch from a plain delegation.
+    #[test]
+    fn an_exploration_branch_is_asked_for_one_conclusion() {
+        let block = package(json!({"prompt": "does the ledger parse?", "explore": true}));
+        assert!(block.starts_with("<exploration-branch>\n"), "{block}");
+        assert!(
+            block.contains("copy of the delegating Session's history"),
+            "the child is told its context is a copy: {block}"
+        );
+        assert!(
+            block.contains("nothing you say here enters its context unless it asks for it"),
+            "and that the mainline does not read it by itself: {block}"
+        );
+        assert!(
+            block.contains("abandoning this branch costs it nothing"),
+            "discarding is stated as free: {block}"
+        );
+        assert!(
+            block.contains("Give one short conclusion"),
+            "the deliverable is one conclusion: {block}"
+        );
+        assert!(
+            block.contains("do not restate this history"),
+            "and not a second copy of the context: {block}"
+        );
+        assert!(block.ends_with("</exploration-branch>\n"), "{block}");
+        // A stated goal still rides above the instructions, after the frame.
+        let with_goal = package(json!({"prompt": "p", "explore": true, "goal": "settle it"}));
+        assert!(
+            with_goal.starts_with("<exploration-branch>\n"),
+            "{with_goal}"
+        );
+        assert!(with_goal.contains("Goal: settle it\n"), "{with_goal}");
+        assert!(with_goal.contains("<task-package>\n"), "{with_goal}");
+    }
+
+    /// The flag is a branch, not a new delegation shape: nothing else about the
+    /// input changes, and a payload that names no explore field reads as the
+    /// plain delegation it always was.
+    #[test]
+    fn explore_defaults_off() {
+        let plain = Input::parse(json!({"prompt": "p"})).unwrap();
+        assert!(!plain.explore);
+        let branch = Input::parse(json!({"prompt": "p", "explore": true})).unwrap();
+        assert!(branch.explore);
+        assert!(Input::parse(json!({"prompt": "p", "explore": "yes"})).is_err());
     }
 
     #[test]
