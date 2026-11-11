@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use miao_engine::{
+    context_trigger::ContextLimits,
     permission::{Config, Decision, Policy, Rule},
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
     session_agent::{AgentManifest, AgentTools},
+    state::Mutation,
     store::Store,
     tools::Tools,
 };
@@ -177,11 +179,11 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
     let requests = provider.requests.lock().unwrap().clone();
     assert_eq!(requests.len(), 4, "three tool turns and one closing answer");
     assert!(!requests[0].tools.is_empty());
-    assert!(!message_text(&requests[0]).contains("PROMPT BUDGET WRAP-UP"));
+    assert!(!message_text(&requests[0]).contains("BILLED TOKEN BUDGET WRAP-UP"));
     assert!(!requests[1].tools.is_empty());
     // Spent after two billed turns is 80 of 100: the wrap-up note rides the
     // third request while tools are still available.
-    assert!(message_text(&requests[2]).contains("PROMPT BUDGET WRAP-UP"));
+    assert!(message_text(&requests[2]).contains("BILLED TOKEN BUDGET WRAP-UP"));
     assert!(!requests[2].tools.is_empty());
     // Spent after three is 120: the closing turn has no tools and asks for text.
     assert!(requests[3].tools.is_empty());
@@ -190,7 +192,7 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
     // exhausted context to the operator (2026-11-11, #2870).
     assert!(message_text(&requests[3]).contains("SOFT BILLED-TOKEN BUDGET"));
     assert!(message_text(&requests[3]).contains("not a statement about the context window"));
-    assert!(!message_text(&requests[3]).contains("PROMPT BUDGET WRAP-UP"));
+    assert!(!message_text(&requests[3]).contains("BILLED TOKEN BUDGET WRAP-UP"));
 
     assert_eq!(
         events
@@ -199,6 +201,9 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
             .count(),
         3
     );
+    // The pause names the tally and its measurement: a figure summed over every
+    // turn of the prompt is billing, and reading it as context occupancy is the
+    // misreport #2870 describes.
     let note = events
         .iter()
         .find(|event| {
@@ -210,12 +215,20 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
         })
         .unwrap_or_else(|| panic!("the pause is visible in history: {events:?}"));
     let text = note.data["text"].as_str().unwrap_or_default();
-    // The operator-facing sentence carries both numbers and says which
-    // quantity it is: 120 billed of a 100-token cap is not a full context.
-    assert!(text.contains("(160 tokens billed of 100)"), "{text}");
+    // The operator-facing sentence carries both numbers, says which quantity it
+    // is, and prints the window's own measure beside it: 160 billed against a
+    // 100-token cap says nothing about a 1M-token window.
+    assert!(
+        text.contains("160 tokens billed over 4 provider turns against a cap of 100"),
+        "{text}"
+    );
     assert!(
         text.contains("not the context window"),
         "a spent billing cap must not read as an exhausted context: {text}"
+    );
+    assert!(
+        text.contains("no measured occupancy"),
+        "the window's own measure must ride beside the tally: {text}"
     );
     let stop = events
         .iter()
@@ -244,6 +257,127 @@ async fn a_new_prompt_grants_a_fresh_budget() {
         "a fresh prompt re-arms the tools"
     );
     assert!(!message_text(resumed).contains("SOFT BILLED-TOKEN BUDGET"));
+    runtime.shutdown().await;
+}
+
+/// #2870: the pause prints the window's own figures beside the tally, measured
+/// the way the compaction trigger measures it, so an operator can see that a
+/// prompt which spent its allowance has not filled its window. The issue was a
+/// 1M-token model reporting a spent budget at 29% context occupancy.
+#[tokio::test]
+async fn a_billed_allowance_pause_prints_the_window_beside_the_tally() {
+    let dir = tempfile::tempdir().unwrap();
+    let (runtime, store, _) = setup(dir.path(), 3).await;
+    // The same effective limits the compaction trigger plans against: a 1M
+    // window at a 0.9 ratio compacts at 900k tokens, far above what this prompt
+    // billed and nowhere near what it carried.
+    runtime
+        .set_context_limits(Some(ContextLimits {
+            window: 1_000_000,
+            ratio: 0.9,
+            headroom: 0,
+            per_pass: 8,
+            prune_chars: None,
+            prune_total_chars: None,
+            protect_turns: 2,
+        }))
+        .await;
+    runtime.set_agent("s", manifest(100)).await.unwrap();
+    run_to_stop(&runtime, &store, 0, "one").await;
+
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let pause = events
+        .iter()
+        .find(|event| {
+            event.kind == "message.synthetic"
+                && event.data["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Task paused")
+        })
+        .expect("the allowance pause is visible in history");
+    let text = pause.data["text"].as_str().unwrap();
+    assert!(
+        text.contains("160 tokens billed over 4 provider turns against a cap of 100"),
+        "{text}"
+    );
+    assert!(
+        text.contains("the context window carries"),
+        "the window's own occupancy must ride beside the tally: {text}"
+    );
+    assert!(
+        text.contains("against a compaction threshold of 900000 tokens"),
+        "{text}"
+    );
+    runtime.shutdown().await;
+}
+
+/// #2870 (3): a drain that stopped on its allowance admits nothing behind the
+/// pause. A continuation injected after it would resume exactly the work the
+/// pause stopped, and a runnable todo list makes that injection the drain's own
+/// next move unless the pause suppresses it.
+#[tokio::test]
+async fn a_billed_allowance_pause_leaves_no_continuation_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    // Two tool turns and then a text reply: the text reply is the first turn the
+    // continuation guard can act on, and the allowance is still unspent at that
+    // boundary, so it acts. A fixture whose every non-closing turn needs tools
+    // would never enter the guard and would prove nothing.
+    let (runtime, store, provider) = setup(dir.path(), 2).await;
+    store
+        .update_state(
+            "s",
+            "todos",
+            Mutation::parse(
+                "todowrite",
+                json!({"todos":[{"id":"1","content":"Audit the engine","status":"pending","priority":"medium"}]}),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    runtime.set_agent("s", manifest(100)).await.unwrap();
+    run_to_stop(&runtime, &store, 0, "one").await;
+
+    let events = store.events("s", 0, 1000).await.unwrap();
+    let pause = events
+        .iter()
+        .find(|event| {
+            event.kind == "message.synthetic"
+                && event.data["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Task paused")
+        })
+        .expect("the allowance pause is visible in history");
+    let seen: Vec<_> = events.iter().map(|event| event.kind.as_str()).collect();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.kind == "loop.continuation" && event.seq < pause.seq),
+        "the runnable todo list must have driven the continuation the wrap-up turn answered: {seen:?}"
+    );
+    let behind: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "loop.continuation" && event.seq > pause.seq)
+        .collect();
+    assert!(
+        behind.is_empty(),
+        "a paused drain injected a continuation behind the pause: {behind:?}"
+    );
+    let pending = store.pending_inputs("s", None, 10).await.unwrap();
+    assert_eq!(
+        pending["inputs"].as_array().map(Vec::len),
+        Some(0),
+        "an admitted input would resume the paused drain: {pending}"
+    );
+    let calls = provider.requests.lock().unwrap().len();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(
+        provider.requests.lock().unwrap().len(),
+        calls,
+        "a paused drain must not ask the provider again"
+    );
     runtime.shutdown().await;
 }
 
