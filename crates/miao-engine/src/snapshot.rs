@@ -716,8 +716,10 @@ fn workspace_plan(
         }
         // A path the engine still believes holds the content it last recorded
         // changed by this Session's own work, which a revert is meant to undo.
-        // Anything else is an outside edit.
-        if recorded.get(path) != Some(&disk) {
+        // Anything else is an outside edit. A path with no record at all has no
+        // baseline to compare against, so it is not evidence of an outside
+        // edit: an imported manifest is the case that reaches this.
+        if recorded.get(path).is_some_and(|newest| newest != &disk) {
             conflicts.push(json!({
                 "path": path,
                 "action": action,
