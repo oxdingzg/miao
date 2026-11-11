@@ -1684,6 +1684,17 @@ mod retry_tests {
             .collect()
     }
 
+    /// A granted vendor wait honours the declared `Retry-After`: the delay is at
+    /// least what the endpoint asked for, and at most that plus the window's own
+    /// arithmetic. Asserting the exact millisecond turned a granted wait into a
+    /// race against the runner's clock (CI saw 1005 ms for a declared 1 s).
+    fn honoured_vendor_wait(delays: &[u64], declared_ms: u64) -> bool {
+        !delays.is_empty()
+            && delays
+                .iter()
+                .all(|delay| *delay >= declared_ms && *delay <= declared_ms + 100)
+    }
+
     /// The backoff window a jittered delay must fall in.
     fn backoff_window(attempt: usize) -> (u64, u64) {
         let base = (500.0 * 1.7_f64.powi(attempt as i32)).min(5_000.0);
@@ -1977,9 +1988,10 @@ mod retry_tests {
             .iter()
             .find(|notice| notice["kind"] == "provider.retry")
             .expect("the wait is announced");
-        assert_eq!(
-            retried["extended_ms"], 1_000,
-            "the wait is longer than the window, so it was granted outside it"
+        let extended = retried["extended_ms"].as_u64().unwrap();
+        assert!(
+            honoured_vendor_wait(&[extended], 1_000),
+            "the wait is longer than the window, so it was granted outside it: {extended} ms"
         );
     }
 
@@ -2004,7 +2016,11 @@ mod retry_tests {
             3,
             "two granted waits, then the refusal"
         );
-        assert_eq!(delays(&notices), vec![1_000, 1_000], "{notices:?}");
+        let granted = delays(&notices);
+        assert!(
+            honoured_vendor_wait(&granted, 1_000),
+            "each granted wait honours the declared second: {granted:?} {notices:?}"
+        );
         let refused: Vec<&Value> = notices
             .iter()
             .filter(|notice| notice["kind"] == "provider.window")
