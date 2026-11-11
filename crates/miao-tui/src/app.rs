@@ -10116,6 +10116,7 @@ mod tests {
                 history: true,
                 // Showing the outside edit is what lets the stage overwrite it.
                 force: true,
+                ..
             })
         ));
     }
