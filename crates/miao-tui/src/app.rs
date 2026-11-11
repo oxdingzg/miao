@@ -1111,6 +1111,7 @@ impl App {
                 let was_running = self.state.active_run.is_some();
                 self.swap_draft(summary.as_ref().map(|session| session.id.as_str()));
                 self.shell.set_goal(state.goal.as_ref());
+                self.shell.set_plan(state.plan.as_ref());
                 self.shell.set_todos(&state.todos);
                 // A projection of the Session already on screen is a refresh,
                 // not an arrival. The background re-projection after a
@@ -6154,6 +6155,7 @@ mod tests {
         SessionState {
             todos: Vec::new(),
             goal: None,
+            plan: None,
             active_run: None,
             pending: 0,
             pending_prompts: Vec::new(),
