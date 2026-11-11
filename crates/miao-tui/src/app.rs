@@ -2064,7 +2064,9 @@ impl App {
             }
             DialogAction::UpdateKey(id) => {
                 let Some(key) = self.stored_keys().into_iter().find(|key| key.id == id) else {
-                    self.notice("that key comes from the environment or a legacy file, not the key store");
+                    self.notice(
+                        "that key comes from the environment or a legacy file, not the key store",
+                    );
                     return;
                 };
                 let name = self.provider_name(&key.provider);
@@ -2072,7 +2074,9 @@ impl App {
             }
             DialogAction::DeleteKey(id) => {
                 let Some(key) = self.stored_keys().into_iter().find(|key| key.id == id) else {
-                    self.notice("that key comes from the environment or a legacy file, not the key store");
+                    self.notice(
+                        "that key comes from the environment or a legacy file, not the key store",
+                    );
                     return;
                 };
                 let name = self.provider_name(&key.provider);
@@ -2908,9 +2912,9 @@ impl App {
                     engine.reload_provider_routes();
                 }
             }
-            Err(error) => {
-                self.notice(&format!("could not delete the {provider} {named} key: {error}"))
-            }
+            Err(error) => self.notice(&format!(
+                "could not delete the {provider} {named} key: {error}"
+            )),
         }
     }
 
@@ -2962,10 +2966,7 @@ impl App {
             let Some(provider) = account.provider.as_deref() else {
                 continue;
             };
-            match providers
-                .iter_mut()
-                .find(|(known, ..)| known == provider)
-            {
+            match providers.iter_mut().find(|(known, ..)| known == provider) {
                 Some((_, _, served)) => *served += 1,
                 None => providers.push((provider.to_string(), 0, 1)),
             }
@@ -8854,7 +8855,9 @@ mod tests {
         // edit here.
         assert_eq!(list.rows[0].id, "cred_a");
         assert!(
-            list.rows[0].detail.starts_with("not in the key store · gpt-5"),
+            list.rows[0]
+                .detail
+                .starts_with("not in the key store · gpt-5"),
             "{}",
             list.rows[0].detail
         );
@@ -9129,8 +9132,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let store = dir.join("miao.db");
         app.credential_store = Some(store.clone());
-        miao_engine::credential::store_key(&store, "opencode-go", "sk-one", None)
-            .expect("store");
+        miao_engine::credential::store_key(&store, "opencode-go", "sk-one", None).expect("store");
         miao_engine::credential::store_key(&store, "opencode-go", "sk-two", Some("work"))
             .expect("store");
         app.accounts_filter = Some("opencode-go".into());
