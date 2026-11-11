@@ -44,6 +44,22 @@ const LIVE_SILENCE: Duration = Duration::from_secs(15);
 /// sentence, short enough that it does not outlive its own event.
 const NOTICE_LIFETIME: Duration = Duration::from_secs(5);
 
+/// What `/init` writes: how to build and test the project, and the conventions
+/// a reader cannot infer from the code. A skeleton on purpose — the operator
+/// knows the commands, and an invented one would be worse than none.
+const AGENTS_TEMPLATE: &str = "\
+# AGENTS.md
+
+Guidance for agents working in this repository.
+
+## Build and test
+
+- Build:
+- Test:
+
+## Conventions
+";
+
 /// How long the sidebar's usage report waits before it is asked for again.
 ///
 /// The report reads the open Session's whole ledger and `engine_event` has no
@@ -285,8 +301,8 @@ pub struct Draft {
     /// The turn's parts in the order the engine produced them. A provider turn
     /// is prose, a call, more prose, another call — interleaved, not grouped —
     /// so keeping text and calls in separate fields painted every call after
-    /// every paragraph. Both Claude Code and codex show the transcript in the
-    /// order the work happened; this is the same order the committed message
+    /// every paragraph. Other terminal agents show the transcript in the order
+    /// the work happened; this is the same order the committed message
     /// carries, which is why the draft has to match it or the screen rearranges
     /// itself the moment the turn commits.
     parts: Vec<DraftPart>,
@@ -517,8 +533,8 @@ pub struct App {
     /// The provider the account list is narrowed to; `None` lists every
     /// credential, the flat list ctrl+o showed before it had a provider level.
     accounts_filter: Option<String>,
-    /// Elapsed time captured the moment the provider stream ended. Claude
-    /// Code and Codex tie the spinner to the local stream lifecycle, so the
+    /// Elapsed time captured the moment the provider stream ended. Other
+    /// terminal agents tie the spinner to the local stream lifecycle, so the
     /// clock stops the instant the answer finishes instead of counting until
     /// a durable projection (which can stall) retires the run.
     stream_ended: Option<Duration>,
@@ -592,9 +608,9 @@ pub struct App {
     /// before the command it queued runs. The end-of-stream frame therefore
     /// cannot retire the turn on its own: a long command would sit under a
     /// frozen "Done" total and read as a wedged Session while it is working.
-    /// Claude Code keeps the same distinction — a tool keeps its spinner and
-    /// its moving clock until it returns, and only then does the turn report a
-    /// total.
+    /// Other terminal agents keep the same distinction — a tool keeps its
+    /// spinner and its moving clock until it returns, and only then does the
+    /// turn report a total.
     tool_running: Option<ToolRunning>,
     /// The engine's reported egress backlog for this client, in frames.
     ///
@@ -1793,6 +1809,10 @@ impl App {
             Builtin::Redo => self.redo(),
             Builtin::Editor => self.open_editor(),
             Builtin::Help => self.open_help(),
+            Builtin::Compact => self.request_compaction(),
+            Builtin::Context => self.show_context(),
+            Builtin::Init => self.write_agents_md(),
+            Builtin::Mcp => self.open_mcp(),
             Builtin::Quit => self.quit = true,
         }
     }
@@ -4438,9 +4458,9 @@ impl App {
                     ),
                     // The answer is on screen: the turn is done, so the label
                     // retires with the frozen total instead of claiming the
-                    // run is still working (Claude Code drops the spinner at
-                    // stream end; the frozen total is miao's extra honesty
-                    // while a stalled projection holds the run open).
+                    // run is still working (other terminal agents drop the
+                    // spinner at stream end; the frozen total is miao's extra
+                    // honesty while a stalled projection holds the run open).
                     (None, Some(frozen)) => (
                         "Done".to_string(),
                         Some(crate::pane::duration_ms(frozen.as_millis() as u64)),
@@ -4928,6 +4948,59 @@ impl App {
             return false;
         };
         Instant::now() < until
+    }
+
+    /// `/compact`: one checkpoint at the next settled boundary, even when the
+    /// automatic trigger's budget gate is under its threshold. The engine keeps
+    /// the request durable and drops the compaction breaker, so this is also how
+    /// an operator retries a Session whose summarizer kept failing.
+    fn request_compaction(&mut self) {
+        let Some(session_id) = self.session.as_ref().map(|session| session.id.clone()) else {
+            self.notice("Compaction needs an open Session");
+            return;
+        };
+        let Some(engine) = self.engine.as_ref() else {
+            self.notice("Compaction needs a connected engine");
+            return;
+        };
+        engine.compact(&session_id);
+        self.notice("Compaction requested · it runs at the next settled boundary");
+    }
+
+    /// `/context`: the window the next request is planned against and how full
+    /// it already is. Both figures come from the newest usage report, so a
+    /// Session that has not run a turn yet has nothing to report.
+    fn show_context(&mut self) {
+        let figures = self
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.context_window.zip(usage.context_tokens))
+            .filter(|(window, _)| *window > 0);
+        let Some((window, tokens)) = figures else {
+            self.notice("Context: the endpoint has not reported a window for this Session yet");
+            return;
+        };
+        let percent = tokens.saturating_mul(100) / window;
+        self.notice(&format!(
+            "Context {} of {} · {}% · automatic compaction arms near 90%",
+            crate::status::compact_tokens(tokens),
+            crate::status::compact_tokens(window),
+            percent
+        ));
+    }
+
+    /// `/init`: the guidance file the next agent turn reads, written only when
+    /// the project has none. An existing AGENTS.md is the operator's own text.
+    fn write_agents_md(&mut self) {
+        let path = self.workspace.join("AGENTS.md");
+        if path.exists() {
+            self.notice("AGENTS.md already exists in this workspace");
+            return;
+        }
+        match std::fs::write(&path, AGENTS_TEMPLATE) {
+            Ok(()) => self.notice("Wrote AGENTS.md · fill in the build and test commands"),
+            Err(error) => self.notice(&format!("Could not write AGENTS.md: {error}")),
+        }
     }
 
     /// `!` runs on the Session's host shell through the engine. The engine
@@ -10331,6 +10404,83 @@ mod tests {
             })
         ));
         assert!(app.dialog.is_none(), "the preview opens the dialog");
+    }
+
+    /// `/compact` has to reach the engine: the checkpoint is a durable request
+    /// the engine answers at the next settled boundary, so a toast alone would
+    /// do nothing.
+    #[test]
+    fn compact_asks_the_engine_for_one_checkpoint() {
+        let mut app = app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_1", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        app.run_builtin(Builtin::Compact);
+        assert!(
+            std::iter::from_fn(|| requests.try_recv().ok()).any(|request| matches!(
+                request,
+                engine::Request::Compact { session_id } if session_id == "ses_1"
+            )),
+            "the engine is asked for a checkpoint"
+        );
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("Compaction requested · it runs at the next settled boundary")
+        );
+    }
+
+    /// `/context` reports what the next request would carry, and says so plainly
+    /// when the endpoint has not reported a window yet — guessing one would read
+    /// as a measurement.
+    #[test]
+    fn context_reports_the_window_and_admits_when_it_is_unknown() {
+        let mut app = session_app();
+        app.run_builtin(Builtin::Context);
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("Context: the endpoint has not reported a window for this Session yet")
+        );
+        app.usage = Some(crate::status::UsageSummary {
+            context_window: Some(1_000_000),
+            context_tokens: Some(630_000),
+            ..Default::default()
+        });
+        app.run_builtin(Builtin::Context);
+        let notice = app.shell.composer.notice.clone().unwrap_or_default();
+        assert!(
+            notice.contains("630.0k") && notice.contains("1.0m") && notice.contains("63%"),
+            "{notice}"
+        );
+    }
+
+    /// `/init` writes the guidance file only when the project has none: an
+    /// existing AGENTS.md is the operator's text, not a template.
+    #[test]
+    fn init_writes_agents_md_only_when_the_project_has_none() {
+        let dir = std::env::temp_dir().join(format!("miao-init-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp workspace");
+        let mut app = session_app();
+        app.workspace = dir.clone();
+        app.run_builtin(Builtin::Init);
+        let written = std::fs::read_to_string(dir.join("AGENTS.md")).expect("AGENTS.md");
+        assert!(written.contains("## Build and test"), "{written}");
+        std::fs::write(dir.join("AGENTS.md"), "operator text").expect("overwrite");
+        app.run_builtin(Builtin::Init);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("AGENTS.md")).unwrap(),
+            "operator text",
+            "an existing file is never rewritten"
+        );
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some("AGENTS.md already exists in this workspace")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
