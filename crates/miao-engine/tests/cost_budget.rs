@@ -300,27 +300,33 @@ async fn a_goal_budget_binds_the_work_done_under_it() {
 
 #[tokio::test]
 async fn a_time_budget_stops_a_run_between_turns() {
-    // The clock opens where the run does, so the first slow turn still fits and
-    // the second one cannot: 250ms against a 400ms budget, then 500ms.
+    // A time budget is the one axis whose stop depends on machine speed: the
+    // clock opens where the run does, so a turn's own context assembly is part
+    // of what it spends. What this pins is the boundary, not a turn count — the
+    // script offers three turns, and the budget stops the run before it works
+    // through them, naming the time axis.
     let slow = Turn {
         usage: json!({"inputTokens": 10, "outputTokens": 1}),
-        delay_ms: 250,
+        delay_ms: 600,
     };
     let harness = Harness::open(
-        Some(declaration(json!({"wallclock_ms": 400}))),
+        Some(declaration(json!({"wallclock_ms": 900}))),
         vec![slow.clone(), slow.clone(), slow],
     )
     .await;
-    harness.run("one", "keep reading the fixture").await;
+    let events = harness.run("one", "keep reading the fixture").await;
 
-    assert_eq!(
-        harness.calls(),
-        2,
-        "the second turn already outlived the budget"
+    assert!(
+        harness.calls() < 3,
+        "the script offered three turns; the budget stopped the run before it spent them all: {}",
+        harness.calls()
     );
+    let stopped = Harness::event(&events, "budget.stopped");
+    assert_eq!(stopped.data["axis"], json!("time"));
+    assert_eq!(stopped.data["scope"], json!("Session"));
     let transcript = harness.transcript().await;
     assert!(
-        transcript.contains("Session time budget of 0.4s is used up"),
+        transcript.contains("Session time budget of 0.9s is used up"),
         "{transcript}"
     );
     harness.runtime.shutdown().await;
