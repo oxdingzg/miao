@@ -112,6 +112,7 @@ newer record is the one to read.
 | `2026-11-11-his03-revert-boundaries.md` | `feat/issue1984` (PR #2866) | HIS-03 (the code-only boundary beside history-only and combined, the durable `scope` it is recorded as, and the gate that refuses to overwrite an outside edit until the caller forces it; engine and TUI green on CI run `42954116083`, no stamp yet) |
 | `2026-11-11-job05-schedule-edit.md` | `feat/job05-cron-edit` on `xx04` | JOB-05 (the schedule panel gains `e`: a text dialog sends `change_cron`/`change_wakeup` through the new protocol commands that reuse the tool's own partial-edit structs; timezone/ownership rows and per-task budget stay open) |
 | `2026-11-11-job05-schedule-row-facts.md` | `feat/job05-schedule-rows` on `xx04` | JOB-05 (a cron row states its zone, next run and lifetime, a wakeup row its zone, and unrecorded facts are omitted; ownership is the panel's own Session; the per-task budget stays with COST-02) |
+| `2026-11-11-ux04-cr-only-paste.md` | `test/ux04-cr-paste` on `xx04` | UX-04's carriage-return-only paste leg (a CR paste lands as a draft — inline under the block threshold, as a visible marker above it — and never submits, on a Session or on the landing screen; Windows Terminal, suspend-from-page and the panic leg stay open) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`

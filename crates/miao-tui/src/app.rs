@@ -6306,6 +6306,52 @@ mod tests {
         assert_eq!(app.shell.composer.editor.text(), "first prompt");
     }
 
+    /// UX-04's carriage-return-only paste: a terminal that sends `\r` instead
+    /// of `\n` must still land as a draft. The normalization is `editor.rs`'s;
+    /// what matters at the app level is that a paste never submits — a prompt
+    /// that arrived as a paste would run the turn before the operator read it.
+    #[test]
+    fn a_paste_with_only_carriage_returns_stays_a_draft() {
+        let mut app = session_app();
+        // Two lines stays inline, so the normalization is visible in the draft.
+        app.handle(AppEvent::Paste("one\rtwo".into()));
+        assert_eq!(
+            app.shell.composer.editor.text(),
+            "one\ntwo",
+            "carriage returns become line breaks in the draft"
+        );
+        // Three lines crosses the editor's pasted-block threshold, which is the
+        // other half of a CR-only paste: it becomes a marker the operator can
+        // see, and still nothing is submitted.
+        app.handle(AppEvent::Paste("a\rb\rc".into()));
+        assert!(
+            app.shell
+                .composer
+                .editor
+                .text()
+                .contains("[Pasted ~3 lines]"),
+            "a long paste becomes a visible block: {}",
+            app.shell.composer.editor.text()
+        );
+        assert!(app.dialog.is_none(), "a paste does not open a decision");
+    }
+
+    /// The same paste on the landing screen, where the composer is the only
+    /// thing the paste can reach: it must not create and submit a Session by
+    /// itself either.
+    #[test]
+    fn a_carriage_return_paste_on_the_landing_screen_does_not_submit() {
+        let mut app = app();
+        assert_eq!(app.screen, Screen::Home);
+        app.handle(AppEvent::Paste("one\rtwo".into()));
+        assert_eq!(app.shell.composer.editor.text(), "one\ntwo");
+        assert_eq!(
+            app.screen,
+            Screen::Home,
+            "a paste is not the operator pressing Enter"
+        );
+    }
+
     #[test]
     fn an_image_pasted_on_the_landing_screen_rides_into_the_new_session() {
         let mut app = app();
