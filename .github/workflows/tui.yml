@@ -87,6 +87,44 @@ jobs:
         # CI reported one unrelated failure.
         run: cargo test --locked --no-fail-fast -- --test-threads=1
 
+      # VAL-03 (#1910) asks for keystrokes and time-to-state on six tasks, and
+      # those numbers are printed only under `--nocapture`: the step above
+      # proves the suites pass and says nothing about what they measured, so
+      # the acceptance record could only ever cite somebody's own machine.
+      # Re-running the six baseline binaries with their output visible and
+      # lifting the numbers into the step summary makes the baseline citable
+      # from a run id. Linux only — the numbers are compared across runs of the
+      # same runner image, and the macOS legs are a shared self-hosted host.
+      - name: VAL-03 baselines
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo test --locked --no-fail-fast \
+            --test startup_latency \
+            --test interaction_cost \
+            --test interaction_edit \
+            --test interaction_approval \
+            --test interaction_review \
+            --test interaction_recovery \
+            -- --nocapture --test-threads=1 2>&1 | tee val03.txt
+          # A baseline that stops printing is not evidence, and a green step
+          # over an empty summary would read as one. Five tasks print a
+          # `VAL-03` line (startup prints `PERF-03`), so the counts are pinned:
+          # losing a print is a failure here, not a quieter record later.
+          #
+          # No `^` anchor: under `--nocapture` the harness prefixes the line
+          # with the test it came from, `test <name> ... VAL-03 <task>: ...`.
+          counted() { grep -cE "$1" val03.txt || true; }
+          val03="$(counted 'VAL-03 (find-session|edit-input|approval|review-changes|failure-recovery)')"
+          perf03="$(counted 'PERF-03 (cold|warm): ')"
+          [ "$val03" -ge 5 ] || { echo "only $val03 VAL-03 lines were printed"; exit 1; }
+          [ "$perf03" -ge 2 ] || { echo "only $perf03 PERF-03 cold/warm lines were printed"; exit 1; }
+          {
+            echo "### VAL-03 baselines (#1910)"
+            echo '```'
+            grep -oE 'VAL-03 [a-z-]+.*|PERF-03 (cold|warm): .*' val03.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   tui-windows:
     name: tui (windows)
     # Same constraint as the engine's Windows job: Windows runner time is
