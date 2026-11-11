@@ -99,6 +99,7 @@ newer record is the one to read.
 | `2026-11-11-agt04-plan-display.md` | `feat/his05-plan-display` | AGT-04 (the plan's own sidebar section between the Goal and the checklist, decoded from `session.state.plan`; the three durable rows stay separate; no release stamp yet because no published release contains this tree) |
 | `2026-11-11-inp05-live-zed.md` | `test/inp05-live-zed` | INP-05 (the shipped binary reads a Zed-format database through the real probe in a pty, on Linux and macOS, and the selection is readable in the composer; removal stays pinned by the draft-level tests, Windows unexercised, no stamp yet) |
 | `2026-11-11-val03-six-tasks-and-rework.md` | `test/val03-error-cost` | VAL-03 (all six task baselines re-run on one tree with their printed numbers, and the mistakes/rework definition the product actually observes: rejected/cancelled actions and draft rewrites, replayed turns and tool-input rework; explicitly not a human-factors study; no stamp yet) |
+| `2026-11-11-agt03-task-package.md` | `feat/agt03-task-package` | AGT-03 (optional `goal` + `completion_criteria` that render as a `<task-package>` above the child's instructions and ask the report to answer each criterion; the delegation-cost policy stated in the tool; the net-benefit measurement stays with VAL-04; no stamp yet) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
