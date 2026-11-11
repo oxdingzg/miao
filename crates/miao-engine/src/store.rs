@@ -4527,6 +4527,17 @@ impl Store {
                     if data["background"] != true {
                         continue;
                     }
+                    // One child is one row. A re-dispatch, or an adopted child
+                    // delegated into again, records a second `subagent_start`
+                    // for an id that already has a row, and the stop below only
+                    // settles the first match: the duplicate stayed `running`
+                    // forever and inflated every count that read this list.
+                    if tasks
+                        .iter()
+                        .any(|task| task["id"].as_str() == Some(id))
+                    {
+                        continue;
+                    }
                     // A running row carries its age: a child that is working and
                     // one that has gone silent look identical without it, and an
                     // orchestration waiting on the row cannot tell which it has
@@ -4562,6 +4573,42 @@ impl Store {
                 }
             }
             Ok(tasks)
+        })
+        .await
+    }
+
+    /// The delegated Sessions this Session started that are still running, each
+    /// named once.
+    ///
+    /// `subagents()` answers "what did this Session ask for": it rebuilds status
+    /// from this Session's own event rows, so an adopted child keeps whatever
+    /// lineage it was forked with, and a re-dispatch leaves a second start row.
+    /// A waiting decision asks a different question — *is a child of mine still
+    /// working* — so it reads the child's own lineage edge and answers each
+    /// child once. Reading the other list answered 59 entries, mostly duplicates
+    /// and mostly other Sessions' children, and the pause printed every id.
+    pub async fn running_subagents(&self, session: &str) -> Result<Vec<String>, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT e.data FROM engine_event e \
+                 JOIN engine_lineage l ON l.session_id=json_extract(e.data,'$.subagent_id') \
+                 WHERE e.session_id=?1 AND e.kind='subagent_start' \
+                   AND json_extract(e.data,'$.background')=1 AND l.parent_session_id=?1 \
+                   AND NOT EXISTS(SELECT 1 FROM engine_event s WHERE s.session_id=?1 \
+                                  AND s.kind='subagent_stop' \
+                                  AND json_extract(s.data,'$.subagent_id')=json_extract(e.data,'$.subagent_id') \
+                                  AND s.seq>e.seq)",
+            )?;
+            let rows = stmt.query_map([session.as_str()], |row| row.get::<_, String>(0))?;
+            let mut running = std::collections::BTreeSet::new();
+            for row in rows {
+                let data: Value = serde_json::from_str(&row?)?;
+                if let Some(id) = data["subagent_id"].as_str() {
+                    running.insert(id.to_owned());
+                }
+            }
+            Ok(running.into_iter().collect())
         })
         .await
     }

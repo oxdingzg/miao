@@ -5362,7 +5362,14 @@ command: None,
                 let waited = goal_stalled_since
                     .map(|since| since.elapsed().as_secs())
                     .unwrap_or(0);
-                let waiting_jobs: Vec<String> = inner
+                // Background work this Session owns, counted rather than named:
+                // a pause that enumerated every id printed 59 of them, mostly
+                // duplicates and mostly other Sessions' children, and the reader
+                // had to scan a paragraph to learn one number. Jobs are this
+                // Session's own processes; children are read through their
+                // lineage edge so only a child that still names this Session as
+                // its parent counts, and each child counts once.
+                let waiting_jobs = inner
                     .store
                     .jobs(session)
                     .await?
@@ -5377,23 +5384,15 @@ command: None,
                                 | Some("unknown")
                         )
                     })
-                    .filter_map(|job| job["id"].as_str().map(str::to_owned))
-                    .collect();
-                let waiting_tasks: Vec<String> = inner
-                    .store
-                    .subagents(session)
-                    .await?
-                    .into_iter()
-                    .filter(|task| task["status"] == "running")
-                    .filter_map(|task| task["id"].as_str().map(str::to_owned))
-                    .collect();
+                    .count();
+                let running_children = inner.store.running_subagents(session).await?.len();
                 // A pause names the bound that actually fired. The provider turn
                 // allowance, the provider-billed token allowance, and the context
                 // window are three different measures (#2870), so a drained turn
                 // count is recorded as "turns" rather than as a spent budget.
                 let reason = if allowance == Some(0) {
                     Some("turns")
-                } else if !waiting_jobs.is_empty() || !waiting_tasks.is_empty() {
+                } else if waiting_jobs > 0 {
                     Some("waiting")
                 } else if goal_stalls >= 2 && waited >= min_no_progress_secs {
                     Some("no-progress")
@@ -5428,20 +5427,18 @@ command: None,
                             // A running delegated subagent is not a background
                             // job: it finishes into its own notification, and an
                             // operator told "background job(s)" would go looking
-                            // for a job that does not exist.
+                            // for a job that does not exist. Neither half lists
+                            // its ids: the count is the whole decision, and the
+                            // list made a one-number pause unreadable.
                             let mut pending: Vec<String> = Vec::new();
-                            if !waiting_jobs.is_empty() {
+                            if waiting_jobs > 0 {
                                 pending.push(format!(
-                                    "{} background job(s) still running ({})",
-                                    waiting_jobs.len(),
-                                    waiting_jobs.join(", ")
+                                    "{waiting_jobs} background job(s) still running"
                                 ));
                             }
-                            if !waiting_tasks.is_empty() {
+                            if running_children > 0 {
                                 pending.push(format!(
-                                    "{} delegated subagent task(s) still running ({})",
-                                    waiting_tasks.len(),
-                                    waiting_tasks.join(", ")
+                                    "{running_children} delegated subagent task(s) still running"
                                 ));
                             }
                             format!(
@@ -5472,28 +5469,23 @@ command: None,
                     for input_id in internal_inputs.iter() {
                         let _ = inner.store.cancel_input(session, input_id).await;
                     }
-                } else {
-                    // While the Session owns running background work, the
-                    // completion notifications wake the drain on their own;
-                    // injecting the continuation prompt now would only burn
-                    // turns re-reading an unchanged todo list.
-                    // In-flight background work means the model has nothing
-                    // to do until it finishes: job completion admits an input
-                    // that wakes this drain, and a finishing subagent does the
-                    // same. Re-injecting the continuation prompt while a child
-                    // still runs only burns turns re-reading an unchanged todo
-                    // list — the waiting loop the #2862 analysis measured.
-                    let background_active = {
-                        let jobs = inner.store.jobs(session).await?;
-                        let jobs_live = jobs.iter().any(|job| {
-                            matches!(job["state"].as_str(), Some("queued") | Some("running"))
-                        });
-                        let tasks = inner.store.subagents(session).await?;
-                        jobs_live || tasks.iter().any(|task| task["status"] == "running")
-                    };
-                    if background_active {
-                        continue;
+                } else if running_children > 0 {
+                    // A running child is not a bound this Session pauses on: it
+                    // is work this Session delegated and no longer has to watch,
+                    // and the note that used to name it froze the Session for it.
+                    // It is not a continuation either. A completed child admits
+                    // no input of its own (AGT-06), so nothing here finishes the
+                    // wait, and re-injecting the continuation only re-requests a
+                    // provider turn at every pace interval on an unchanged list
+                    // until the no-progress bound — a Session that never finishes
+                    // instead of one that waits. End this drain: a failed child
+                    // still admits its own notice (#2862), and the operator's
+                    // next message starts the next run without a pause to lift.
+                    for input_id in internal_inputs.iter() {
+                        let _ = inner.store.cancel_input(session, input_id).await;
                     }
+                    return Ok(());
+                } else {
                     // Pace the loop in wall-clock time: the model answers in
                     // seconds, so an unpaced drain re-prompts itself many
                     // times a minute while it is really only waiting. Polling
