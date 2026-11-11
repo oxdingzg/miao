@@ -8082,6 +8082,54 @@ mod tests {
         assert!(!subagents.contains("attempt"), "{subagents:?}");
     }
 
+    /// #2737: lineage stays one row per served model under the session
+    /// scope's header — switching models must not fold the rows into the Last
+    /// 24h group above or into one another, whatever order the engine reports.
+    #[test]
+    fn a_multi_model_lineage_reads_as_one_group_under_the_usage_header() {
+        let usage = crate::status::UsageSummary::from_value(&serde_json::json!({
+            "turns": 4,
+            "lineage": [
+                {"protocol": "chat", "model": "glm-5", "turns": 3},
+                {"protocol": "responses", "model": "claude-x", "turns": 1},
+            ],
+        }));
+        let mut sidebar = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_l", "lineage", None)),
+            usage: Some(usage),
+            usage_hourly: None,
+            goal: None,
+            plan: None,
+            todos: Vec::new(),
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        terminal
+            .draw(|frame| sidebar.render(frame, frame.area()))
+            .expect("draw");
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(60)
+            .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let at = |needle: &str| {
+            rows.iter()
+                .position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle} missing: {rows:?}"))
+        };
+        // The rows open the section: the header, then one row per model.
+        let header = at("▾ Usage · session");
+        assert_eq!(at("glm-5 · chat ×3"), header + 1, "{rows:?}");
+        assert_eq!(at("claude-x · responses ×1"), header + 2, "{rows:?}");
+    }
+
     /// A long CJK title and a long CJK todo each stay on one row. Counting
     /// characters instead of cells let both through at twice the column's
     /// width, and the wrapping widget then broke them one character per line.
@@ -8161,7 +8209,12 @@ mod tests {
             mode: Some("build".into()),
             theme: home_theme(),
             session: Some(home_row("ses_u", "usage", None)),
-            usage: None,
+            usage: Some(crate::status::UsageSummary::from_value(
+                &serde_json::json!({
+                    "turns": 2,
+                    "interventions": {"approvals": 1},
+                }),
+            )),
             usage_hourly: None,
             goal: Some(crate::session::GoalView {
                 status: "active".into(),
@@ -8198,6 +8251,8 @@ mod tests {
         };
         for header in [
             "▾ Last 24h",
+            "▾ Usage · session",
+            "▾ Activity",
             "▾ Mode",
             "▾ Changes",
             "▾ Goal",
