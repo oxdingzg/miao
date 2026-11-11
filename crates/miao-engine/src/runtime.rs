@@ -6862,6 +6862,24 @@ async fn delegate(
 ) -> Result<Value, ToolError> {
     let task = crate::subagent::Input::parse(prepared.input().clone())?;
     validate_deny_tools(inner, &task.deny_tools)?;
+    // AGT-03: a rework settlement in this run means the same task was already
+    // paid for twice; delegating again would compound it, so the run finishes
+    // its remaining work in a single agent.
+    let reworked = inner
+        .store
+        .delegation_settlements(parent, run)
+        .await
+        .map_err(|_| ToolError::External("delegation ledger unavailable".into()))?
+        .iter()
+        .any(|settlement| {
+            settlement["verdict"] == json!(crate::subagent::VERDICT_INSUFFICIENT)
+                && settlement["verdict_reason"] == json!(crate::subagent::BENEFIT_REWORK)
+        });
+    if reworked {
+        return Err(ToolError::External(
+            "delegation settled as rework in this run: the same task was already paid for twice, so finish the remaining work in this Session as a single agent".into(),
+        ));
+    }
     let catalog = inner
         .store
         .named_agents(parent)
@@ -7001,7 +7019,7 @@ async fn delegate(
         .chars()
         .take(256)
         .collect();
-    inner
+    let start = inner
         .store
         .record(
             parent,
@@ -7077,6 +7095,7 @@ async fn delegate(
                 &call,
                 &watcher_child,
                 admission.admitted_seq,
+                start.recorded_at_ms,
                 permit,
                 background.stop.clone(),
             )
@@ -7094,18 +7113,20 @@ async fn delegate(
         });
         return Ok(json!({"session_id":child,"background":true,"status":"running"}));
     }
-    let text = finish_delegation(
+    let mut result = finish_delegation(
         inner,
         parent,
         run,
         call,
         &child,
         admission.admitted_seq,
+        start.recorded_at_ms,
         permit,
         cancel,
     )
     .await?;
-    Ok(json!({"session_id":child,"text":text}))
+    result["session_id"] = json!(child);
+    Ok(result)
 }
 
 /// The boundary one delegation grants its child, resolved deterministically:
@@ -7193,9 +7214,10 @@ async fn finish_delegation(
     call: &str,
     child: &str,
     admitted_seq: u64,
+    started_at_ms: Option<u64>,
     permit: FairPermit,
     cancel: CancellationToken,
-) -> Result<String, ToolError> {
+) -> Result<Value, ToolError> {
     let mut reason = "completed";
     // A child that outlives one event page would never show its finish: the
     // window is anchored at the admission sequence, so a fixed read returns
@@ -7295,6 +7317,65 @@ async fn finish_delegation(
         .usage_report(child)
         .await
         .map_err(|_| ToolError::External("subagent usage report unavailable".into()))?;
+    let parent_usage = inner
+        .store
+        .usage_report(parent)
+        .await
+        .map_err(|_| ToolError::External("parent usage report unavailable".into()))?;
+    // Rework reads this run's ledger: the same child settling again after an
+    // insufficient settlement means its first attempt was paid for twice.
+    let redispatched = inner
+        .store
+        .delegation_settlements(parent, run)
+        .await
+        .map_err(|_| ToolError::External("delegation ledger unavailable".into()))?
+        .iter()
+        .any(|settlement| {
+            settlement["subagent_id"] == json!(child)
+                && settlement["verdict"] == json!(crate::subagent::VERDICT_INSUFFICIENT)
+        });
+    let benefit = crate::subagent::NetBenefit::judge(reason, &text, redispatched);
+    let combined = crate::usage::combined(&parent_usage["providerUsage"], &usage["providerUsage"]);
+    // An axis a provider never reported stays unknown in the settlement; a
+    // zero would read as free.
+    let observed = |report: &Value, key: &str| {
+        (report["providerUsage"]["coverage"][key]
+            .as_u64()
+            .unwrap_or(0)
+            > 0)
+        .then(|| report["providerUsage"]["tokens"][key].as_u64().unwrap_or(0))
+    };
+    let child_cost = json!({
+        "input_tokens": observed(&usage, "input"),
+        "output_tokens": observed(&usage, "output"),
+        "turns": usage["turns"],
+    });
+    let wallclock_ms = started_at_ms.map(|start| crate::approval::now_ms().saturating_sub(start));
+    inner
+        .store
+        .record(
+            parent,
+            "delegation.settled",
+            json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":reason,
+                   "child":child_cost,
+                   "parent":{"input_tokens":observed(&parent_usage,"input"),"output_tokens":observed(&parent_usage,"output"),"turns":parent_usage["turns"]},
+                   "combined":combined,
+                   "wallclock_ms":wallclock_ms,
+                   "redispatched":redispatched,
+                   "verdict":benefit.verdict,"verdict_reason":benefit.reason,"recommendation":benefit.recommendation}),
+        )
+        .await
+        .map_err(|_| ToolError::External("delegation settlement could not be recorded".into()))?;
+    // The report is the settlement's structured side (AGT-03): status, result,
+    // cost, wall clock, and a pointer to the child — whose history stays in
+    // its own Session instead of being copied into the parent's transcript.
+    let report = json!({
+        "status":reason,
+        "result":text,
+        "wallclock_ms":wallclock_ms,
+        "cost":{"child":child_cost,"combined":combined},
+        "history":format!("full trace in child Session {child}"),
+    });
     inner
         .store
         .record(
@@ -7311,7 +7392,7 @@ async fn finish_delegation(
     if reason == "interrupted" {
         return Err(ToolError::Interrupted);
     }
-    Ok(text)
+    Ok(json!({"text":text,"report":report}))
 }
 
 async fn wake_session(inner: &Arc<Inner>, session: &str, force: bool) -> Result<(), Error> {

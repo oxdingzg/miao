@@ -4420,6 +4420,29 @@ impl Store {
         .await
     }
 
+    /// The net-benefit settlements one parent run has recorded (AGT-03). The
+    /// delegation gate reads this ledger: a rework settlement — the same task
+    /// paid for twice — closes further delegation for the run.
+    pub async fn delegation_settlements(
+        &self,
+        session: &str,
+        run_id: &str,
+    ) -> Result<Vec<Value>, Error> {
+        let (session, run_id) = (session.to_owned(), run_id.to_owned());
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT data FROM engine_event WHERE session_id=?1 AND kind='delegation.settled' AND json_extract(data,'$.run_id')=?2 ORDER BY seq",
+            )?;
+            let rows = stmt.query_map(params![session, run_id], |row| row.get::<_, String>(0))?;
+            let mut settlements = Vec::new();
+            for data in rows {
+                settlements.push(serde_json::from_str(&data?)?);
+            }
+            Ok(settlements)
+        })
+        .await
+    }
+
     pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {

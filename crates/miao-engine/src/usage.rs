@@ -356,6 +356,30 @@ pub fn hit_ratio(input_tokens: u64, cache_read: u64) -> Option<f64> {
     (input_tokens > 0).then(|| cache_read.min(input_tokens) as f64 / input_tokens as f64)
 }
 
+/// The combined spend of a delegation: the child's usage added to the
+/// delegating Session's own (AGT-03). Both sides are `providerUsage` shapes
+/// (`tokens` beside `coverage`). An axis either side never observed stays
+/// unknown — a missing provider report must not read as zero just because the
+/// other side reported, so the parent-plus-child total is unknown rather than
+/// understated.
+pub fn combined(parent: &Value, child: &Value) -> Value {
+    let observed = |side: &Value, key: &str| {
+        (side["coverage"][key].as_u64().unwrap_or(0) > 0)
+            .then(|| side["tokens"][key].as_u64().unwrap_or(0))
+    };
+    Value::Object(
+        AXES.iter()
+            .map(|(field, key)| {
+                let total = match (observed(parent, key), observed(child, key)) {
+                    (Some(parent), Some(child)) => json!(parent.saturating_add(child)),
+                    _ => Value::Null,
+                };
+                ((*field).to_owned(), total)
+            })
+            .collect(),
+    )
+}
+
 /// The billed cache axes of a normalized usage object, for per-turn lineage
 /// events and the session usage report. Absent axes stay absent: a provider
 /// that reports no cache breakdown must never read as a zero-cache hit.
@@ -469,6 +493,28 @@ mod tests {
             cache_lineage(&json!({"inputTokens": 10, "outputTokens": 1})),
             json!({})
         );
+    }
+
+    #[test]
+    fn combined_totals_sum_reported_axes_and_stay_unknown_when_either_side_is_silent() {
+        let parent = json!({
+            "tokens": {"input": 100, "output": 10, "cacheRead": 60},
+            "coverage": {"input": 2, "output": 2, "cacheRead": 1},
+        });
+        let child = json!({
+            "tokens": {"input": 30, "output": 5},
+            "coverage": {"input": 1, "output": 1},
+        });
+        let total = combined(&parent, &child);
+        assert_eq!(total["inputTokens"], 130);
+        assert_eq!(total["outputTokens"], 15);
+        // The child never reported a cache axis, so the shared total is
+        // unknown, not the parent's figure alone.
+        assert_eq!(total["cacheReadInputTokens"], Value::Null);
+        let silent = json!({"tokens": {}, "coverage": {}});
+        let total = combined(&silent, &child);
+        assert_eq!(total["inputTokens"], Value::Null);
+        assert_eq!(total["outputTokens"], Value::Null);
     }
 
     /// The gateway bills the turn itself, so the money it names rides the same
