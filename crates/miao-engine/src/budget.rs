@@ -454,8 +454,11 @@ fn micro_usd(value: f64) -> f64 {
     (value * 1_000_000.0).round() / 1_000_000.0
 }
 
+/// Money in the note that names it. Cents are what an operator reads ("$0.50
+/// used up"), and four decimals only where a figure is below a cent, so a
+/// sub-cent budget does not print as zero.
 fn usd(value: f64) -> String {
-    if micro_usd(value) >= 1.0 {
+    if micro_usd(value) >= 0.01 {
         format!("${value:.2}")
     } else {
         format!("${value:.4}")
