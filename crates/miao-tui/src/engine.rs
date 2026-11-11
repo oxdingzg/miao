@@ -176,6 +176,14 @@ pub enum Request {
         kind: String,
         id: String,
     },
+    /// Change one scheduled wakeup or cron in place: a cron takes a new
+    /// expression, a wakeup a new delay in seconds.
+    ChangeSchedule {
+        session_id: String,
+        kind: String,
+        id: String,
+        value: String,
+    },
     /// Move the open Session to another workspace directory (TUI-09).
     MoveSession {
         session_id: String,
@@ -468,6 +476,17 @@ impl Handle {
     pub fn schedule(&self, session_id: &str) {
         let _ = self.tx.send(Request::Schedule {
             session_id: session_id.into(),
+        });
+    }
+
+    /// Change one scheduled item in place, then ask for the list again so the
+    /// panel shows what the engine actually stored.
+    pub fn change_schedule(&self, session_id: &str, kind: &str, id: &str, value: &str) {
+        let _ = self.tx.send(Request::ChangeSchedule {
+            session_id: session_id.into(),
+            kind: kind.into(),
+            id: id.into(),
+            value: value.into(),
         });
     }
 
@@ -1381,6 +1400,37 @@ async fn run(
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("job failed: {error}")))
                         }
+                    }
+                }
+                Request::ChangeSchedule {
+                    session_id,
+                    kind,
+                    id,
+                    value,
+                } => {
+                    let (method, params) = match kind.as_str() {
+                        "cron" => (
+                            "change_cron",
+                            json!({ "session_id": session_id, "change": { "id": id, "cron": value } }),
+                        ),
+                        _ => match value.trim().parse::<u64>() {
+                            Ok(seconds) => (
+                                "change_wakeup",
+                                json!({ "session_id": session_id, "change": { "timer_id": id, "delaySeconds": seconds } }),
+                            ),
+                            Err(_) => {
+                                bus.send(AppEvent::EngineFailure(
+                                    "a wakeup edit needs a delay in seconds".into(),
+                                ));
+                                return;
+                            }
+                        },
+                    };
+                    match client.request(method, params).await {
+                        Ok(_) => refresh_schedule(client, &bus, &session_id).await,
+                        Err(error) => bus.send(AppEvent::EngineFailure(format!(
+                            "cannot change the schedule: {error}"
+                        ))),
                     }
                 }
                 Request::CancelJob {
