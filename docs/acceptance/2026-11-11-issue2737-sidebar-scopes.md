@@ -50,7 +50,7 @@ out; finished in 1.62s`.
 ## CI
 
 - The landed redesign: PR #2847 green on CI run `42923272263` (head `a5a06f4f7fc4`).
-- The pins on this tree: this pull request's own `ci` run, recorded here once green.
+- The pins on this tree: PR #2899 green on CI run `43015547098` (head `b5560b209f`).
 
 ## Staying open
 
