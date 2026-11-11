@@ -1884,6 +1884,7 @@ struct Exploring {
     turns: Option<u32>,
 }
 
+#[async_trait]
 impl Provider for Exploring {
     async fn stream(
         &self,
