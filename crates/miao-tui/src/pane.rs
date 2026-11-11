@@ -113,6 +113,7 @@ impl Shell {
                 usage: None,
                 usage_hourly: None,
                 goal: None,
+                plan: None,
                 todos: Vec::new(),
                 chord: None,
             }),
@@ -462,6 +463,15 @@ impl Shell {
     pub fn set_goal(&mut self, goal: Option<&crate::session::GoalView>) {
         if let Some(sidebar) = self.sidebar.as_mut() {
             sidebar.goal = goal.cloned();
+        }
+    }
+
+    /// Show the Session's pending plan in its own section: the Goal says why
+    /// it exists, the plan says how it means to get there, and the checklist
+    /// says what this turn is doing.
+    pub fn set_plan(&mut self, plan: Option<&crate::session::PlanView>) {
+        if let Some(sidebar) = self.sidebar.as_mut() {
+            sidebar.plan = plan.cloned();
         }
     }
 
@@ -3136,6 +3146,9 @@ pub struct SidebarPane {
     usage_hourly: Option<crate::status::HourlyUsage>,
     /// The durable Goal, painted above the checklist and never mixed into it.
     goal: Option<crate::session::GoalView>,
+    /// The pending plan: how the Session means to get there. Its own section,
+    /// because the checklist is what changes every turn and a plan is not.
+    plan: Option<crate::session::PlanView>,
     todos: Vec<crate::session::TodoView>,
     /// The chord that hides this column, resolved from the live keymap. Pinned
     /// to the column's last row so a long checklist cannot scroll it away.
@@ -3525,6 +3538,30 @@ impl Pane for SidebarPane {
                             "budget · {}",
                             clip_cells(budget, 0, width.saturating_sub(9))
                         ),
+                        Style::new().fg(palette.text_muted),
+                    )));
+                }
+            }
+            if let Some(plan) = &self.plan {
+                // A plan is a promise, not a result: the approved word is the
+                // only one that earns colour, and the rows stay plain.
+                let plan_style = match plan.status.as_str() {
+                    "approved" => Style::new().fg(palette.success),
+                    _ => Style::new().fg(palette.text_muted),
+                };
+                lines.push(Line::default());
+                lines.push(Line::from(Span::styled(
+                    format!("▾ Plan · {}", plan.status),
+                    plan_style,
+                )));
+                let width = area.width.saturating_sub(3);
+                lines.push(Line::from(Span::styled(
+                    clip_cells(&plan.summary, 0, width),
+                    Style::new().fg(palette.text),
+                )));
+                if plan.steps > 0 {
+                    lines.push(Line::from(Span::styled(
+                        format!("{} step{}", plan.steps, plural(plan.steps as u64)),
                         Style::new().fg(palette.text_muted),
                     )));
                 }
@@ -4825,6 +4862,75 @@ mod tests {
         assert!(
             text.contains("wire the parser"),
             "the checklist is still shown: {text}"
+        );
+    }
+
+    /// #1969: the third durable row gets its own section, between the Goal
+    /// (why) and the checklist (what this turn is doing).
+    #[test]
+    fn the_pending_plan_sits_between_the_goal_and_the_checklist() {
+        let palette =
+            crate::theme::builtin(crate::theme::DEFAULT_THEME, crate::theme::ThemeMode::Dark)
+                .expect("theme");
+        let mut shell = Shell::new(
+            Path::new("."),
+            Theme {
+                name: crate::theme::DEFAULT_THEME.to_string(),
+                palette,
+            },
+        );
+        shell.set_session(Some(&SessionSummary {
+            id: "ses_p".into(),
+            title: Some("plan".into()),
+            parent_id: None,
+            updated_at_ms: Some(10),
+            archived_at_ms: None,
+            pinned_at_ms: None,
+            directory: Some("/work/miao".into()),
+            model: None,
+            credential_id: None,
+            preview: None,
+        }));
+        shell.set_goal(Some(&crate::session::GoalView {
+            objective: "ship the offset reporting".into(),
+            status: "active".into(),
+            budget: None,
+            evidence: None,
+        }));
+        shell.set_plan(Some(&crate::session::PlanView {
+            summary: "read the ledger, then replay it".into(),
+            status: "approved".into(),
+            steps: 2,
+        }));
+        shell.set_todos(&[crate::session::TodoView {
+            content: "wire the parser".into(),
+            status: "pending".into(),
+        }]);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 24)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                let sidebar = shell.sidebar.as_mut().expect("sidebar");
+                sidebar.render(frame, frame.area());
+            })
+            .expect("draw");
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        let goal = text.find("▾ Goal · active").expect("goal header");
+        let plan = text.find("▾ Plan · approved").expect("plan header");
+        let summary = text
+            .find("read the ledger, then replay it")
+            .expect("plan summary");
+        let steps = text.find("2 steps").expect("step count");
+        let todos = text.find("▾ Todo 0/1").expect("todo header");
+        assert!(
+            goal < plan && plan < summary && summary < steps && steps < todos,
+            "the plan reads between the goal and the checklist: {text}"
         );
     }
 
@@ -7146,6 +7252,7 @@ mod tests {
             usage: None,
             usage_hourly: None,
             goal: None,
+            plan: None,
             todos: vec![crate::session::TodoView {
                 content: "a todo long enough that the column has to clip it".to_string(),
                 status: "in_progress".to_string(),
@@ -7226,6 +7333,7 @@ mod tests {
             usage: None,
             usage_hourly: Some(usage.clone()),
             goal: None,
+            plan: None,
             todos: Vec::new(),
             chord: None,
         };
@@ -7351,6 +7459,7 @@ mod tests {
             usage: None,
             usage_hourly: Some(usage),
             goal: None,
+            plan: None,
             todos: Vec::new(),
             chord: None,
         };
@@ -7421,6 +7530,7 @@ mod tests {
             usage: None,
             usage_hourly: None,
             goal: None,
+            plan: None,
             todos: (0..40)
                 .map(|index| crate::session::TodoView {
                     content: format!("todo {index}"),
@@ -7719,6 +7829,7 @@ mod tests {
                 usage: Some(usage),
                 usage_hourly: None,
                 goal: None,
+                plan: None,
                 todos: Vec::new(),
                 chord: None,
             }
@@ -7823,6 +7934,7 @@ mod tests {
             usage: Some(usage),
             usage_hourly: None,
             goal: None,
+            plan: None,
             todos: Vec::new(),
             chord: None,
         };
@@ -7877,6 +7989,7 @@ mod tests {
             usage: None,
             usage_hourly: None,
             goal: None,
+            plan: None,
             todos: Vec::new(),
             chord: None,
         };
@@ -7949,6 +8062,11 @@ mod tests {
                 budget: None,
                 evidence: None,
             }),
+            plan: Some(crate::session::PlanView {
+                summary: "draft, then transcribe".into(),
+                status: "pending".into(),
+                steps: 2,
+            }),
             todos: vec![crate::session::TodoView {
                 content: "write tests".into(),
                 status: "in_progress".into(),
@@ -7971,7 +8089,14 @@ mod tests {
             row.trim_matches(|c: char| c == '│' || c.is_whitespace())
                 .is_empty()
         };
-        for header in ["▾ Last 24h", "▾ Mode", "▾ Changes", "▾ Goal", "▾ Todo"] {
+        for header in [
+            "▾ Last 24h",
+            "▾ Mode",
+            "▾ Changes",
+            "▾ Goal",
+            "▾ Plan",
+            "▾ Todo",
+        ] {
             let at = rows
                 .iter()
                 .position(|row| row.contains(header))

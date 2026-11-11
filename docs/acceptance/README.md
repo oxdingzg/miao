@@ -96,6 +96,7 @@ newer record is the one to read.
 | `2026-11-11-his05-verification-receipts.md` | `feat/his05-verification-receipts` | HIS-05 (the `review` state on every completion receipt — found/fixed/verified/unverified derived from an executed check and its source snapshot; commit/push/PR authorization via the command classifier; branch discipline beyond approval stays unenforced) |
 | `2026-11-11-rus02-retirement.md` | `chore/rus02-retirement-record` | RUS-02 (the TS execution path is gone: inventory targets deleted, client/data acceptance and the rollback drill cited, the last CI references to `packages/miao` removed with the dead integration runner) |
 | `2026-11-11-his03-shell-side-effects.md` | `test/his03-shell-disclaimer` | HIS-03 (the revert's shell/external side-effect disclaimer on both boundary kinds and in the confirmation dialog, re-verified on the current tree; the release stamp for v0.3.60 is recorded in the file) |
+| `2026-11-11-agt04-plan-display.md` | `feat/his05-plan-display` | AGT-04 (the plan's own sidebar section between the Goal and the checklist, decoded from `session.state.plan`; the three durable rows stay separate; no release stamp yet because no published release contains this tree) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`

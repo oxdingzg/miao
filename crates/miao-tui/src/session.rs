@@ -326,6 +326,32 @@ impl GoalView {
     }
 }
 
+/// The pending plan: how the Session means to get there, kept in its own
+/// durable row apart from the checklist. `status` is the engine's word for
+/// whether it is a draft, transcribed into the checklist, or retired.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanView {
+    pub summary: String,
+    pub status: String,
+    /// How many steps the plan declares. The steps themselves live in the
+    /// checklist, so the row counts them instead of repeating them.
+    pub steps: usize,
+}
+
+impl PlanView {
+    fn from_value(value: &Value) -> Option<Self> {
+        Some(Self {
+            summary: value.get("summary")?.as_str()?.to_string(),
+            status: value.get("status")?.as_str()?.to_string(),
+            steps: value
+                .get("steps")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0),
+        })
+    }
+}
+
 /// What the Session is doing and what it is waiting on, re-read from every
 /// snapshot. Action state (which option is highlighted) stays in the UI.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -334,6 +360,9 @@ pub struct SessionState {
     /// The durable Goal, separate from the checklist. `None` when the Session
     /// never recorded one.
     pub goal: Option<GoalView>,
+    /// The pending plan, also separate from the checklist. `None` when the
+    /// Session never drafted one, or when the last one was retired.
+    pub plan: Option<PlanView>,
     pub active_run: Option<String>,
     pub pending: usize,
     /// What the operator typed that the engine still holds un-promoted, in
@@ -376,6 +405,12 @@ impl SessionState {
                 .and_then(|goal| goal.get("value"))
                 .filter(|value| !value.is_null())
                 .and_then(GoalView::from_value),
+            plan: snapshot
+                .get("state")
+                .and_then(|state| state.get("plan"))
+                .and_then(|plan| plan.get("value"))
+                .filter(|value| !value.is_null())
+                .and_then(PlanView::from_value),
             active_run: snapshot
                 .get("active_run")
                 .and_then(Value::as_str)
@@ -1009,6 +1044,54 @@ mod tests {
             epilogue(&untitled),
             "  Session   ses_b\n  Continue  miao -s ses_b\n"
         );
+    }
+
+    /// #1969: the pending plan is the third durable state row, and the view
+    /// must keep it apart from both the checklist and the Goal.
+    #[test]
+    fn the_pending_plan_is_decoded_apart_from_the_goal_and_the_checklist() {
+        let state = SessionState::from_snapshot(&json!({
+            "state": {
+                "todos": {
+                    "revision": 4,
+                    "value": { "todos": [{ "content": "wire the parser", "status": "pending" }] }
+                },
+                "goal": {
+                    "revision": 7,
+                    "value": { "objective": "ship the offset reporting", "status": "active" }
+                },
+                "plan": {
+                    "revision": 2,
+                    "value": {
+                        "summary": "read the ledger, then replay it",
+                        "status": "pending",
+                        "steps": ["read the ledger", "replay it"]
+                    }
+                }
+            }
+        }));
+        let plan = state.plan.expect("plan");
+        assert_eq!(plan.summary, "read the ledger, then replay it");
+        assert_eq!(plan.status, "pending");
+        assert_eq!(plan.steps, 2);
+        // The other two rows are untouched by it.
+        assert_eq!(state.todos.len(), 1);
+        assert_eq!(
+            state.goal.expect("goal").objective,
+            "ship the offset reporting"
+        );
+    }
+
+    /// A retired plan is `null` in the snapshot, which must read as "no plan"
+    /// rather than as an empty section.
+    #[test]
+    fn a_retired_plan_is_absent_rather_than_empty() {
+        let state = SessionState::from_snapshot(&json!({
+            "state": { "todos": null, "goal": null, "plan": null }
+        }));
+        assert!(state.plan.is_none());
+        assert!(state.goal.is_none());
+        assert!(state.todos.is_empty());
     }
 
     #[test]
