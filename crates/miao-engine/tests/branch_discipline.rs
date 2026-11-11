@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use miao_engine::{
     approval::Approval,
-    permission::{Config, Mode, Policy},
+    permission::{Config, Decision, Mode, Policy, Rule},
     protocol::{Delivery, Input, ModelRequest},
     provider::{Provider, ProviderError, Reply},
     runtime::Runtime,
@@ -53,6 +53,23 @@ fn policy() -> Policy {
         mode: Mode::Workspace,
         allow_process: true,
         approval_timeout_ms: 60_000,
+        ..Config::default()
+    })
+    .unwrap()
+}
+
+/// The operator's own standing authorization: an allow rule settles the call
+/// before the gate is reached at all.
+fn allowed_policy() -> Policy {
+    Policy::new(Config {
+        mode: Mode::Workspace,
+        allow_process: true,
+        approval_timeout_ms: 60_000,
+        rules: vec![Rule {
+            tool: "bash".into(),
+            path: "**".into(),
+            decision: Decision::Allow,
+        }],
         ..Config::default()
     })
     .unwrap()
@@ -233,5 +250,40 @@ async fn a_bare_push_is_judged_by_the_recorded_branch() {
     let denied = denial(&store).await;
     assert_eq!(denied["reason"], "branch_discipline");
     assert_eq!(denied["target"], "main");
+    runtime.shutdown().await;
+}
+
+/// Branch discipline stands in for a missing decision, not over one: a project
+/// that allow-listed its shell commands itself has authorized the push.
+#[tokio::test]
+async fn an_operator_allow_rule_still_authorizes_the_push() {
+    let (root, workspace) = checkout("feat/topic");
+    let store = Store::open(root.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Shell("git push origin main".into())),
+        Tools::new(&workspace)
+            .await
+            .unwrap()
+            .with_process_runner(env!("CARGO_BIN_EXE_miao-engine").into()),
+        allowed_policy(),
+    )
+    .await
+    .unwrap();
+    runtime.admit(input(), true).await.unwrap();
+    assert!(
+        wait_for(&store, "run.finished").await,
+        "event kinds: {:?}",
+        kinds(&store).await
+    );
+    let events = kinds(&store).await;
+    assert!(
+        !events.iter().any(|kind| kind == "permission_denied"),
+        "{events:?}"
+    );
+    assert!(
+        events.iter().any(|kind| kind == "tool.dispatched"),
+        "{events:?}"
+    );
     runtime.shutdown().await;
 }
