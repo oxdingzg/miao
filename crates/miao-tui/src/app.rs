@@ -3960,6 +3960,19 @@ impl App {
                     .and_then(Value::as_str)
                     .map(str::to_owned),
             },
+            // The engine refused the next attempt: the pause does not fit what
+            // the turn has left, so no retry happens and the failure that ends
+            // the turn repeats the same sentence. Saying it here keeps an
+            // announced retry from standing on a strip that will never retry —
+            // the one thing "Retrying" must never mean.
+            "provider.window" => {
+                let note = frame
+                    .get("note")
+                    .and_then(Value::as_str)
+                    .unwrap_or("no retry: the pause does not fit what the turn has left");
+                self.notice(note);
+                return;
+            }
             // An attempt announcement proves the request is in flight, even
             // before the first heartbeat or right after a previous step.
             "provider.attempt" => {
@@ -7353,6 +7366,29 @@ mod tests {
             "attempt": 1,
             "elapsed_ms": 0,
         }))
+    }
+
+    /// A refused retry must not leave "Retrying" standing: the turn fails
+    /// instead of retrying, so the strip says why no attempt followed, with the
+    /// numbers the engine's decision used.
+    #[test]
+    fn a_refused_retry_says_why_no_attempt_followed() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.window",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "attempt": 2,
+            "requested_ms": 30_000,
+            "remaining_ms": 12_000,
+            "note": "no retry: the provider asked for 30s but the turn's retry window had only 12s left",
+        })));
+        assert_eq!(
+            app.shell.composer.notice.as_deref(),
+            Some(
+                "no retry: the provider asked for 30s but the turn's retry window had only 12s left"
+            )
+        );
     }
 
     #[test]
