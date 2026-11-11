@@ -210,6 +210,23 @@ pub struct Identity {
 /// most of an hour, so a hostile or buggy `Retry-After` is treated as this.
 const RETRY_AFTER_MAX: Duration = Duration::from_secs(15 * 60);
 
+/// How many pauses the endpoint itself named may be paid outside the window, and
+/// how much wall clock they may add up to. Two of the most common
+/// `Retry-After: 30s` fit; a rate limit that keeps saying thirty seconds forever
+/// still ends the turn with the refusal naming what it asked for.
+const VENDOR_WAITS_PER_TURN: usize = 2;
+const VENDOR_WAIT_TOTAL: Duration = Duration::from_secs(90);
+
+/// Why a pause that does not fit the window produced no further attempt.
+enum WaitRefused {
+    /// The pause was this runner's own backoff, so the window still owns it.
+    Backoff { remaining: Duration },
+    /// The turn already spent its vendor-named waits.
+    AlreadyExtended { waits: usize },
+    /// The endpoint asked for more time than the extra wait had left.
+    Allowance { left: Duration },
+}
+
 /// A runaway guard only: the turn's retry window ends the attempts first.
 const MAX_REQUEST_ATTEMPTS: usize = 25;
 
@@ -220,16 +237,25 @@ const ROUTED_ATTEMPTS: usize = 3;
 pub(crate) struct Budget {
     /// How long the turn may keep retrying once an attempt has failed.
     window: Duration,
-    /// When the retry window ends. Unarmed until the first failure: a first
+    /// When the retry window was armed. Unarmed until the first failure: a first
     /// attempt that is slow on its own is bounded by the watchdogs, not by the
     /// retry window, or one slow response spends the whole budget and leaves no
     /// room for the retry the window exists to grant.
-    deadline: OnceLock<tokio::time::Instant>,
+    armed_at: OnceLock<tokio::time::Instant>,
+    /// Wall clock a vendor-named pause bought beyond the window. See `grant`.
+    granted: Mutex<Granted>,
     attempts: AtomicUsize,
     /// The last failure this turn saw, kept so a window that expires before
     /// another request can still report why the turn failed.
     failure: Mutex<Option<String>>,
 }
+
+#[derive(Default)]
+struct Granted {
+    waits: usize,
+    total: Duration,
+}
+
 impl Budget {
     pub fn new() -> Arc<Self> {
         Self::with_deadline(Duration::from_secs(60))
@@ -239,7 +265,8 @@ impl Budget {
     fn with_deadline(window: Duration) -> Arc<Self> {
         Arc::new(Self {
             window,
-            deadline: OnceLock::new(),
+            armed_at: OnceLock::new(),
+            granted: Mutex::new(Granted::default()),
             attempts: AtomicUsize::new(0),
             failure: Mutex::new(None),
         })
@@ -247,12 +274,11 @@ impl Budget {
     /// Ends any attempt that is itself a retry; idempotent, so the first
     /// failure of the turn fixes the window's end.
     fn arm(&self) -> tokio::time::Instant {
-        *self
-            .deadline
-            .get_or_init(|| tokio::time::Instant::now() + self.window)
+        let armed = *self.armed_at.get_or_init(tokio::time::Instant::now);
+        armed + self.window + self.granted()
     }
     fn deadline(&self) -> Option<tokio::time::Instant> {
-        self.deadline.get().copied()
+        self.armed_at.get().map(|_| self.arm())
     }
     fn expired(&self) -> bool {
         self.deadline()
@@ -262,6 +288,34 @@ impl Budget {
     fn remaining(&self) -> Option<Duration> {
         self.deadline()
             .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
+    }
+    fn granted(&self) -> Duration {
+        self.granted
+            .lock()
+            .unwrap_or_else(|held| held.into_inner())
+            .total
+    }
+    /// Pay one pause the endpoint itself named outside the window, or say why
+    /// it cannot be paid. A `Retry-After` is the provider's statement about when
+    /// it will answer, while the window is this runner's guess about how long to
+    /// keep failing; a window that happens to have 30 s left must not refuse a
+    /// 30 s pause the endpoint asked for. The allowance is bounded twice — by
+    /// count and by total wall clock — because a wrong or hostile header must
+    /// not hold the turn for most of an hour.
+    fn grant(&self, pause: Duration) -> Result<(), WaitRefused> {
+        let mut granted = self.granted.lock().unwrap_or_else(|held| held.into_inner());
+        if granted.waits >= VENDOR_WAITS_PER_TURN {
+            return Err(WaitRefused::AlreadyExtended {
+                waits: granted.waits,
+            });
+        }
+        let left = VENDOR_WAIT_TOTAL.saturating_sub(granted.total);
+        if pause > left {
+            return Err(WaitRefused::Allowance { left });
+        }
+        granted.waits += 1;
+        granted.total += pause;
+        Ok(())
     }
     fn note_failure(&self, reason: &str) {
         *self.failure.lock().unwrap_or_else(|held| held.into_inner()) = Some(reason.to_owned());
@@ -1233,6 +1287,7 @@ pub(crate) async fn request_with_retry(
                         cause,
                         source: "immediate",
                         pause: Duration::ZERO,
+                        extended: false,
                     },
                 )
                 .await?;
@@ -1257,7 +1312,31 @@ pub(crate) async fn request_with_retry(
             .remaining()
             .filter(|remaining| *remaining <= pause)
         {
-            let note = window_refusal_note(requested, pause, remaining);
+            // A pause the endpoint named is its own schedule and is paid
+            // outside the window; a backoff is this runner's guess and stays
+            // inside it.
+            let refused = match requested {
+                Some(_) => scope.budget.grant(pause).err(),
+                None => Some(WaitRefused::Backoff { remaining }),
+            };
+            let Some(refused) = refused else {
+                announce_retry(
+                    progress,
+                    cancel,
+                    RetryNotice {
+                        attempt: attempt + 1,
+                        reason,
+                        status,
+                        cause,
+                        source: pause_source(requested),
+                        pause,
+                        extended: true,
+                    },
+                )
+                .await?;
+                continue;
+            };
+            let note = window_refusal_note(pause, refused);
             let _ = progress
                 .send(json!({
                     "kind": "provider.window",
@@ -1282,6 +1361,7 @@ pub(crate) async fn request_with_retry(
                 cause,
                 source: pause_source(requested),
                 pause,
+                extended: false,
             },
         )
         .await?;
@@ -1325,6 +1405,9 @@ struct RetryNotice {
     cause: &'static str,
     source: &'static str,
     pause: Duration,
+    /// The pause was paid outside the window by `Budget::grant`, so the wait the
+    /// operator sees is longer than this runner would have chosen on its own.
+    extended: bool,
 }
 
 /// Announce the next attempt, then wait for it. A cancelled wait reports the
@@ -1336,7 +1419,7 @@ async fn announce_retry(
 ) -> Result<(), ProviderError> {
     tokio::select! {
         _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
-        result=progress.send(json!({"kind":"provider.retry","attempt":notice.attempt,"reason":notice.reason,"status":notice.status,"cause":notice.cause,"source":notice.source,"delay_ms":notice.pause.as_millis() as u64}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
+        result=progress.send(json!({"kind":"provider.retry","attempt":notice.attempt,"reason":notice.reason,"status":notice.status,"cause":notice.cause,"source":notice.source,"delay_ms":notice.pause.as_millis() as u64,"extended_ms":notice.extended.then_some(notice.pause.as_millis() as u64)}))=>if result.is_err(){return Err(ProviderError::Interrupted);},
     }
     tokio::select! {
         _=cancel.cancelled()=>return Err(ProviderError::Interrupted),
@@ -1385,23 +1468,27 @@ fn pause_source(requested: Option<Duration>) -> &'static str {
     }
 }
 
-/// Why the next attempt was refused, in the two numbers the decision used. The
-/// source matters: a delay the provider named and one this runner's schedule
-/// chose read the same on a status line and mean different things.
-fn window_refusal_note(
-    requested: Option<Duration>,
-    pause: Duration,
-    remaining: Duration,
-) -> String {
-    let asking = match requested {
-        Some(_) => "the provider asked for",
-        None => "the next backoff was",
-    };
-    format!(
-        "no retry: {asking} {} but the turn's retry window had only {} left",
-        pause_words(pause),
-        pause_words(remaining)
-    )
+/// Why the next attempt was refused, in the numbers the decision used. The three
+/// cases read the same on a bare error line and mean different things: a backoff
+/// this runner chose that the window cannot hold, a vendor pause the turn had no
+/// extra wait left for, and one it had already extended as far as it goes.
+fn window_refusal_note(pause: Duration, refused: WaitRefused) -> String {
+    match refused {
+        WaitRefused::Backoff { remaining } => format!(
+            "no retry: the next backoff was {} but the turn's retry window had only {} left",
+            pause_words(pause),
+            pause_words(remaining)
+        ),
+        WaitRefused::AlreadyExtended { waits } => format!(
+            "no retry: the provider asked for {} but this turn already extended its retry window {waits} times",
+            pause_words(pause)
+        ),
+        WaitRefused::Allowance { left } => format!(
+            "no retry: the provider asked for {} and only {} of extra wait was left",
+            pause_words(pause),
+            pause_words(left)
+        ),
+    }
 }
 
 /// A pause written the way the status line spells one: whole seconds, and
@@ -1860,21 +1947,97 @@ mod retry_tests {
         assert!(budget.expired(), "the armed window must end the retries");
     }
 
-    /// A pause the window cannot outlast never produces another attempt, so the
-    /// turn refuses it at once instead of sleeping through the provider's delay.
+    /// A pause the endpoint named is its own schedule, not this runner's guess,
+    /// so it is paid outside a window that could not hold it. A 30 s
+    /// `Retry-After` arriving with 30 s of window left used to end the turn
+    /// after one attempt; the endpoint had done nothing wrong.
     #[tokio::test]
-    async fn a_retry_after_beyond_the_window_fails_without_sleeping() {
+    async fn a_vendor_pause_beyond_the_window_is_paid_outside_it() {
+        let (endpoint, state, server) = serve(vec![
+            Scripted {
+                status: 429,
+                retry_after: Some("1"),
+            },
+            Scripted {
+                status: 200,
+                retry_after: None,
+            },
+        ])
+        .await;
+        let (outcome, notices) = drive(&endpoint, Duration::from_millis(300)).await;
+        server.abort();
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(
+            state.lock().unwrap().1,
+            2,
+            "the vendor's pause earned the second attempt"
+        );
+        assert_eq!(delays(&notices), vec![1_000], "{notices:?}");
+        let retried = notices
+            .iter()
+            .find(|notice| notice["kind"] == "provider.retry")
+            .expect("the wait is announced");
+        assert_eq!(
+            retried["extended_ms"], 1_000,
+            "the wait is longer than the window, so it was granted outside it"
+        );
+    }
+
+    /// The allowance is bounded, and a spent one still refuses: the turn ends
+    /// with the endpoint's own words plus the fact that the window had already
+    /// been extended as far as it goes.
+    #[tokio::test]
+    async fn the_vendor_wait_allowance_ends_and_names_itself() {
         let (endpoint, state, server) = serve(vec![Scripted {
             status: 429,
-            retry_after: Some("2"),
+            retry_after: Some("1"),
         }])
         .await;
-        let started = std::time::Instant::now();
         let (outcome, notices) = drive(&endpoint, Duration::from_millis(200)).await;
-        let elapsed = started.elapsed();
         server.abort();
         assert!(
             matches!(outcome, Err(ProviderError::Http(429, _))),
+            "{outcome:?}"
+        );
+        assert_eq!(
+            state.lock().unwrap().1,
+            3,
+            "two granted waits, then the refusal"
+        );
+        assert_eq!(delays(&notices), vec![1_000, 1_000], "{notices:?}");
+        let refused: Vec<&Value> = notices
+            .iter()
+            .filter(|notice| notice["kind"] == "provider.window")
+            .collect();
+        assert_eq!(refused.len(), 1, "{notices:?}");
+        let note = refused[0]["note"]
+            .as_str()
+            .expect("the refusal names the numbers it used");
+        assert!(
+            note.contains("already extended its retry window 2 times"),
+            "{note}"
+        );
+        let message = outcome
+            .expect_err("the refusal is the turn's failure")
+            .to_string();
+        assert!(message.contains(note), "{message}");
+    }
+
+    /// A backoff is this runner's guess, so the window still owns it. A short
+    /// window refuses a backoff that does not fit and never sleeps through it.
+    #[tokio::test]
+    async fn a_backoff_beyond_the_window_still_refuses() {
+        let (endpoint, state, server) = serve(vec![Scripted {
+            status: 500,
+            retry_after: None,
+        }])
+        .await;
+        let started = std::time::Instant::now();
+        let (outcome, notices) = drive(&endpoint, Duration::from_millis(100)).await;
+        let elapsed = started.elapsed();
+        server.abort();
+        assert!(
+            matches!(outcome, Err(ProviderError::Http(500, _))),
             "{outcome:?}"
         );
         assert_eq!(
@@ -1883,36 +2046,18 @@ mod retry_tests {
             "no attempt followed the refusal"
         );
         assert!(
-            elapsed < Duration::from_millis(150),
-            "the turn waited {elapsed:?}"
+            elapsed < Duration::from_millis(100),
+            "the turn slept through a backoff it had no room for: {elapsed:?}"
         );
-        let refused: Vec<&Value> = notices
+        assert!(delays(&notices).is_empty(), "{notices:?}");
+        let note = notices
             .iter()
-            .filter(|notice| notice["kind"] == "provider.window")
-            .collect();
-        assert_eq!(refused.len(), 1, "{notices:?}");
-        assert_eq!(refused[0]["requested_ms"], 2_000);
-        // The refusal names both numbers, and the failure repeats the same
-        // sentence: an error that only carried the provider's words left the
-        // operator unable to tell a runner that would not retry from a window
-        // that could not hold the pause.
-        let note = refused[0]["note"]
-            .as_str()
-            .expect("the refusal names the numbers it used");
+            .find(|notice| notice["kind"] == "provider.window")
+            .and_then(|notice| notice["note"].as_str())
+            .expect("the refusal names what it refused");
         assert!(
-            note.starts_with(
-                "no retry: the provider asked for 2s but the turn's retry window had only "
-            ),
+            note.starts_with("no retry: the next backoff was "),
             "{note}"
-        );
-        assert!(note.ends_with(" left"), "{note}");
-        let message = outcome
-            .expect_err("the refusal is the turn's failure")
-            .to_string();
-        assert!(message.contains(note), "{message}");
-        assert!(
-            delays(&notices).is_empty(),
-            "the refused pause was never announced as a retry"
         );
     }
 

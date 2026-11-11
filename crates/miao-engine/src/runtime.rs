@@ -3946,7 +3946,7 @@ async fn execute(
                                 "run_id":run,"step":step,
                                 "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                                 "cause":delta["cause"],"source":delta["source"],
-                                "delay_ms":delta["delay_ms"],
+                                "delay_ms":delta["delay_ms"],"extended_ms":delta["extended_ms"],
                             })).await?;
                         } else if delta["kind"] == "provider.attempt" {
                             // An attempt describes the request, not the answer it may
@@ -3987,7 +3987,7 @@ async fn execute(
                         "run_id":run,"step":step,
                         "attempt":delta["attempt"],"reason":delta["reason"],"status":delta["status"],
                         "cause":delta["cause"],"source":delta["source"],
-                        "delay_ms":delta["delay_ms"],
+                        "delay_ms":delta["delay_ms"],"extended_ms":delta["extended_ms"],
                     })).await?;
                 } else if delta["kind"] == "provider.attempt" {
                     inner.progress.send(json!({"session_id":session,"run_id":run,"step":step,"kind":"provider.attempt","protocol":delta["protocol"],"attempt":delta["attempt"],"status":delta["status"],"outcome":delta["outcome"],"detail":delta["detail"]}));

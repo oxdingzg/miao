@@ -1748,6 +1748,11 @@ async fn run(
                                     "note": event.data.get("note").cloned().unwrap_or(Value::Null),
                                     "requested_ms": event.data.get("requested_ms").cloned().unwrap_or(Value::Null),
                                     "remaining_ms": event.data.get("remaining_ms").cloned().unwrap_or(Value::Null),
+                                    "delay_ms": event.data.get("delay_ms").cloned().unwrap_or(Value::Null),
+                                    "extended_ms": event.data.get("extended_ms").cloned().unwrap_or(Value::Null),
+                                    "source": event.data.get("source").cloned().unwrap_or(Value::Null),
+                                    "status": event.data.get("status").cloned().unwrap_or(Value::Null),
+                                    "reason": event.data.get("reason").cloned().unwrap_or(Value::Null),
                                 })));
                             }
                             _ => {}

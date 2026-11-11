@@ -94,6 +94,9 @@ pub enum LivePhase {
         attempt: u64,
         detail: String,
         cause: Option<String>,
+        /// How long the engine said this pause lasts, so the strip can count it
+        /// down instead of leaving a static number to be re-read.
+        pause: Option<Duration>,
     },
     /// A tool call is executing. The engine is quiet here too, but naming the
     /// work is what makes a long command differ from a stuck turn.
@@ -127,6 +130,7 @@ fn phase_label(phase: &LivePhase) -> String {
             attempt,
             detail,
             cause,
+            ..
         } => {
             let why = cause
                 .clone()
@@ -174,7 +178,15 @@ fn retry_detail(frame: &Value) -> String {
             }
             clipped
         });
-    [cause.map(str::to_string), pause, reason]
+    // A wait longer than the runner's own window is the engine paying the
+    // provider's schedule, not a longer guess: the two need different words or
+    // the strip looks like it lost control of its budget.
+    let extended = frame
+        .get("extended_ms")
+        .and_then(Value::as_u64)
+        .is_some()
+        .then_some("window extended".to_string());
+    [cause.map(str::to_string), pause, extended, reason]
         .into_iter()
         .flatten()
         .collect::<Vec<String>>()
@@ -208,6 +220,23 @@ impl Live {
                 "Waiting for model · the model may reason before the first token".to_string()
             }
             LivePhase::Waiting => "Waiting for model".to_string(),
+            // A pause with a known length counts down: a static "30.0s from
+            // Retry-After" leaves the operator re-reading the same number to
+            // learn whether the wait is moving, which is the whole reason a
+            // retry line exists.
+            LivePhase::Retrying {
+                attempt,
+                detail,
+                pause: Some(pause),
+                ..
+            } => {
+                let left = pause.saturating_sub(elapsed);
+                let left = crate::pane::duration_ms(left.as_millis() as u64);
+                match detail.is_empty() {
+                    true => format!("Retrying · attempt {attempt} · {left} left"),
+                    false => format!("Retrying · attempt {attempt} · {left} left · {detail}"),
+                }
+            }
             LivePhase::Retrying {
                 attempt, detail, ..
             } if detail.is_empty() => {
@@ -4012,6 +4041,11 @@ impl App {
                     .get("cause")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
+                pause: frame
+                    .get("delay_ms")
+                    .and_then(Value::as_u64)
+                    .map(Duration::from_millis)
+                    .filter(|pause| !pause.is_zero()),
             },
             // The engine refused the next attempt: the pause does not fit what
             // the turn has left, so no retry happens and the failure that ends
@@ -7541,6 +7575,57 @@ mod tests {
         assert_eq!(
             app.shell.title.status(),
             Some("Retrying · attempt 2 · Esc interrupt")
+        );
+    }
+
+    /// A named pause counts down. A static "30.0s" leaves the operator
+    /// re-reading the same number to learn whether the wait is moving, which is
+    /// exactly what a retry line exists to answer.
+    #[test]
+    fn a_named_pause_counts_down_while_the_retry_waits() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.retry",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "attempt": 1,
+            "delay_ms": 30_000,
+            "cause": "vendor_rate_limit",
+            "source": "provider",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Retrying · attempt 2 · 30.0s left · rate limit · 30.0s from Retry-After · Esc interrupt")
+        );
+        let live = app.live.as_mut().expect("live retry");
+        live.since = Instant::now() - Duration::from_secs(12);
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Retrying · attempt 2 · 18.0s left · rate limit · 30.0s from Retry-After · Esc interrupt")
+        );
+    }
+
+    /// A wait the engine paid outside its own window says so: the number is
+    /// then the endpoint's schedule rather than a longer guess by this runner.
+    #[test]
+    fn an_extended_wait_names_the_extension() {
+        let mut app = running_app("run-1");
+        app.handle(AppEvent::Provider(serde_json::json!({
+            "kind": "provider.retry",
+            "session_id": "ses_1",
+            "run_id": "run-1",
+            "attempt": 1,
+            "delay_ms": 30_000,
+            "extended_ms": 30_000,
+            "cause": "vendor_rate_limit",
+            "source": "provider",
+        })));
+        app.update_status();
+        assert_eq!(
+            app.shell.title.status(),
+            Some("Retrying · attempt 2 · 30.0s left · rate limit · 30.0s from Retry-After · window extended · Esc interrupt")
         );
     }
 
