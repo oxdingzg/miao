@@ -7097,7 +7097,7 @@ async fn delegate(
         .map_err(|_| ToolError::External("subagent lineage unavailable".into()))?
     {
         depth += 1;
-        if depth >= crate::subagent::DEPTH_LIMIT {
+        if depth >= crate::subagent::depth_limit() {
             return Err(ToolError::External("subagent depth limit reached".into()));
         }
         current = ancestor;

@@ -32,6 +32,26 @@ const MAX_TOOL_NAME: usize = 128;
 pub const TURN_BOUND_NOTE: &str = "Reached the delegated turn allowance for this task. The delegating Session receives the work completed so far.";
 pub const TIME_BOUND_NOTE: &str = "Reached the delegated time limit for this task. The delegating Session receives the work completed so far.";
 
+/// How deep delegated work may nest. The constant bounds a host that says
+/// nothing; `MIAO_SUBAGENT_MAX_DEPTH` raises or lowers it for a host that knows
+/// how far its tree may go, the same way `MIAO_SUBAGENT_MAX_TURNS` tunes the
+/// per-child turn allowance. A depth cap stays a cap: values are clamped to
+/// `1..=16` so no environment can make delegation unbounded.
+pub fn depth_limit() -> u32 {
+    depth_from(std::env::var("MIAO_SUBAGENT_MAX_DEPTH").ok().as_deref())
+}
+
+/// The cap a configured value means. Pure so the clamp is testable without
+/// racing the process environment.
+fn depth_from(configured: Option<&str>) -> u32 {
+    configured
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(|depth| depth.clamp(1, MAX_DEPTH))
+        .unwrap_or(DEPTH_LIMIT)
+}
+
+pub const MAX_DEPTH: u32 = 16;
+
 pub fn turn_limit() -> Option<u32> {
     match std::env::var("MIAO_SUBAGENT_MAX_TURNS")
         .ok()
@@ -321,6 +341,17 @@ impl NetBenefit {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The depth cap is tunable like the turn allowance, but a cap stays a cap:
+    /// no configured value can turn delegation into an unbounded tree.
+    #[test]
+    fn the_depth_cap_is_tunable_and_still_bounded() {
+        assert_eq!(depth_from(None), DEPTH_LIMIT);
+        assert_eq!(depth_from(Some("9")), 9);
+        assert_eq!(depth_from(Some("0")), 1, "zero cannot mean unbounded");
+        assert_eq!(depth_from(Some("9999")), MAX_DEPTH);
+        assert_eq!(depth_from(Some("nonsense")), DEPTH_LIMIT);
+    }
 
     fn package(input: Value) -> String {
         Input::parse(input).expect("a valid package").package()
