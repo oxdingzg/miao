@@ -103,20 +103,25 @@ claimed and none is attached.
 
 ## Regression coverage
 
-**Command:** `cargo test --lib`, `cargo test --test state`, `cargo test --test accuracy`, `cargo test --test turn_budget`
+**Command:** `cargo test --lib`, `cargo test --test state`, `cargo test --test accuracy`, `cargo test --test config_golden`, `cargo test --test turn_budget`
 
 **Observed:** pending — same CI run and its engine shards.
 
-- `--test state` re-runs `goal_budget_is_a_structured_boundary_not_prose`, which
-  now also refuses a `cost_usd` of zero, a negative figure, and a figure past the
-  ceiling, and accepts the money axis beside the existing three.
-- `--test accuracy` compares the two committed tool-schema snapshots, which gained
-  `goal.budget.cost_usd` and the per-axis ceilings the algebra enforces; the
-  snapshots stay reviewed and committed rather than regenerated in CI.
-- `--test turn_budget` re-runs the pre-existing provider-turn allowance, whose
-  pause path this change reuses and does not alter.
-- `config_derive`'s `derived_policy_matches_the_materialized_product_policy`
-  pins the new policy field (null when no budget is configured).
+- `cargo test --lib goal_budget_is_a_structured_boundary_not_prose` re-runs the
+  Goal budget's write surface, which now also refuses a `cost_usd` of zero, a
+  negative figure, and a figure past the ceiling, and accepts the money axis
+  beside the existing three.
+- `cargo test --test accuracy` compares the two committed tool-schema snapshots,
+  which gained `goal.budget.cost_usd` and the per-axis ceilings the algebra
+  enforces; the snapshots stay reviewed and committed rather than regenerated in
+  CI.
+- `cargo test --test config_golden` re-derives every golden policy fixture, which
+  now records the new Session budget field as `null` where the product policy
+  leaves it unset; `cargo test --lib
+  derived_policy_matches_the_materialized_product_policy` pins the same field on
+  the materialized product policy.
+- `cargo test --test turn_budget` re-runs the pre-existing provider-turn
+  allowance, whose pause path this change reuses and does not alter.
 
 ## Limits this record states plainly
 
