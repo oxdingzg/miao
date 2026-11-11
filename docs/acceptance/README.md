@@ -114,6 +114,7 @@ newer record is the one to read.
 | `2026-11-11-job05-schedule-row-facts.md` | `feat/job05-schedule-rows` on `xx04` | JOB-05 (a cron row states its zone, next run and lifetime, a wakeup row its zone, and unrecorded facts are omitted; ownership is the panel's own Session; the per-task budget stays with COST-02) |
 | `2026-11-11-ux04-cr-only-paste.md` | `test/ux04-cr-paste` on `xx04` | UX-04's carriage-return-only paste leg (a CR paste lands as a draft — inline under the block threshold, as a visible marker above it — and never submits, on a Session or on the landing screen; Windows Terminal, suspend-from-page and the panic leg stay open) |
 | `2026-11-11-retry-after-grace.md` | `fix/retry-after-grace` on `xx04` | #2862 problem one (a `Retry-After` the endpoint named is paid outside the 60 s retry window, bounded at two waits and 90 s, with the window's remaining time preserved; a spent allowance still refuses with the numbers it used; the strip counts the wait down and marks an extended one; no stamp yet) |
+| `2026-11-11-issue2870-billed-budget-wording.md` | `fix/issue2870-billed-budget-wording` on `xx04` | #2870 (the pause names the quantity it spent — a soft billed-token budget with its numbers — and explicitly disclaims the context window, in both the model's note and the operator's sentence; the threshold semantics stay unchanged) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`

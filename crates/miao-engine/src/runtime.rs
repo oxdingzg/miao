@@ -5600,11 +5600,18 @@ command: None,
         // visible in history and the next external input re-arms it.
         if (text_only || !reply.needs_tools) && promoted.is_empty() {
             if budget_exhausted {
+                // The budget counts tokens billed across the prompt's turns,
+                // which is not how full the context window is: an orchestration
+                // prompt can bill tens of millions while its context stays well
+                // inside a large window. Naming the quantity keeps a spent
+                // billing cap from reading as an exhausted context.
                 let note = match budget {
                     Some(budget) => format!(
-                        "Task paused: the prompt token budget ({budget} tokens) is exhausted. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget."
+                        "Task paused: this prompt's soft billed-token budget is spent ({budget_spent} tokens billed of {budget}). That is a cumulative billing cap, not the context window — the conversation may still sit well inside the model's window. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget."
                     ),
-                    None => "Task paused: the prompt token budget is exhausted. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget.".to_owned(),
+                    None => format!(
+                        "Task paused: this prompt's soft billed-token budget is spent ({budget_spent} tokens billed). That is a cumulative billing cap, not the context window — the conversation may still sit well inside the model's window. Nothing is running now and it does not resume on its own. Send a message to continue with a fresh budget."
+                    ),
                 };
                 inner
                     .store

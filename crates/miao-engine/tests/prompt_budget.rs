@@ -185,7 +185,11 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
     assert!(!requests[2].tools.is_empty());
     // Spent after three is 120: the closing turn has no tools and asks for text.
     assert!(requests[3].tools.is_empty());
-    assert!(message_text(&requests[3]).contains("PROMPT TOKEN BUDGET EXHAUSTED"));
+    // The note names the quantity it spent: a soft *billed*-token budget, and
+    // explicitly not the context window, so the model does not report an
+    // exhausted context to the operator (2026-11-11, #2870).
+    assert!(message_text(&requests[3]).contains("SOFT BILLED-TOKEN BUDGET"));
+    assert!(message_text(&requests[3]).contains("not a statement about the context window"));
     assert!(!message_text(&requests[3]).contains("PROMPT BUDGET WRAP-UP"));
 
     assert_eq!(
@@ -195,11 +199,24 @@ async fn soft_prompt_budget_wraps_up_then_pauses_with_text_only() {
             .count(),
         3
     );
-    assert!(events.iter().any(|event| event.kind == "message.synthetic"
-        && event.data["text"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("prompt token budget (100 tokens) is exhausted")));
+    let note = events
+        .iter()
+        .find(|event| {
+            event.kind == "message.synthetic"
+                && event.data["text"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("billed-token budget is spent")
+        })
+        .unwrap_or_else(|| panic!("the pause is visible in history: {events:?}"));
+    let text = note.data["text"].as_str().unwrap_or_default();
+    // The operator-facing sentence carries both numbers and says which
+    // quantity it is: 120 billed of a 100-token cap is not a full context.
+    assert!(text.contains("(160 tokens billed of 100)"), "{text}");
+    assert!(
+        text.contains("not the context window"),
+        "a spent billing cap must not read as an exhausted context: {text}"
+    );
     let stop = events
         .iter()
         .rev()
@@ -226,7 +243,7 @@ async fn a_new_prompt_grants_a_fresh_budget() {
         !resumed.tools.is_empty(),
         "a fresh prompt re-arms the tools"
     );
-    assert!(!message_text(resumed).contains("PROMPT TOKEN BUDGET EXHAUSTED"));
+    assert!(!message_text(resumed).contains("SOFT BILLED-TOKEN BUDGET"));
     runtime.shutdown().await;
 }
 
