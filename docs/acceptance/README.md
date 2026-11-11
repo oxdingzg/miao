@@ -104,6 +104,7 @@ newer record is the one to read.
 | `2026-11-11-agt06-side-question.md` | `test/agt06-side-question` | AGT-06 (a side question is a background child: its answer stays out of the parent context, its completion admits no input to the parent, and `task_result` is the only bring-back; cost lands on the child Session; no stamp yet) |
 | `2026-11-11-ux04-terminal-matrix.md` | `origin/main` `5572afd4f2` on `xx04` | UX-04 (two real-terminal legs measured: tmux on the release binary and an SSH pty on a clean build of this tree — home paints, the composer takes input, the alternate screen is entered and left on exit; Windows Terminal, suspend-from-page and the panic leg stay open) |
 | `2026-11-11-tui03-streaming-pins.md` | `origin/main` `e5d81835b9` on `xx04` | TUI-03 (text/reasoning channels, committed-stream refresh, `Running <tool>` progress and the settled call row re-pinned on the current tree; the record makes the call that parameters are displayed, and that live argument rendering is a separate feature; no stamp yet) |
+| `2026-11-11-ux02-keyboard-and-pointer.md` | `origin/main` `8fb7d1ad44` on `xx04` | UX-02 (keyboard reachability over the whole action set, drag/click/double-click selection with no accidental actions, and the focus/scroll/cursor knobs — the three rows the 2026-11-04 evidence left open; no stamp yet) |
 
 
 A record that has drifted from the tree is worse than no record: `2026-11-01-perf04.md`
