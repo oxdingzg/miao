@@ -292,7 +292,7 @@ fn the_zed_selection_reaches_the_composer() {
     // keeps_it_deleted` and `a_changed_selection_replaces_the_context` drive
     // the draft directly. What this test adds is the part those cannot say:
     // the shipped binary reads a Zed database and the operator sees it.
-    harness.write(&vec![0x7f; 200]);
+    harness.write(&[0x7f; 200]);
     harness.write(b"z");
     std::thread::sleep(Duration::from_millis(500));
     harness.shutdown();
