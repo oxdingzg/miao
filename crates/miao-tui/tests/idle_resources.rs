@@ -356,6 +356,54 @@ fn an_idle_tui_reports_its_cpu_and_memory() {
     }
 }
 
+/// The profiling record's long window: the same harness, run for minutes, so a
+/// slow leak has time to show. It skips without `MIAO_SOAK_SECS`, because a
+/// multi-minute run does not belong in the default suite; the recorded numbers
+/// live in `docs/acceptance` beside the window that produced them.
+#[test]
+fn a_soak_window_reports_growth_or_its_absence() {
+    let Some(window) = std::env::var("MIAO_SOAK_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| *seconds >= 60)
+    else {
+        eprintln!("skipping: set MIAO_SOAK_SECS (>=60) to run the soak window");
+        return;
+    };
+    let harness = Harness::spawn("soak");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !harness.ready() {
+        assert!(Instant::now() < deadline, "the fixture never became ready");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+    let (cpu_start, rss_start) = sample(harness.pid);
+    let fds_start = descriptors(harness.pid);
+    std::thread::sleep(Duration::from_secs(window));
+    let (cpu_end, rss_end) = sample(harness.pid);
+    let growth = rss_end.saturating_sub(rss_start);
+    println!(
+        "PERF-04 soak: window_s={window} rss_start_kb={rss_start} rss_end_kb={rss_end} growth_kb={growth} cpu_ms={} fds_start={} fds_end={}",
+        cpu_end.saturating_sub(cpu_start),
+        fds_start.map_or_else(|| "unavailable".to_string(), |count| count.to_string()),
+        descriptors(harness.pid)
+            .map_or_else(|| "unavailable".to_string(), |count| count.to_string())
+    );
+    // An idle TUI has no work to accumulate, so any growth this size over the
+    // window is either allocator noise or a leak worth investigating; the bound
+    // is loose enough for the former and tight enough to fail on the latter.
+    assert!(
+        growth < 8 * 1024,
+        "an idle TUI grew by {growth} kB over {window} s, which is a leak rather than noise"
+    );
+    if let (Some(before), Some(after)) = (fds_start, descriptors(harness.pid)) {
+        assert!(
+            after <= before,
+            "the soak window added descriptors: {before} -> {after}"
+        );
+    }
+}
+
 #[test]
 fn a_streaming_tui_reports_its_cpu_and_memory() {
     // The criterion pairs idle runs with prolonged streaming, so both have to
