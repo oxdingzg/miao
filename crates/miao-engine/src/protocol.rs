@@ -718,6 +718,16 @@ pub enum Command {
         /// rewound and the workspace left as it is.
         #[serde(default = "yes")]
         files: bool,
+        /// Let the commit that follows rewind the conversation. `false` with
+        /// `files: true` is a code-only revert: the workspace goes back to the
+        /// boundary and the transcript stays. Both `false` moves nothing and is
+        /// refused.
+        #[serde(default = "yes")]
+        history: bool,
+        /// Overwrite paths that changed outside this Session. A caller sets it
+        /// only after showing the preview's `conflicts` to the operator.
+        #[serde(default)]
+        force: bool,
     },
     /// What a revert at `boundary_seq` would change, including paths that
     /// changed outside the Session since it last recorded them.

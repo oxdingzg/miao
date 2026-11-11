@@ -186,6 +186,10 @@ async fn real_wire_correction_preserves_completed_write_and_durable_error_withou
         // Absolute tool paths must be captured under their workspace-relative
         // identity, and remain restorable after the provider continues.
         std::fs::write(dir.path().join("audit"), "later").unwrap();
+        // A later settled boundary captures that write, which is what makes it
+        // this Session's own work instead of an outside edit.
+        store.record_file_touch("s", "audit").await.unwrap();
+        store.capture_file_snapshot("s", 99).await.unwrap();
         store
             .revert_stage(
                 "s",
@@ -193,6 +197,8 @@ async fn real_wire_correction_preserves_completed_write_and_durable_error_withou
                     .as_u64()
                     .unwrap(),
                 true,
+                true,
+                false,
             )
             .await
             .unwrap();

@@ -610,10 +610,12 @@ impl Host {
                 session_id,
                 boundary_seq,
                 files,
+                history,
+                force,
             } => {
                 runtime
                     .store()
-                    .revert_stage(&session_id, boundary_seq, files)
+                    .revert_stage(&session_id, boundary_seq, files, history, force)
                     .await
             }
             Command::RevertPreview {
