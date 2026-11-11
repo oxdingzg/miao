@@ -5144,7 +5144,12 @@ command: None,
                     )
                     .await;
             }
-            let stop = inner.stop.clone();
+            // The pass belongs to this run. With the process-wide token the
+            // summarizer kept streaming after the operator interrupted the
+            // turn, so an interrupt looked like a hung Session for as long as
+            // the pass took: one summarizer call per `per_pass` messages is
+            // thousands of tokens each and minutes on a long history.
+            let stop = cancel.clone();
             let store = inner.store.clone();
             // An attempt already on the primary model — no binding, or a
             // substituted one — does not escalate to itself (ADR-14): only
@@ -5206,7 +5211,7 @@ command: None,
             let mut prefix = || {
                 let provider = Arc::clone(&prefix_provider);
                 let store = inner.store.clone();
-                let stop = inner.stop.clone();
+                let stop = cancel.clone();
                 let mut snapshot = request.clone();
                 let permissions = permissions.clone();
                 async move {
@@ -5248,6 +5253,7 @@ command: None,
                     focus: requested.as_ref().and_then(|request| request.focus.clone()),
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
+                    cancel: cancel.clone(),
                     breaker: &mut breaker,
                     notify: &mut notify,
                     count: &mut count,
