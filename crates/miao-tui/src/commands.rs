@@ -25,10 +25,19 @@ pub enum Builtin {
     Theme,
     Sessions,
     NewSession,
+    /// Ask the engine for one checkpoint at the next settled boundary, even
+    /// when the automatic trigger's budget gate is under its threshold.
+    Compact,
+    /// Write the project's AGENTS.md when it does not have one.
+    Init,
     Rename,
     Tag,
     Status,
+    /// Report the window the last turn planned against and how full it is.
+    Context,
     Accounts,
+    /// The MCP servers this Location knows about.
+    Mcp,
     Debug,
     Stash,
     StashDraft,
@@ -46,7 +55,7 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 26] = [
+    pub const ALL: [Builtin; 30] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::WorkspaceChanges,
@@ -55,10 +64,14 @@ impl Builtin {
         Builtin::Theme,
         Builtin::Sessions,
         Builtin::NewSession,
+        Builtin::Compact,
+        Builtin::Init,
         Builtin::Rename,
         Builtin::Tag,
         Builtin::Status,
+        Builtin::Context,
         Builtin::Accounts,
+        Builtin::Mcp,
         Builtin::Debug,
         Builtin::Stash,
         Builtin::StashDraft,
@@ -86,10 +99,14 @@ impl Builtin {
             Builtin::Theme => "theme",
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
+            Builtin::Compact => "compact",
+            Builtin::Init => "init",
             Builtin::Rename => "rename",
             Builtin::Tag => "tag",
             Builtin::Status => "status",
+            Builtin::Context => "context",
             Builtin::Accounts => "accounts",
+            Builtin::Mcp => "mcp",
             Builtin::Debug => "debug",
             Builtin::Stash => "stash",
             Builtin::StashDraft => "stash-draft",
@@ -107,13 +124,22 @@ impl Builtin {
         }
     }
 
-    /// Extra spellings a command answers to. `exit` is the word most people
-    /// reach for when they want to leave, and the TypeScript TUI's vocabulary
-    /// never taught them `quit`.
-    pub fn alias(self) -> Option<&'static str> {
+    /// Extra spellings a command answers to. Other terminal agents use
+    /// different words for the same action, and a verb that answers nothing
+    /// reads as a missing feature rather than as a second name for one that
+    /// exists: `exit` for `quit`, `diff` for `changes`, `resume` for
+    /// `sessions`, `approvals` for `permissions`, `doctor` for `debug`, `cost`
+    /// for `status`, and `login`/`logout` for `accounts`.
+    pub fn aliases(self) -> &'static [&'static str] {
         match self {
-            Builtin::Quit => Some("exit"),
-            _ => None,
+            Builtin::Quit => &["exit"],
+            Builtin::WorkspaceChanges => &["diff"],
+            Builtin::Sessions => &["resume"],
+            Builtin::Permissions => &["approvals"],
+            Builtin::Debug => &["doctor"],
+            Builtin::Status => &["cost"],
+            Builtin::Accounts => &["login", "logout"],
+            _ => &[],
         }
     }
 
@@ -127,10 +153,14 @@ impl Builtin {
             Builtin::Theme => "Select a theme",
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
+            Builtin::Compact => "Compact this Session's history now",
+            Builtin::Init => "Write an AGENTS.md for this project",
             Builtin::Rename => "Rename this session",
             Builtin::Tag => "Tag this session",
             Builtin::Status => "Session status and usage",
+            Builtin::Context => "Context window occupancy",
             Builtin::Accounts => "Provider accounts",
+            Builtin::Mcp => "MCP servers",
             Builtin::Debug => "Engine and workspace details",
             Builtin::Stash => "Restore a stashed prompt",
             Builtin::StashDraft => "Stash the current prompt",
@@ -167,10 +197,16 @@ impl Builtin {
             Builtin::Theme => Some(Action::ThemeList),
             Builtin::Sessions => Some(Action::SessionList),
             Builtin::NewSession => Some(Action::SessionNew),
+            // Compaction, the context report, the guidance file and the MCP
+            // list have no chord: they are asked for by name.
+            Builtin::Compact => None,
+            Builtin::Init => None,
             Builtin::Rename => Some(Action::SessionRename),
             Builtin::Tag => None,
             Builtin::Status => Some(Action::StatusView),
+            Builtin::Context => None,
             Builtin::Accounts => Some(Action::Accounts),
+            Builtin::Mcp => Some(Action::McpList),
             Builtin::Debug => Some(Action::DebugView),
             Builtin::Stash => Some(Action::Stash),
             Builtin::StashDraft => Some(Action::StashDraft),
@@ -193,7 +229,7 @@ impl Builtin {
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
-            .find(|builtin| builtin.name() == name || builtin.alias() == Some(name))
+            .find(|builtin| builtin.name() == name || builtin.aliases().contains(&name))
     }
 }
 
@@ -687,6 +723,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    /// The everyday commands every terminal agent offers: `/compact` is the one
+    /// a stopped Session needs, `/context` says how full the window is, `/init`
+    /// writes the guidance file, and `/mcp` shows the servers this Location
+    /// knows about.
+    #[test]
+    fn the_common_slash_commands_both_products_teach_are_findable() {
+        for (name, builtin) in [
+            ("compact", Builtin::Compact),
+            ("context", Builtin::Context),
+            ("init", Builtin::Init),
+            ("mcp", Builtin::Mcp),
+        ] {
+            assert_eq!(Builtin::from_name(name), Some(builtin), "{name}");
+            assert!(Builtin::ALL.contains(&builtin), "{name} is in the palette");
+        }
+        assert_eq!(split("/compact"), Some(("compact".into(), String::new())));
+    }
+
+    /// The same action under the name the other two products teach. An alias
+    /// has to resolve through `from_name`, which is the only lookup the
+    /// composer and the palette use.
+    #[test]
+    fn the_other_products_names_resolve_to_the_same_builtins() {
+        for (alias, builtin) in [
+            ("exit", Builtin::Quit),
+            ("diff", Builtin::WorkspaceChanges),
+            ("resume", Builtin::Sessions),
+            ("approvals", Builtin::Permissions),
+            ("doctor", Builtin::Debug),
+            ("cost", Builtin::Status),
+            ("login", Builtin::Accounts),
+            ("logout", Builtin::Accounts),
+        ] {
+            assert_eq!(Builtin::from_name(alias), Some(builtin), "{alias}");
+        }
     }
 
     #[test]

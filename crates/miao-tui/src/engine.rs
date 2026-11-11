@@ -116,6 +116,12 @@ pub enum Request {
     Cancel {
         session_id: String,
     },
+    /// Ask for one checkpoint at the next settled boundary. The request is
+    /// durable and also closes the compaction breaker, so this is what makes an
+    /// explicit `/compact` work on a Session whose summarizer kept failing.
+    Compact {
+        session_id: String,
+    },
     /// Resolve one pending approval, optionally remembering the decision.
     Approve {
         session_id: String,
@@ -380,6 +386,12 @@ impl Handle {
 
     pub fn cancel(&self, session_id: &str) {
         let _ = self.tx.send(Request::Cancel {
+            session_id: session_id.to_string(),
+        });
+    }
+
+    pub fn compact(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Compact {
             session_id: session_id.to_string(),
         });
     }
@@ -1139,6 +1151,18 @@ async fn run(
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("interrupt failed: {error}")))
                         }
+                    }
+                }
+                // The engine keeps this request durable and answers it at the
+                // next settled boundary, so the call only has to reach it.
+                Request::Compact { session_id } => {
+                    let result = client
+                        .request("request_compact", json!({ "session_id": session_id }))
+                        .await;
+                    if let Err(error) = result {
+                        bus.send(AppEvent::ActionFailed(format!(
+                            "compaction request failed: {error}"
+                        )));
                     }
                 }
                 Request::Wake { session_id } => {
