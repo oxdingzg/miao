@@ -2200,7 +2200,14 @@ pub fn render_status(frame: &mut Frame, area: Rect, status: &StatusStrip, theme:
         if !spans.is_empty() {
             spans.push(Span::styled(" · ", muted));
         }
-        spans.push(Span::styled(model.clone(), Style::new().fg(palette.text)));
+        // The model this window runs on is the row in effect for the whole
+        // screen, so it carries the same accent the lists mark theirs with:
+        // the strip used to paint it like any other text, which left "which
+        // model am I on" to be read rather than seen.
+        spans.push(Span::styled(
+            model.clone(),
+            Style::new().fg(palette.accent).add_modifier(Modifier::BOLD),
+        ));
     }
     if let Some(usage) = &status.usage {
         if !spans.is_empty() {
@@ -3860,8 +3867,16 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
                 // marker and keeps every row in the same weight.
                 let read_only = list.kind == ListKind::ReadOnly;
                 let selected = !read_only && index == list.selected;
+                // The row already in effect — the open Session, the model the
+                // Session runs on — is not the cursor and must not look like it:
+                // it carries its own bullet and the theme's accent, so "what am
+                // I on" is answered by colour before the cursor moves.
+                let current =
+                    !read_only && !selected && list.current.as_deref() == Some(row.id.as_str());
                 let marker = if selected {
                     "▸ "
+                } else if current {
+                    "● "
                 } else if read_only {
                     ""
                 } else {
@@ -3872,6 +3887,8 @@ fn render_list(frame: &mut Frame, area: Rect, list: &ListDialog, theme: &Theme) 
                         .fg(palette.primary)
                         .bg(palette.element)
                         .add_modifier(Modifier::BOLD)
+                } else if current {
+                    Style::new().fg(palette.accent).add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().fg(palette.text)
                 };
@@ -5246,6 +5263,67 @@ mod tests {
         assert!(!painted.contains("nothing to show"), "{painted}");
     }
 
+    /// The list marks the row already in effect apart from the cursor: a bullet
+    /// of its own and the theme's accent, so "which one am I on" is seen rather
+    /// than read while the cursor keeps its own band where it is.
+    #[test]
+    fn the_row_in_effect_is_painted_apart_from_the_cursor() {
+        let theme = home_theme();
+        let models = crate::dialogs::ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "glm-5.3-flash"},
+            {"protocol": "openai-chat", "model": "deepseek-v4"}
+        ]));
+        let dialog = crate::dialogs::Dialog::models(&models, Some(&models[1].label()));
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_dialog(frame, frame.area(), &dialog, &theme))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows = buffer
+            .content
+            .chunks(buffer.area.width as usize)
+            .map(|cells| {
+                let text: String = cells.iter().map(|cell| cell.symbol()).collect();
+                (text, cells.to_vec())
+            })
+            .collect::<Vec<_>>();
+        let current = rows
+            .iter()
+            .find(|(text, _)| text.contains("deepseek-v4"))
+            .expect("the model the window runs on");
+        assert!(
+            current.0.contains('●'),
+            "the row in effect carries its own bullet: {}",
+            current.0
+        );
+        assert!(
+            current
+                .1
+                .iter()
+                .any(|cell| cell.style().fg == Some(theme.palette.accent)),
+            "the row in effect takes the accent colour"
+        );
+        // The cursor stays where it was, on the first row, in the selection's
+        // own style: the marker must not move the keyboard.
+        let cursor = rows
+            .iter()
+            .find(|(text, _)| text.contains("glm-5.3-flash"))
+            .expect("the first model");
+        assert!(
+            cursor.0.contains("▸ "),
+            "the cursor keeps its marker: {}",
+            cursor.0
+        );
+        assert!(
+            cursor
+                .1
+                .iter()
+                .any(|cell| cell.style().fg == Some(theme.palette.primary)),
+            "the cursor keeps the selection colour"
+        );
+    }
+
     /// ctrl+o inside the model picker narrows to one provider. The box used to
     /// paint its title and an empty body because the variant never answered
     /// `list()`, so no row reached the frame.
@@ -5269,6 +5347,35 @@ mod tests {
         assert!(painted.contains("all providers"), "{painted}");
         assert!(painted.contains("deepseek"), "{painted}");
         assert!(painted.contains("zhipu"), "{painted}");
+    }
+
+    /// The strip states the model the window runs on, so it carries the accent
+    /// the lists mark their row in effect with instead of plain body text.
+    #[test]
+    fn the_status_strip_marks_the_model_the_window_runs_on() {
+        let theme = home_theme();
+        let status = super::StatusStrip {
+            model: Some("glm-5.3-flash".into()),
+            ..Default::default()
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 3)).expect("terminal");
+        terminal
+            .draw(|frame| super::render_status(frame, Rect::new(0, 0, 60, 1), &status, &theme))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let painted: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+        assert!(painted.contains("glm-5.3-flash"), "{painted}");
+        let started = buffer
+            .content
+            .iter()
+            .position(|cell| cell.symbol() == "g")
+            .expect("the model's first glyph");
+        assert_eq!(
+            buffer.content[started].style().fg,
+            Some(theme.palette.accent),
+            "the model rides the accent"
+        );
     }
 
     /// The offer a settled turn leaves reads where the rotating example would,

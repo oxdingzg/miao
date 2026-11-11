@@ -453,6 +453,11 @@ pub struct ListDialog {
     /// any preview answer lands, so the detail cannot say whether the engine
     /// was asked.
     pub(crate) previewed: Vec<String>,
+    /// The row that is already in effect — the Session this window has open,
+    /// or the model the Session runs on. The cursor says where a key would
+    /// land; this says what is already true, so it is painted apart from the
+    /// selection rather than sharing its band.
+    pub current: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -496,6 +501,7 @@ impl ListDialog {
             search: false,
             slots: Vec::new(),
             previewed: Vec::new(),
+            current: None,
         };
         // A leading header names a group and never takes the cursor, so the
         // list opens on its first model.
@@ -929,20 +935,9 @@ impl Dialog {
             }
             for index in indices {
                 let model = &models[index];
-                // The Session's own binding is marked so the list answers
-                // "which one am I on" without opening the footer.
-                let label = match current {
-                    // A pin names either the route or the `model · protocol`
-                    // pair, and the row's label now carries neither the route
-                    // nor the account, so both spellings mark the row.
-                    Some(current) if current == model.label() || current == model.route() => {
-                        format!("● {}", model.label())
-                    }
-                    _ => model.label(),
-                };
                 rows.push(Row {
                     id: index.to_string(),
-                    label,
+                    label: model.label(),
                     detail: model.origin(&shared),
                 });
             }
@@ -981,7 +976,18 @@ impl Dialog {
             Some(_) => "one provider · ctrl+o widen · ctrl+f favorite · esc close",
             None => "type to filter · ctrl+f favorite · ctrl+o provider · esc close",
         };
-        Dialog::Models(ListDialog::new("models", rows, ListKind::Plain, hint))
+        let mut list = ListDialog::new("models", rows, ListKind::Plain, hint);
+        // The Session's own binding is marked so the list answers "which one am
+        // I on" without opening the footer. A pin names either the route or
+        // the `model · protocol` pair, so both spellings find the row.
+        list.current = current
+            .and_then(|current| {
+                models
+                    .iter()
+                    .position(|model| current == model.label() || current == model.route())
+            })
+            .map(|index| index.to_string());
+        Dialog::Models(list)
     }
 
     /// The ctrl+o list: every provider the catalog names, plus the "all"
@@ -1284,6 +1290,12 @@ impl Dialog {
     }
 
     pub fn sessions(rows: &[SessionSummary]) -> Self {
+        Self::sessions_with_open(rows, None)
+    }
+
+    /// The Session list with the Session this window already has open marked,
+    /// so the list says which row is the current window before any key moves.
+    pub fn sessions_with_open(rows: &[SessionSummary], open: Option<&str>) -> Self {
         let mut list = ListDialog::new(
             "sessions",
             rows.iter()
@@ -1323,6 +1335,7 @@ impl Dialog {
             .filter(|row| row.pinned_at_ms.is_some())
             .map(|row| row.id.clone())
             .collect();
+        list.current = open.map(str::to_string);
         Dialog::Sessions(list)
     }
 
@@ -2364,6 +2377,7 @@ mod tests {
             search: false,
             slots: Vec::new(),
             previewed: Vec::new(),
+            current: None,
         }
     }
 
@@ -2919,6 +2933,69 @@ mod tests {
             dialog.handle_key(key(KeyCode::Esc)),
             Action::Close
         ));
+    }
+
+    /// The row in effect is named by id, not by a bullet baked into the label:
+    /// the paint needs to tell it apart from the cursor, and the label has to
+    /// stay the model's own name for `/` and for matching a pin.
+    #[test]
+    fn the_model_picker_marks_the_binding_row_by_id() {
+        let models = ModelInfo::catalog(&serde_json::json!([
+            {"protocol": "openai-chat", "model": "glm-5.3-flash"},
+            {"protocol": "openai-chat", "model": "deepseek-v4"}
+        ]));
+        let current = models[1].label();
+        let dialog = Dialog::models(&models, Some(&current));
+        let list = dialog.list().expect("list");
+        assert_eq!(list.current.as_deref(), Some("1"));
+        assert!(
+            list.rows.iter().all(|row| !row.label.starts_with('●')),
+            "the label stays the model's name"
+        );
+        // `current` is matched by the paint against the row id, so a list that
+        // names no binding marks nothing.
+        assert_eq!(
+            Dialog::models(&models, None).list().expect("list").current,
+            None
+        );
+    }
+
+    /// The Session list says which row is already the window's Session, so the
+    /// answer to "which one am I in" does not wait for the cursor to move.
+    #[test]
+    fn the_session_list_marks_the_open_session() {
+        let rows = vec![
+            SessionSummary {
+                id: "ses_a".into(),
+                title: Some("A".into()),
+                parent_id: None,
+                updated_at_ms: None,
+                archived_at_ms: None,
+                pinned_at_ms: None,
+                directory: None,
+                model: None,
+                credential_id: None,
+                preview: None,
+            },
+            SessionSummary {
+                id: "ses_b".into(),
+                title: Some("B".into()),
+                parent_id: None,
+                updated_at_ms: None,
+                archived_at_ms: None,
+                pinned_at_ms: None,
+                directory: None,
+                model: None,
+                credential_id: None,
+                preview: None,
+            },
+        ];
+        let dialog = Dialog::sessions_with_open(&rows, Some("ses_b"));
+        assert_eq!(
+            dialog.list().expect("list").current.as_deref(),
+            Some("ses_b")
+        );
+        assert_eq!(Dialog::sessions(&rows).list().expect("list").current, None);
     }
 
     #[test]
