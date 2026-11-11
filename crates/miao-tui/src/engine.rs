@@ -803,6 +803,7 @@ fn args(
         ("MIAO_ENGINE_PROMPT_CACHE", "--prompt-cache"),
         ("MIAO_ENGINE_VERIFY_COMMAND", "--verify-command"),
         ("MIAO_CONTEXT_LIMITS", "--context-limits"),
+        ("MIAO_OPTIMIZATIONS", "--optimizations"),
     ] {
         if let Some(value) = env(variable) {
             push(&mut args, flag, value);
