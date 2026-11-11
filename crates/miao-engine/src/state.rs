@@ -105,6 +105,10 @@ pub struct Budget {
     pub tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wallclock_ms: Option<u64>,
+    /// Money the Goal may spend, in the ledger's USD unit. COST-02 enforces it
+    /// against the charges a provider reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -327,10 +331,13 @@ fn valid_budget(budget: Option<&Budget>) -> bool {
     let Some(budget) = budget else {
         return true;
     };
-    (budget.iterations.is_some() || budget.tokens.is_some() || budget.wallclock_ms.is_some())
-        && budget.iterations.is_none_or(|bound| bound > 0)
-        && budget.tokens.is_none_or(|bound| bound > 0)
-        && budget.wallclock_ms.is_none_or(|bound| bound > 0)
+    let declaration = crate::budget::Declaration {
+        cost_usd: budget.cost_usd,
+        tokens: budget.tokens,
+        turns: budget.iterations,
+        wallclock_ms: budget.wallclock_ms,
+    };
+    declaration.validate().is_ok()
 }
 
 fn valid_stop_when(conditions: Option<&Vec<String>>) -> bool {
@@ -476,10 +483,19 @@ mod tests {
         assert!(
             parse(json!({"objective":"go","status":"active","stop_when":["pass", "  "]})).is_err()
         );
-        let mutation = parse(json!({"objective":"go","status":"active","budget":{"iterations":25,"wallclock_ms":600000},"stop_when":["cargo test green"]})).unwrap();
+        let mutation = parse(json!({"objective":"go","status":"active","budget":{"iterations":25,"wallclock_ms":600000,"cost_usd":2.5},"stop_when":["cargo test green"]})).unwrap();
         assert_eq!(mutation.value["budget"]["iterations"], 25);
         assert_eq!(mutation.value["budget"]["wallclock_ms"], 600000);
+        assert_eq!(mutation.value["budget"]["cost_usd"], 2.5);
         assert!(mutation.value["budget"]["tokens"].is_null());
+        // COST-02 enforces the money axis, so a Goal cannot state one the run
+        // loop would have to refuse: zero, negative, or past the ceiling.
+        for invalid in [json!(0), json!(-1), json!(100001)] {
+            assert!(parse(
+                json!({"objective":"go","status":"active","budget":{"cost_usd":invalid}})
+            )
+            .is_err());
+        }
         assert_eq!(mutation.value["stop_when"][0], "cargo test green");
         let bare = parse(json!({"objective":"go","status":"active"})).unwrap();
         assert!(bare.value["budget"].is_null());
