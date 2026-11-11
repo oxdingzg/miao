@@ -3032,21 +3032,22 @@ async fn drain(
         None
     };
     retire_shared_permission_sources(&inner, &session, None).await?;
+    // `reason` stays the coarse lifecycle category (completed/failed/interrupted).
+    // Carry the underlying error text with it so a client — and, for a delegated
+    // child, the parent waiting on it — can show why the drain failed instead of
+    // the bare category.
+    let message = match &result {
+        Err(error) => Some(error.to_string()),
+        Ok(_) => None,
+    };
     inner
         .store
-        .finish_run_fenced(&session, &run, reason, &lease)
+        .finish_run_fenced_with_message(&session, &run, reason, message.as_deref(), &lease)
         .await?;
     let stop = if reason == "failed" {
         crate::events::Lifecycle::StopFailure
     } else {
         crate::events::Lifecycle::Stop
-    };
-    // `reason` stays the coarse lifecycle category (completed/failed/interrupted).
-    // Carry the underlying error text separately so a client can show why the
-    // drain failed instead of the bare category.
-    let message = match &result {
-        Err(error) => Some(error.to_string()),
-        Ok(_) => None,
     };
     inner
         .store
@@ -4743,7 +4744,11 @@ command: None,
                                             Ok(tasks) => match tasks.into_iter().find(|task| task["id"].as_str() == Some(&selector.id)) {
                                                 Some(task) => {
                                                     let text = task["text"].as_str().filter(|text| !text.is_empty()).unwrap_or(
-                                                        if task["status"] == "running" { "Background task is still running." } else { "(no output)" },
+                                                        // A failed task's answer is its cause: an empty report
+                                                        // would read as one that finished saying nothing.
+                                                        task["message"]
+                                                            .as_str()
+                                                            .unwrap_or(if task["status"] == "running" { "Background task is still running." } else { "(no output)" }),
                                                     );
                                                     Ok(json!({"task":task,"text":text}))
                                                 }
@@ -7384,6 +7389,7 @@ async fn finish_delegation(
     drop(permit);
     // The stop reason reflects how the child actually ended: a child the
     // operator cancelled is "cancelled", not a completed turn with no text.
+    let mut failure: Option<String> = None;
     if reason == "completed" {
         if let Some(event) = inner
             .store
@@ -7396,6 +7402,10 @@ async fn finish_delegation(
                 Some("failed") => "failed",
                 _ => "completed",
             };
+            failure = event.data["message"]
+                .as_str()
+                .filter(|message| !message.is_empty())
+                .map(str::to_owned);
         }
     }
     let history = inner
@@ -7480,6 +7490,10 @@ async fn finish_delegation(
     let report = json!({
         "status":reason,
         "result":text,
+        // The cause, when the child's run failed. `status` alone told the
+        // waiting parent that something went wrong but not what, which it could
+        // only answer by polling the worktree (issue #2862).
+        "message":failure.as_deref(),
         "wallclock_ms":wallclock_ms,
         "cost":{"child":child_cost,"combined":combined},
         "history":format!("full trace in child Session {child}"),
@@ -7491,6 +7505,7 @@ async fn finish_delegation(
             crate::events::Lifecycle::SubagentStop.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":reason,
                    "text":text,
+                   "message":failure.as_deref(),
                    "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
                    "usageCoverage":usage["providerUsage"],
                    "turns":usage["turns"]}),

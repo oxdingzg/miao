@@ -106,5 +106,28 @@ fn latest_run(conn: &rusqlite::Connection, session: &str) -> Result<Value, Error
         )
         .optional()?
         .flatten();
-    Ok(json!({"id": run, "state": state, "started_at_ms": started_at_ms}))
+    // The run's own terminal event is where a child states how it ended — the
+    // difference between a child that delivered and one whose provider turn
+    // failed is exactly `reason`, and a parent that cannot read it has to find
+    // out by polling the worktree (issue #2862).
+    let ended: Option<(Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT json_extract(data,'$.reason'),json_extract(data,'$.message') FROM engine_event
+             WHERE session_id=?1 AND kind='run.finished' AND json_extract(data,'$.run_id')=?2
+             ORDER BY seq DESC LIMIT 1",
+            rusqlite::params![session, run],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let (reason, message) = match ended {
+        Some((reason, message)) => (json!(reason), json!(message)),
+        None => (Value::Null, Value::Null),
+    };
+    Ok(json!({
+        "id": run,
+        "state": state,
+        "reason": reason,
+        "message": message,
+        "started_at_ms": started_at_ms,
+    }))
 }
