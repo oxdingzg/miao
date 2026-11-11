@@ -702,17 +702,26 @@ a staged revert references); blobs are pruned only when no kept manifest or stag
 pre-image references them. Snapshot records are retained, so a pruned snapshot
 reports `available: false`.
 
-`revert_stage {session_id,boundary_seq}` requires an idle Session and restores the
-newest snapshot at or before the boundary. It records `revert.staged` with the
-exact `restored`, `created` and `removed` file sets plus a pre-image of every path
-it changes. Staging another revert first reverses the previous staged restore;
-only one staged intent exists. `revert_clear` reverses that pre-image exactly and
-records `revert.cleared`; it refuses without a staged revert. `revert_commit`
-soft-reverts messages at or after the boundary (rows stay for audit and
-`unrevert`), drops later compactions, records `revert.committed`, and clears the
-staged intent. All phases refuse symlinks or paths that escape the Session's
-workspace. A restore whose blob is missing fails before any staged intent is
-recorded. The `snapshot` reply reports the staged revert when one exists.
+`revert_stage {session_id,boundary_seq,files,history,force}` requires an idle
+Session and restores the newest snapshot at or before the boundary. `files` and
+`history` (both default `true`) name the boundary: files and transcript together
+(`scope: "both"`), files only (`"files"`), or transcript only (`"history"`); both
+`false` is refused because it could move nothing. It records `revert.staged` with
+that `scope`, the exact `restored`, `created` and `removed` file sets plus a
+pre-image of every path it changes, and `conflicts_overwritten`. A path whose
+current content differs from what the Session last recorded changed outside the
+Session, so a stage that would overwrite one fails naming the paths unless
+`force` is set; `revert_preview` computes the same plan, and also reports
+`external_side_effects: "not_reversible"`. Staging another revert first reverses
+the previous staged restore; only one staged intent exists. `revert_clear`
+reverses that pre-image exactly and records `revert.cleared`; it refuses without
+a staged revert. `revert_commit` soft-reverts messages at or after the boundary
+(rows stay for audit and `unrevert`), drops later compactions, records
+`revert.committed` with the same `scope`, and clears the staged intent; a
+code-only stage commits without touching a message row, so `reverted` is 0. All
+phases refuse symlinks or paths that escape the Session's workspace. A restore
+whose blob is missing fails before any staged intent is recorded. The `snapshot`
+reply reports the staged revert, with its `scope`, when one exists.
 
 ### Incremental configuration reload
 
