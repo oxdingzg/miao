@@ -1871,6 +1871,71 @@ async fn recovery_leaves_finished_subagents_alone() {
     assert_eq!(after[0]["text"], "ok");
 }
 
+/// A child can be delegated into again once its first run settled (AGT-06).
+/// When that second run dies without writing its stop, its id already appears in
+/// an older `subagent_stop`, so recovery treated the row as closed while
+/// `running_subagents()` still counted the newer start: running for the life of
+/// the store, which is what made a Session end every drain as if a child were
+/// still working. Two starts of the same child are one row, not two.
+#[tokio::test]
+async fn recovery_closes_a_redispatch_that_stopped_once_before() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    store
+        .initialize("parent", "parent", dir.path().to_str().unwrap())
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        store
+            .record(
+                "parent",
+                "subagent_start",
+                serde_json::json!({"subagent_id":"child","description":"work","background":true}),
+            )
+            .await
+            .unwrap();
+        store
+            .record(
+                "parent",
+                "subagent_stop",
+                serde_json::json!({"subagent_id":"child","reason":"completed","text":"ok"}),
+            )
+            .await
+            .unwrap();
+    }
+    // The crash: the child was dispatched again, twice, and neither run wrote a
+    // stop. The older stops must not close them.
+    for _ in 0..2 {
+        store
+            .record(
+                "parent",
+                "subagent_start",
+                serde_json::json!({"subagent_id":"child","description":"again","background":true}),
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store.running_subagents("parent").await.unwrap(),
+        vec!["child".to_string()],
+        "a re-dispatch after an older stop is open, and counts once"
+    );
+
+    let recovered = store.recover().await.unwrap();
+    assert_eq!(
+        recovered
+            .iter()
+            .filter(|event| event.kind == "subagent_stop" && event.data["recovered"] == true)
+            .count(),
+        1,
+        "one closure per open child, not one per start row"
+    );
+    assert!(
+        store.running_subagents("parent").await.unwrap().is_empty(),
+        "a re-dispatched child that died must not stay running after recovery"
+    );
+}
+
 /// AGT-06: a side question is about work that is already in progress, so the
 /// branch starts from a copy of the mainline's history instead of being told
 /// about it again. The provider tells the two roles apart by what each Session
