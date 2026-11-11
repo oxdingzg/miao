@@ -7541,6 +7541,19 @@ async fn authorize(
                     return Ok(true);
                 }
             }
+            // A landing action that would move the protected branch is refused
+            // here rather than asked: an approval prompt is not branch
+            // discipline, and the destination is read from the words the shell
+            // is about to execute. A configured allow rule, or a saved allow
+            // rule the operator projected, already returned above; the floor
+            // deliberately also precedes a durable grant, so a grant recorded
+            // before this check existed cannot lift it.
+            if let Some(finding) =
+                crate::branch_discipline::refusal(prepared.input(), &inner.tools.head())
+            {
+                inner.store.record(session, crate::events::Lifecycle::PermissionDenied.name(), json!({"run_id":run,"call_id":call,"tool":prepared.name(),"resource":prepared.resource(),"reason":"branch_discipline","action":finding.action.as_str(),"target":finding.target.as_str(),"policy_revision":policy.revision()})).await?;
+                return Ok(false);
+            }
             if policy.auto_settles(
                 prepared.name(),
                 prepared.resource(),
