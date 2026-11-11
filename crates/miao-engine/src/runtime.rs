@@ -5362,7 +5362,14 @@ command: None,
                 let waited = goal_stalled_since
                     .map(|since| since.elapsed().as_secs())
                     .unwrap_or(0);
-                let waiting_jobs: Vec<String> = inner
+                // Background work this Session owns, counted rather than named:
+                // a pause that enumerated every id printed 59 of them, mostly
+                // duplicates and mostly other Sessions' children, and the reader
+                // had to scan a paragraph to learn one number. Jobs are this
+                // Session's own processes; children are read through their
+                // lineage edge so only a child that still names this Session as
+                // its parent counts, and each child counts once.
+                let waiting_jobs = inner
                     .store
                     .jobs(session)
                     .await?
@@ -5377,24 +5384,26 @@ command: None,
                                 | Some("unknown")
                         )
                     })
-                    .filter_map(|job| job["id"].as_str().map(str::to_owned))
-                    .collect();
-                let waiting_tasks: Vec<String> = inner
-                    .store
-                    .subagents(session)
-                    .await?
-                    .into_iter()
-                    .filter(|task| task["status"] == "running")
-                    .filter_map(|task| task["id"].as_str().map(str::to_owned))
-                    .collect();
+                    .count();
+                let running_children = inner.store.running_subagents(session).await?.len();
                 // A pause names the bound that actually fired. The provider turn
                 // allowance, the provider-billed token allowance, and the context
                 // window are three different measures (#2870), so a drained turn
                 // count is recorded as "turns" rather than as a spent budget.
                 let reason = if allowance == Some(0) {
                     Some("turns")
-                } else if !waiting_jobs.is_empty() || !waiting_tasks.is_empty() {
+                } else if waiting_jobs > 0 {
                     Some("waiting")
+                } else if running_children > 0 {
+                    // A running child is not a reason to freeze this Session: it
+                    // is work this Session delegated and no longer has to watch.
+                    // A completed child admits no input of its own (AGT-06), so
+                    // the drain does not park on one either — it falls through to
+                    // the paced continuation below, where reading a settled
+                    // child's result costs one throttled turn instead of a pause
+                    // only the operator can lift. No bound fired here, so nothing
+                    // is recorded as stopped.
+                    None
                 } else if goal_stalls >= 2 && waited >= min_no_progress_secs {
                     Some("no-progress")
                 } else if goal_flat >= MAX_FLAT_CONTINUATIONS {
@@ -5428,20 +5437,18 @@ command: None,
                             // A running delegated subagent is not a background
                             // job: it finishes into its own notification, and an
                             // operator told "background job(s)" would go looking
-                            // for a job that does not exist.
+                            // for a job that does not exist. Neither half lists
+                            // its ids: the count is the whole decision, and the
+                            // list made a one-number pause unreadable.
                             let mut pending: Vec<String> = Vec::new();
-                            if !waiting_jobs.is_empty() {
+                            if waiting_jobs > 0 {
                                 pending.push(format!(
-                                    "{} background job(s) still running ({})",
-                                    waiting_jobs.len(),
-                                    waiting_jobs.join(", ")
+                                    "{waiting_jobs} background job(s) still running"
                                 ));
                             }
-                            if !waiting_tasks.is_empty() {
+                            if running_children > 0 {
                                 pending.push(format!(
-                                    "{} delegated subagent task(s) still running ({})",
-                                    waiting_tasks.len(),
-                                    waiting_tasks.join(", ")
+                                    "{running_children} delegated subagent task(s) still running"
                                 ));
                             }
                             format!(
@@ -5473,27 +5480,15 @@ command: None,
                         let _ = inner.store.cancel_input(session, input_id).await;
                     }
                 } else {
-                    // While the Session owns running background work, the
-                    // completion notifications wake the drain on their own;
-                    // injecting the continuation prompt now would only burn
-                    // turns re-reading an unchanged todo list.
-                    // In-flight background work means the model has nothing
-                    // to do until it finishes: job completion admits an input
-                    // that wakes this drain, and a finishing subagent does the
-                    // same. Re-injecting the continuation prompt while a child
-                    // still runs only burns turns re-reading an unchanged todo
-                    // list — the waiting loop the #2862 analysis measured.
-                    let background_active = {
-                        let jobs = inner.store.jobs(session).await?;
-                        let jobs_live = jobs.iter().any(|job| {
-                            matches!(job["state"].as_str(), Some("queued") | Some("running"))
-                        });
-                        let tasks = inner.store.subagents(session).await?;
-                        jobs_live || tasks.iter().any(|task| task["status"] == "running")
-                    };
-                    if background_active {
-                        continue;
-                    }
+                    // Running background work reaches this branch only as a
+                    // delegated child: a live job pauses above, as a "waiting"
+                    // bound. A child is not a bound, so this drain keeps going
+                    // under the pace floor below rather than suppressing its
+                    // continuation. The suppression that used to sit here could
+                    // never run — the waiting pause preempted it — and had it run
+                    // it would have re-requested a provider turn immediately, on
+                    // unchanged history, which is the spin the #2862 analysis
+                    // measured rather than the rest it was meant to give.
                     // Pace the loop in wall-clock time: the model answers in
                     // seconds, so an unpaced drain re-prompts itself many
                     // times a minute while it is really only waiting. Polling
