@@ -1762,7 +1762,8 @@ impl App {
         if let Some(engine) = self.engine.as_ref() {
             engine.refresh_sessions();
         }
-        self.open_dialog(Dialog::sessions(&self.catalog));
+        let open = self.session_id();
+        self.open_dialog(Dialog::sessions_with_open(&self.catalog, open.as_deref()));
     }
 
     /// The palette lists the same actions as the key chords, with the chord
@@ -1834,14 +1835,16 @@ impl App {
     /// history under the cursor the operator was reading.
     fn reopen_sessions_dialog(&mut self) {
         let Some(Dialog::Sessions(previous)) = self.dialog.take() else {
-            self.dialog = Some(Dialog::sessions(&self.catalog));
+            let open = self.session_id();
+            self.dialog = Some(Dialog::sessions_with_open(&self.catalog, open.as_deref()));
             return;
         };
         let selected = previous
             .rows
             .get(previous.selected)
             .map(|row| row.id.clone());
-        let mut dialog = Dialog::sessions(&self.catalog);
+        let open = self.session_id();
+        let mut dialog = Dialog::sessions_with_open(&self.catalog, open.as_deref());
         if let Some(list) = dialog.list_mut() {
             list.restore_search(previous.filter.text(), previous.search);
             // `restore_search` refilters, so a hit is looked up in the rows and
