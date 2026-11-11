@@ -1027,7 +1027,10 @@ impl App {
                 if self.pending_accounts {
                     self.pending_accounts = false;
                     if self.dialog.is_none() {
-                        if self.accounts.is_empty() {
+                        // A key stored ahead of its route still has a row to
+                        // manage, so only a genuinely empty install falls back
+                        // to the provider list.
+                        if self.stored_keys().is_empty() && self.accounts.is_empty() {
                             self.open_providers();
                         } else {
                             self.open_provider_accounts();
@@ -2052,6 +2055,29 @@ impl App {
                 };
                 self.store_provider_key(&sign_in.provider, &key, account.as_deref());
             }
+            DialogAction::AddKey => {
+                let Some(provider) = self.accounts_filter.clone() else {
+                    return;
+                };
+                let name = self.provider_name(&provider);
+                self.open_dialog(Dialog::add_account_prompt(&provider, &name));
+            }
+            DialogAction::UpdateKey(id) => {
+                let Some(key) = self.stored_keys().into_iter().find(|key| key.id == id) else {
+                    self.notice("that key comes from the environment or a legacy file, not the key store");
+                    return;
+                };
+                let name = self.provider_name(&key.provider);
+                self.open_dialog(Dialog::update_key_prompt(&key.provider, &name, &key.label));
+            }
+            DialogAction::DeleteKey(id) => {
+                let Some(key) = self.stored_keys().into_iter().find(|key| key.id == id) else {
+                    self.notice("that key comes from the environment or a legacy file, not the key store");
+                    return;
+                };
+                let name = self.provider_name(&key.provider);
+                self.open_dialog(Dialog::confirm_remove_key(&key.provider, &name, &key.label));
+            }
             DialogAction::Submit(name) if matches!(self.dialog, Some(Dialog::WorktreeNew(_))) => {
                 self.dialog = None;
                 let root = self.worktree_root();
@@ -2087,8 +2113,8 @@ impl App {
                 // Forgetting a key is a store and manifest concern; the engine
                 // only has to be restarted afterwards, so it needs no handle
                 // here and a Session-less start can still do it.
-                if let ConfirmKind::RemoveCredential(integration) = kind {
-                    self.remove_provider_key(&integration);
+                if let ConfirmKind::RemoveKey { provider, label } = kind {
+                    self.remove_provider_key(&provider, Some(&label));
                     return;
                 }
                 let Some(engine) = self.engine.clone() else {
@@ -2102,7 +2128,7 @@ impl App {
                         let root = self.worktree_root();
                         engine.worktree_remove(&root, &name);
                     }
-                    ConfirmKind::RemoveCredential(_) => {}
+                    ConfirmKind::RemoveKey { .. } => {}
                     ConfirmKind::Revert {
                         boundary_seq,
                         files,
@@ -2349,33 +2375,25 @@ impl App {
                 else {
                     return;
                 };
-                // A provider-scoped list leads with the key's own actions:
-                // re-entering a key replaces it, deleting forgets it.
-                if let Some(provider) = chosen.strip_prefix("action:update:") {
-                    let name = self.provider_name(provider);
-                    self.open_dialog(Dialog::sign_in_prompt(provider, &name));
-                    return;
-                }
-                if let Some(provider) = chosen.strip_prefix("action:add:") {
-                    let name = self.provider_name(provider);
-                    self.open_dialog(Dialog::add_account_prompt(provider, &name));
-                    return;
-                }
-                if let Some(provider) = chosen.strip_prefix("action:delete:") {
-                    let name = self.provider_name(provider);
-                    self.open_dialog(Dialog::confirm_remove_credential(provider, &name));
+                // The one action row the list carries: another key beside the
+                // ones already stored. `u` and `d` act on a key's own row.
+                if chosen == "action:add" {
+                    let Some(provider) = self.accounts_filter.clone() else {
+                        return;
+                    };
+                    let name = self.provider_name(&provider);
+                    self.open_dialog(Dialog::add_account_prompt(&provider, &name));
                     return;
                 }
                 // The row id is the credential, so a narrowed list still picks
-                // the account the operator pointed at.
-                let credential_id = chosen;
+                // the key the operator pointed at.
                 let Some(session_id) = self.session_id() else {
-                    self.notice("open a Session to switch accounts");
+                    self.notice("open a Session to switch keys");
                     return;
                 };
-                self.pin_account(&session_id, Some(credential_id.clone()));
+                self.pin_account(&session_id, Some(chosen.clone()));
                 if let Some(engine) = self.engine.as_ref() {
-                    engine.select_account(&session_id, Some(&credential_id));
+                    engine.select_account(&session_id, Some(&chosen));
                 }
             }
             _ => {}
@@ -2764,19 +2782,19 @@ impl App {
         rows
     }
 
-    /// ctrl+o: the providers that hold an account, the level `provider.accounts`
-    /// opens in the TypeScript UI. Reading the catalog needs no Session;
-    /// switching an account still does.
+    /// ctrl+o: the providers that hold a key, then the keys each one stores.
+    /// Reading the catalog needs no Session; switching a key still does.
     ///
-    /// Accounts only exist for catalog routes that carry a credential, so a
-    /// configuration that authenticates per provider (`auth.json` keys, OAuth)
-    /// names none and would show an empty table. The provider list answers
-    /// there and is never empty, so an empty account catalog falls back to it.
+    /// The store decides whether there is anything to manage, and the catalog
+    /// only adds which models each key serves. Gating the list on the served
+    /// routes hid every key that has no route yet — a provider with no models
+    /// entry, or an account stored ahead of one — and those are exactly the
+    /// keys an operator wants to update or delete.
     fn open_accounts(&mut self) {
         if let Some(engine) = self.engine.as_ref() {
             engine.catalog();
         }
-        if self.accounts.is_empty() {
+        if self.stored_keys().is_empty() {
             self.pending_accounts = true;
             return;
         }
@@ -2801,6 +2819,12 @@ impl App {
         match miao_engine::credential::store_key(&store, provider, key, account) {
             Ok(stored) => {
                 let label = format!("{} ({})", stored.label, stored.id);
+                // The list the operator typed into has to show the key they just
+                // stored: a second account is a new row, and a replaced key is
+                // the same row with the same label.
+                if self.accounts_filter.is_some() {
+                    self.open_account_list();
+                }
                 let refresh = self.refresh_routes_manifest(&store);
                 if let Some(Err(error)) = &refresh {
                     // Restarting the engine would re-read a manifest that still
@@ -2845,40 +2869,48 @@ impl App {
     /// The manifest is reconciled rather than appended to here: a deleted key
     /// leaves a route that could only fail, so the same refresh drops it. A
     /// turn that is still running defers the restart, the way storing does.
-    fn remove_provider_key(&mut self, integration: &str) {
+    /// Delete one stored key: the provider and the account label it was stored
+    /// under. Every other key of that provider stays, so a second account never
+    /// disappears because the first one was removed.
+    fn remove_provider_key(&mut self, provider: &str, label: Option<&str>) {
         let Some(store) = self.credential_store.clone() else {
             self.notice("no credential store: set MIAO_DATA_HOME, XDG_DATA_HOME or HOME");
             return;
         };
-        match miao_engine::credential::remove_key(&store, integration, None) {
-            Ok(0) => self.notice(&format!("no key is stored for {integration}")),
-            Ok(removed) => {
+        let named = label.unwrap_or("every account");
+        match miao_engine::credential::remove_key(&store, provider, label) {
+            Ok(0) => self.notice(&format!("no {named} key is stored for {provider}")),
+            Ok(_) => {
+                // The list the operator is standing in has to lose the row it
+                // just deleted, or the next `d` acts on a key that is gone.
+                if matches!(self.dialog, Some(Dialog::Confirm(_)) | None) {
+                    self.dialog = None;
+                    self.open_account_list();
+                }
                 let refresh = self.refresh_routes_manifest(&store);
-                let label = match removed {
-                    1 => "1 account".to_string(),
-                    count => format!("{count} accounts"),
-                };
                 if !routes_need_restart(&refresh) {
                     self.notice(&format!(
-                        "deleted the {integration} key ({label}); no route served it"
+                        "deleted the {provider} {named} key; no route served it"
                     ));
                     return;
                 }
                 if self.state.active_run.is_some() {
                     self.pending_routes_reload = true;
                     self.notice(&format!(
-                        "deleted the {integration} key ({label}); the engine drops its routes when this turn finishes"
+                        "deleted the {provider} {named} key; the engine drops its routes when this turn finishes"
                     ));
                     return;
                 }
                 self.notice(&format!(
-                    "deleted the {integration} key ({label}); restarting the engine to drop its routes"
+                    "deleted the {provider} {named} key; restarting the engine to drop its routes"
                 ));
                 if let Some(engine) = self.engine.as_ref() {
                     engine.reload_provider_routes();
                 }
             }
-            Err(error) => self.notice(&format!("could not delete the {integration} key: {error}")),
+            Err(error) => {
+                self.notice(&format!("could not delete the {provider} {named} key: {error}"))
+            }
         }
     }
 
@@ -2912,76 +2944,159 @@ impl App {
 
     fn open_provider_accounts(&mut self) {
         self.accounts_filter = None;
-        let mut providers: Vec<(String, usize)> = Vec::new();
+        let keys = self.stored_keys();
+        // One row per provider, whether it has stored keys, served routes, or
+        // both: a provider whose key is stored but whose models are not derived
+        // yet is still the operator's to manage.
+        let mut providers: Vec<(String, usize, usize)> = Vec::new();
+        for key in &keys {
+            match providers
+                .iter_mut()
+                .find(|(known, ..)| known == &key.provider)
+            {
+                Some((_, stored, _)) => *stored += 1,
+                None => providers.push((key.provider.clone(), 1, 0)),
+            }
+        }
         for account in &self.accounts {
             let Some(provider) = account.provider.as_deref() else {
                 continue;
             };
             match providers
                 .iter_mut()
-                .find(|(known, _)| known.as_str() == provider)
+                .find(|(known, ..)| known == provider)
             {
-                Some((_, count)) => *count += 1,
-                None => providers.push((provider.to_string(), 1)),
+                Some((_, _, served)) => *served += 1,
+                None => providers.push((provider.to_string(), 0, 1)),
             }
         }
-        // `all` keeps every credential reachable in one flat list, which is
-        // what ctrl+o opened before it grew a provider level.
+        providers.sort_by(|left, right| left.0.cmp(&right.0));
+        // `all` keeps every key reachable in one flat list, which is what
+        // ctrl+o opened before it grew a provider level.
         let mut rows = vec![Row {
             id: "all".to_string(),
-            label: "all accounts".to_string(),
-            detail: accounts_label(self.accounts.len()),
+            label: "all keys".to_string(),
+            detail: keys_label(keys.len()),
         }];
-        rows.extend(providers.iter().map(|(provider, count)| {
-            Row {
-                id: provider.clone(),
-                label: self
-                    .providers
-                    .iter()
-                    .find(|entry| &entry.id == provider)
-                    .map(|entry| entry.name.clone())
-                    .unwrap_or_else(|| provider.clone()),
-                detail: accounts_label(*count),
-            }
+        rows.extend(providers.iter().map(|(provider, stored, served)| Row {
+            id: provider.clone(),
+            label: self.provider_name(provider),
+            detail: provider_keys_detail(*stored, *served),
         }));
         self.open_dialog(Dialog::provider_accounts(rows));
     }
 
-    /// The accounts of the provider the ctrl+o list narrowed to; no filter means
-    /// the flat list.
+    /// Every key the credential store holds, or only one provider's, with the
+    /// models each one serves joined in from the routes the engine reports.
+    ///
+    /// The store is the list's source: a key that serves no route yet — the
+    /// provider has no models entry, or the account was just added — must still
+    /// be visible, because it is the row an update or a delete acts on.
+    fn stored_keys(&self) -> Vec<StoredKey> {
+        let Some(store) = self.credential_store.as_ref() else {
+            return Vec::new();
+        };
+        let Ok(stored) = miao_engine::credential::list_database(store) else {
+            return Vec::new();
+        };
+        // The engine routes a provider with a `default` account on that one, so
+        // the list leads with it too, and then by label: a row's place must not
+        // depend on the order the store happens to return.
+        let mut stored = stored;
+        stored.sort_by(|left, right| {
+            left.integration
+                .cmp(&right.integration)
+                .then_with(|| (left.label != "default").cmp(&(right.label != "default")))
+                .then_with(|| left.label.cmp(&right.label))
+        });
+        stored
+            .into_iter()
+            .map(|entry| StoredKey {
+                provider: entry.integration,
+                label: entry.label,
+                id: entry.id,
+                kind: entry.kind,
+                expired: entry.expired,
+            })
+            .collect()
+    }
+
+    /// The keys of the provider the ctrl+o list narrowed to; no filter means the
+    /// flat list.
     fn open_account_list(&mut self) {
-        let accounts = match self.accounts_filter.as_deref() {
-            Some(provider) => self
-                .accounts
-                .iter()
-                .filter(|account| account.provider.as_deref() == Some(provider))
-                .cloned()
-                .collect::<Vec<_>>(),
-            None => self.accounts.clone(),
-        };
-        // The key's own actions belong where the key is shown. Only a provider
-        // scope can name the integration they act on.
-        let actions = match self.accounts_filter.as_deref() {
-            Some(provider) => vec![
-                Row {
-                    id: format!("action:update:{provider}"),
-                    label: "update key".to_string(),
-                    detail: format!("replace the default key for {provider}"),
+        let keys = self.stored_keys();
+        let scoped = self.accounts_filter.clone();
+        // Neither half alone decides whether the list is empty: a store row or
+        // a credential the engine already serves both belong here.
+        if keys.is_empty()
+            && self.accounts.iter().all(|account| match scoped.as_deref() {
+                Some(provider) => account.provider.as_deref() != Some(provider),
+                None => false,
+            })
+        {
+            self.notice("no key is stored yet: add one from a provider's models");
+            return;
+        }
+        let mut rows = keys
+            .iter()
+            .filter(|key| match scoped.as_deref() {
+                Some(provider) => key.provider == provider,
+                None => true,
+            })
+            .map(|key| Row {
+                id: key.id.clone(),
+                // The label is what tells two keys of one provider apart, and
+                // what a route id and a Session pin name as their account.
+                label: match scoped {
+                    Some(_) => key.label.clone(),
+                    None => format!("{} · {}", key.provider, key.label),
                 },
-                Row {
-                    id: format!("action:add:{provider}"),
-                    label: "add account".to_string(),
-                    detail: format!("store another key for {provider} beside the default"),
+                detail: key.detail(&self.accounts),
+            })
+            .collect::<Vec<_>>();
+        // A credential the engine serves but the store does not hold — an
+        // environment key, a legacy `--auth-file`, or another channel's store —
+        // keeps its row so it can still be selected onto a Session. The store's
+        // letters do not act on it, so the row says where it comes from.
+        for account in &self.accounts {
+            if scoped
+                .as_deref()
+                .is_some_and(|provider| account.provider.as_deref() != Some(provider))
+            {
+                continue;
+            }
+            if keys.iter().any(|key| key.id == account.credential_id) {
+                continue;
+            }
+            rows.push(Row {
+                id: account.credential_id.clone(),
+                label: match scoped {
+                    Some(_) => account.credential_id.clone(),
+                    None => format!(
+                        "{} · {}",
+                        account.provider.as_deref().unwrap_or("unknown"),
+                        account.credential_id
+                    ),
                 },
-                Row {
-                    id: format!("action:delete:{provider}"),
-                    label: "delete key".to_string(),
-                    detail: "forget every account this provider stores".to_string(),
-                },
-            ],
-            None => Vec::new(),
-        };
-        self.open_dialog(Dialog::accounts_with_actions(actions, &accounts));
+                detail: format!("not in the key store · {}", account.detail),
+            });
+        }
+        if rows.is_empty() {
+            rows.push(Row {
+                id: String::new(),
+                label: "no key stored for this provider".to_string(),
+                detail: "press esc and pick another provider".to_string(),
+            });
+        }
+        // Adding a key names the provider, so only a provider scope offers it.
+        if let Some(provider) = scoped.as_deref() {
+            rows.push(Row {
+                id: "action:add".to_string(),
+                label: "add key".to_string(),
+                detail: format!("store another key for {provider} under its own label"),
+            });
+        }
+        self.open_dialog(Dialog::keys(rows, scoped.is_some()));
     }
 
     /// The display name of a provider, falling back to its id.
@@ -4835,7 +4950,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn app() -> App {
-        app_with(Startup::default())
+        let mut app = app_with(Startup::default());
+        // A test never reads the machine's real credential store: a key list
+        // that depended on the operator's own keys would pass here and fail
+        // there. Tests that store a key point this at a temp database first.
+        app.credential_store = None;
+        app
     }
 
     fn app_with(startup: Startup) -> App {
@@ -8644,100 +8764,102 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_o_lists_the_providers_that_hold_an_account_then_their_accounts() {
+    fn ctrl_o_lists_the_providers_that_hold_a_key_then_their_keys() {
         let mut app = session_app();
         open_session(&mut app, "ses_a");
+        let dir = std::env::temp_dir().join(format!("miao-ctrl-o-keys-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        miao_engine::credential::store_key(&store, "zhipu", "sk-one", None).expect("store");
+        miao_engine::credential::store_key(&store, "openai", "sk-two", None).expect("store");
+        miao_engine::credential::store_key(&store, "openai", "sk-three", Some("work"))
+            .expect("store");
+        app.accounts = vec![AccountInfo {
+            credential_id: "cred_served".into(),
+            provider: Some("zhipu".into()),
+            detail: "glm-5".into(),
+        }];
         app.handle(key(KeyCode::Char('o'), KeyModifiers::CONTROL));
-        assert!(app.pending_accounts);
-        app.handle(AppEvent::Accounts(vec![
-            AccountInfo {
-                credential_id: "cred_a".into(),
-                provider: Some("zhipu".into()),
-                detail: "glm-5".into(),
-            },
-            AccountInfo {
-                credential_id: "cred_b".into(),
-                provider: Some("openai".into()),
-                detail: "gpt-5".into(),
-            },
-            AccountInfo {
-                credential_id: "cred_c".into(),
-                provider: Some("openai".into()),
-                detail: "gpt-5-mini".into(),
-            },
-        ]));
+        assert!(
+            !app.pending_accounts,
+            "a stored key needs no catalog answer to be listed"
+        );
         let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
         assert_eq!(list.title, "provider accounts");
+        // The store is the list's source, so a key whose provider serves no
+        // route yet still has a row of its own.
         assert!(list
             .rows
             .iter()
-            .any(|row| row.label == "all accounts" && row.detail == "3 accounts"));
+            .any(|row| row.label == "all keys" && row.detail == "3 keys"));
         assert!(list
             .rows
             .iter()
-            .any(|row| row.label == "openai" && row.detail == "2 accounts"));
+            .any(|row| row.label == "openai" && row.detail == "2 keys · no route yet"));
         assert!(list
             .rows
             .iter()
-            .any(|row| row.label == "zhipu" && row.detail == "1 account"));
-        // Down from the `all` row lands on the first provider holding an
-        // account; Enter narrows to that provider's accounts.
-        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+            .any(|row| row.label == "zhipu" && row.detail == "1 key · 1 served"));
+        // Down from the `all` row lands on the first provider; Enter narrows to
+        // that provider's keys.
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
         let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
-        assert_eq!(list.title, "accounts");
+        assert_eq!(list.title, "keys");
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
         assert_eq!(
-            list.rows
-                .iter()
-                .map(|row| row.id.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "action:update:openai",
-                "action:add:openai",
-                "action:delete:openai",
-                "cred_b",
-                "cred_c"
-            ],
-            "the key's own actions lead the provider's accounts"
+            labels,
+            vec!["default", "work", "add key"],
+            "one row per stored key, then the one action"
         );
-        // The narrowed list starts on the first action, so four steps down
-        // land on the second account.
-        for _ in 0..4 {
-            app.handle(key(KeyCode::Down, KeyModifiers::NONE));
-        }
+        let work = list
+            .rows
+            .iter()
+            .find(|row| row.label == "work")
+            .expect("the named key")
+            .clone();
+        assert!(work.detail.starts_with("key · no route"), "{}", work.detail);
+        // The cursor switches the Session onto the key it points at.
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(app.dialog.is_none());
         assert_eq!(
             app.session
                 .as_ref()
-                .and_then(|s| s.credential_id.as_deref()),
-            Some("cred_c")
+                .and_then(|session| session.credential_id.clone()),
+            Some(work.id)
         );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn ctrl_o_opens_the_provider_list_on_the_landing_screen() {
         let mut app = app();
         app.handle(key(KeyCode::Char('o'), KeyModifiers::CONTROL));
-        assert!(app.pending_accounts);
+        assert!(app.pending_accounts, "an empty store waits for the catalog");
         app.handle(AppEvent::Accounts(vec![AccountInfo {
             credential_id: "cred_a".into(),
             provider: Some("openai".into()),
             detail: "gpt-5".into(),
         }]));
         // The landing screen has no Session to switch, so the list is all it
-        // shows; the notice arrives only when an account is chosen.
+        // shows; the notice arrives only when a key is chosen.
         assert!(matches!(app.dialog, Some(Dialog::ProviderAccounts(_))));
         app.handle(key(KeyCode::Down, KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        // The provider's key actions lead its accounts, so step past them to
-        // reach the account the landing screen cannot pin.
-        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
-        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
-        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        let list = app.dialog.as_ref().and_then(Dialog::list).expect("list");
+        assert_eq!(list.title, "keys");
+        // A credential the engine serves but the store does not hold keeps its
+        // row, so it can still be selected; it just is not the operator's to
+        // edit here.
+        assert_eq!(list.rows[0].id, "cred_a");
+        assert!(
+            list.rows[0].detail.starts_with("not in the key store · gpt-5"),
+            "{}",
+            list.rows[0].detail
+        );
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.home.notice(), Some("open a Session to switch accounts"));
+        assert_eq!(app.home.notice(), Some("open a Session to switch keys"));
     }
 
     /// Accounts only exist for catalog routes that name a credential, so a
@@ -8950,38 +9072,91 @@ mod tests {
     /// A stored key is also where it is replaced or forgotten: the provider's
     /// own list carries both actions ahead of its accounts.
     #[test]
-    /// A provider's own key actions: replace the default, add another account
-    /// beside it, or forget every account. Adding is what a second key for one
-    /// provider needs, and it is a distinct action because the label it asks for
-    /// is what tells the two apart afterwards.
-    fn a_provider_account_list_offers_its_key_actions() {
+    /// A provider's keys, each row labelled the way it was stored: the label is
+    /// what tells two keys of one provider apart, and what a delete or an
+    /// update names. A key that serves no route yet is still listed, because it
+    /// is the row those letters act on.
+    fn a_provider_key_list_shows_every_stored_key_and_one_add_action() {
         let mut app = session_app();
+        let dir = std::env::temp_dir().join(format!("miao-key-list-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        miao_engine::credential::store_key(&store, "zhipuai-coding-plan", "sk-test", None)
+            .expect("store");
+        miao_engine::credential::store_key(&store, "zhipuai-coding-plan", "sk-work", Some("work"))
+            .expect("store");
+        let keys = miao_engine::credential::list_database(&store).expect("list");
+        let default = keys
+            .iter()
+            .find(|entry| entry.label == "default")
+            .expect("the default key");
+        // Only the default account has a route here, so the other row has to
+        // come from the store rather than from the served catalog.
         app.accounts = vec![AccountInfo {
-            credential_id: "cred_zhipu".into(),
+            credential_id: default.id.clone(),
             provider: Some("zhipuai-coding-plan".into()),
             detail: "glm-5.3".into(),
         }];
         app.accounts_filter = Some("zhipuai-coding-plan".into());
         app.open_account_list();
         let Some(Dialog::Accounts(list)) = app.dialog.as_ref() else {
-            panic!("an accounts dialog")
+            panic!("a keys dialog")
         };
-        let ids: Vec<&str> = list.rows.iter().map(|row| row.id.as_str()).collect();
-        assert_eq!(
-            ids,
-            vec![
-                "action:update:zhipuai-coding-plan",
-                "action:add:zhipuai-coding-plan",
-                "action:delete:zhipuai-coding-plan",
-                "cred_zhipu",
-            ]
+        let labels: Vec<&str> = list.rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(labels, vec!["default", "work", "add key"]);
+        assert_eq!(list.kind, crate::dialogs::ListKind::Keys);
+        assert!(
+            list.rows[0].detail.starts_with("key · glm-5.3"),
+            "{}",
+            list.rows[0].detail
         );
+        assert!(
+            list.rows[1].detail.starts_with("key · no route"),
+            "{}",
+            list.rows[1].detail
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Deleting asks first, then forgets every credential the provider stored
-    /// and restarts the engine so its routes stop being served.
     #[test]
-    fn deleting_a_key_forgets_it_and_restarts_the_engine() {
+    /// `u` asks for a new secret for the key under the cursor, under the label
+    /// it already has: the store updates that row in place, so the routes and
+    /// the Session pins that name its id keep resolving.
+    fn updating_a_key_asks_for_that_keys_own_label() {
+        let mut app = session_app();
+        let dir = std::env::temp_dir().join(format!("miao-key-update-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("miao.db");
+        app.credential_store = Some(store.clone());
+        miao_engine::credential::store_key(&store, "opencode-go", "sk-one", None)
+            .expect("store");
+        miao_engine::credential::store_key(&store, "opencode-go", "sk-two", Some("work"))
+            .expect("store");
+        app.accounts_filter = Some("opencode-go".into());
+        app.open_account_list();
+        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
+        app.handle(key(KeyCode::Char('u'), KeyModifiers::NONE));
+        let sign_in = app
+            .dialog
+            .as_ref()
+            .and_then(Dialog::sign_in)
+            .expect("the key prompt");
+        assert_eq!(sign_in.provider, "opencode-go");
+        assert_eq!(
+            sign_in.account.as_ref().map(|account| account.text()),
+            Some("work"),
+            "the label the key is stored under is the one being edited"
+        );
+        assert_eq!(sign_in.field, crate::dialogs::SignInField::Key);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Deleting one key asks first, then forgets only that account: the
+    /// provider's other keys keep serving, and the engine restarts so the
+    /// deleted key's route goes away.
+    #[test]
+    fn deleting_one_key_keeps_the_providers_other_key() {
         let mut app = session_app();
         let (handle, mut requests) = engine::Handle::recording();
         app.attach_engine(handle);
@@ -8991,20 +9166,19 @@ mod tests {
         app.credential_store = Some(store.clone());
         miao_engine::credential::store_key(&store, "zhipuai-coding-plan", "sk-test", None)
             .expect("store");
-        app.open_dialog(Dialog::confirm_remove_credential(
+        miao_engine::credential::store_key(&store, "zhipuai-coding-plan", "sk-work", Some("work"))
+            .expect("store");
+        app.open_dialog(Dialog::confirm_remove_key(
             "zhipuai-coding-plan",
             "Zhipu AI Coding Plan",
+            "work",
         ));
         // The destructive button starts unfocused, so a stray Enter is safe.
         app.handle(key(KeyCode::Char('y'), KeyModifiers::NONE));
         app.handle(key(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(app.dialog.is_none(), "the confirmation closes on delete");
-        assert!(
-            miao_engine::credential::list_database(&store)
-                .expect("list")
-                .is_empty(),
-            "the key is gone"
-        );
+        let stored = miao_engine::credential::list_database(&store).expect("list");
+        assert_eq!(stored.len(), 1, "the other key stays");
+        assert_eq!(stored[0].label, "default");
         assert!(
             matches!(
                 requests.try_recv(),
@@ -9014,8 +9188,8 @@ mod tests {
         );
         let notice = app.shell.composer.notice.clone().expect("notice");
         assert!(
-            notice.contains("deleted the zhipuai-coding-plan key"),
-            "says what happened: {notice}"
+            notice.contains("deleted the zhipuai-coding-plan work key"),
+            "says which key went: {notice}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -10000,10 +10174,53 @@ fn seed_providers(raw: Option<&str>) -> Vec<ProviderEntry> {
         .collect()
 }
 
-fn accounts_label(count: usize) -> String {
+/// One key the credential store holds, projected for the list that manages it.
+struct StoredKey {
+    provider: String,
+    label: String,
+    id: String,
+    kind: String,
+    expired: bool,
+}
+
+impl StoredKey {
+    /// What the row says beside the label: how the key was stored, which models
+    /// it serves today, and whether anything is wrong with it. A key with no
+    /// route is the case the old list could not show at all.
+    fn detail(&self, accounts: &[AccountInfo]) -> String {
+        let served = accounts
+            .iter()
+            .find(|account| account.credential_id == self.id)
+            .map(|account| account.detail.clone())
+            .filter(|models| !models.is_empty())
+            .unwrap_or_else(|| "no route".to_string());
+        let mut parts = vec![self.kind.clone(), served];
+        if self.expired {
+            parts.push("expired".to_string());
+        }
+        parts.join(" · ")
+    }
+}
+
+fn keys_label(count: usize) -> String {
     match count {
-        1 => "1 account".to_string(),
-        count => format!("{count} accounts"),
+        1 => "1 key".to_string(),
+        count => format!("{count} keys"),
+    }
+}
+
+/// How one provider's row reads in the key list: how many keys it stores and
+/// how many of them the engine already serves, because those are two different
+/// numbers and only the second one puts models in the picker.
+fn provider_keys_detail(stored: usize, served: usize) -> String {
+    match (stored, served) {
+        (0, 1) => "no stored key · 1 served".to_string(),
+        (0, served) => format!("no stored key · {served} served"),
+        (1, 1) => "1 key · 1 served".to_string(),
+        (stored, 1) => format!("{stored} keys · 1 served"),
+        (1, 0) => "1 key · no route yet".to_string(),
+        (stored, 0) => format!("{stored} keys · no route yet"),
+        (stored, served) => format!("{stored} keys · {served} served"),
     }
 }
 

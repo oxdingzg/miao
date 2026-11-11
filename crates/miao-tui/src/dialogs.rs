@@ -476,6 +476,10 @@ pub enum ListKind {
     /// `Enter` moves this Session into the tree; `n` adds one, `d` removes
     /// the one under the cursor.
     Worktrees,
+    /// `Enter` switches to the key; `u` replaces it, `a` adds another, `d`
+    /// deletes the one under the cursor. Letters are commands here, so the
+    /// list has no type-ahead: a key label is short enough to walk.
+    Keys,
 }
 
 impl ListDialog {
@@ -643,9 +647,13 @@ pub enum ConfirmKind {
         boundary_seq: u64,
         files: bool,
     },
-    /// Forget every stored credential for one integration. The routes that
-    /// named them go with them, which is why it is worth a confirmation.
-    RemoveCredential(String),
+    /// Forget one stored key: the named account of one integration. The
+    /// provider's other keys stay, which is what makes deleting a single key
+    /// safe to offer from the key's own row.
+    RemoveKey {
+        provider: String,
+        label: String,
+    },
     /// Stop every background job of the open Session at once. Every running
     /// job dies together, which is why it is worth a confirmation.
     StopAllJobs,
@@ -668,7 +676,7 @@ impl ConfirmDialog {
             ConfirmKind::RemoveSession(_) => "delete",
             ConfirmKind::RemoveWorktree(_) => "remove",
             ConfirmKind::Revert { .. } => "revert",
-            ConfirmKind::RemoveCredential(_) => "delete",
+            ConfirmKind::RemoveKey { .. } => "delete",
             ConfirmKind::StopAllJobs => "stop",
         }
     }
@@ -1400,31 +1408,18 @@ impl Dialog {
         ))
     }
 
-    pub fn accounts(accounts: &[AccountInfo]) -> Self {
-        Dialog::accounts_with_actions(Vec::new(), accounts)
-    }
-
-    /// The same list with the provider's own actions ahead of its accounts, so
-    /// updating or deleting the key lives where the key is shown rather than
-    /// only in `miao auth`.
-    pub fn accounts_with_actions(actions: Vec<Row>, accounts: &[AccountInfo]) -> Self {
-        let hint = match actions.is_empty() {
-            true => "type to filter · ↑↓ move · enter switch · esc close",
-            false => "type to filter · ↑↓ move · enter select · esc close",
+    /// The keys in the store: one provider's, or every provider's.
+    ///
+    /// The rows come from the credential store rather than from the routes the
+    /// engine serves, so a key that has no route yet — a provider with no model
+    /// list, an account that is waiting to be picked — is still shown, and can
+    /// still be updated or deleted.
+    pub fn keys(rows: Vec<Row>, provider_scoped: bool) -> Self {
+        let hint = match provider_scoped {
+            true => "↑↓ move · enter switch · u update · a add · d delete · esc close",
+            false => "↑↓ move · enter switch · u update · d delete · esc close",
         };
-        Dialog::Accounts(ListDialog::new(
-            "accounts",
-            actions
-                .into_iter()
-                .chain(accounts.iter().map(|account| Row {
-                    id: account.credential_id.clone(),
-                    label: account.credential_id.clone(),
-                    detail: account.detail.clone(),
-                }))
-                .collect(),
-            ListKind::Plain,
-            hint,
-        ))
+        Dialog::Accounts(ListDialog::new("keys", rows, ListKind::Keys, hint))
     }
 
     pub fn stash(rows: Vec<Row>) -> Self {
@@ -1529,14 +1524,33 @@ impl Dialog {
 
     /// Ask before a stored key is forgotten. Updating a key replaces it, so
     /// only the removal needs this: nothing can put the secret back.
-    pub fn confirm_remove_credential(integration: &str, name: &str) -> Self {
+    pub fn confirm_remove_key(provider: &str, name: &str, label: &str) -> Self {
         Dialog::Confirm(ConfirmDialog {
             title: "delete key",
             message: format!(
-                "Delete the key stored for {name}? Its models stop being served until a new key is stored."
+                "Delete the \"{label}\" key of {name}? The provider's other keys stay; this one stops serving its models until a new key is stored under the same label."
             ),
             confirmed: false,
-            kind: ConfirmKind::RemoveCredential(integration.to_string()),
+            kind: ConfirmKind::RemoveKey {
+                provider: provider.to_string(),
+                label: label.to_string(),
+            },
+        })
+    }
+
+    /// Replace the secret of one stored key. The label field is filled in and
+    /// stays editable only so the operator can see which account they are
+    /// editing; a different label would add a second key instead, which is what
+    /// `add key` is for.
+    pub fn update_key_prompt(provider: &str, name: &str, label: &str) -> Self {
+        let mut account = Editor::new();
+        account.set_text(label);
+        Dialog::SignIn(SignInDialog {
+            provider: provider.to_string(),
+            name: name.to_string(),
+            input: Editor::new(),
+            account: Some(account),
+            field: SignInField::Key,
         })
     }
 
@@ -1866,6 +1880,13 @@ pub enum Action {
         account: Option<String>,
         key: String,
     },
+    /// Ask for the key of another account of the provider under the cursor.
+    AddKey,
+    /// Ask for a new secret for this stored key, under the label it already
+    /// has, so the credential id its routes name survives the edit.
+    UpdateKey(String),
+    /// Ask before this one stored key is forgotten.
+    DeleteKey(String),
     Confirmed(ConfirmKind),
     /// Take one stashed prompt back into the composer.
     StashRestore(usize),
@@ -1998,6 +2019,17 @@ fn handle_list_key(list: &mut ListDialog, key: KeyEvent) -> Action {
         KeyCode::Char('x') if list.kind == ListKind::Schedule => {
             if let Some(id) = list.current_id() {
                 return Action::CancelSchedule(id);
+            }
+        }
+        KeyCode::Char('a') if list.kind == ListKind::Keys => return Action::AddKey,
+        KeyCode::Char('u') if list.kind == ListKind::Keys => {
+            if let Some(id) = list.current_id().filter(|id| !id.starts_with("action:")) {
+                return Action::UpdateKey(id);
+            }
+        }
+        KeyCode::Char('d') if list.kind == ListKind::Keys => {
+            if let Some(id) = list.current_id().filter(|id| !id.starts_with("action:")) {
+                return Action::DeleteKey(id);
             }
         }
         KeyCode::Char('n') if list.kind == ListKind::Worktrees => return Action::WorktreeNew,
@@ -2290,9 +2322,10 @@ fn handle_confirm_key(confirm: &mut ConfirmDialog, key: KeyEvent) -> Action {
                     boundary_seq: *boundary_seq,
                     files: *files,
                 },
-                ConfirmKind::RemoveCredential(integration) => {
-                    ConfirmKind::RemoveCredential(integration.clone())
-                }
+                ConfirmKind::RemoveKey { provider, label } => ConfirmKind::RemoveKey {
+                    provider: provider.clone(),
+                    label: label.clone(),
+                },
                 ConfirmKind::StopAllJobs => ConfirmKind::StopAllJobs,
             };
             return Action::Confirmed(kind);
@@ -3452,7 +3485,7 @@ mod tests {
             Dialog::theme("miao", None, &theme),
             Dialog::sessions(&[]),
             Dialog::provider_accounts(Vec::new()),
-            Dialog::accounts(&[]),
+            Dialog::keys(Vec::new(), true),
             Dialog::stash(Vec::new()),
             Dialog::timeline(Vec::new()),
             Dialog::status(Vec::new()),
