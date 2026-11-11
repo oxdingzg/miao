@@ -1588,7 +1588,11 @@ impl Runtime {
         // `cost` is derived once, from the same configuration: the rates a turn
         // is priced against are fixed at startup, so an edited price needs a
         // restart instead of quietly mispricing the rest of the Session.
-        let mut unsupported = vec!["tools", "agents", "cost"];
+        // `budget` is derived with the policy for the same reason: the Session's
+        // cost, time, and turn limits are one declaration fixed at launch, so an
+        // edit that looked applied while the old limits still bound the run
+        // would be worse than saying a restart is needed.
+        let mut unsupported = vec!["tools", "agents", "cost", "budget"];
         // The LSP registry only exists when startup found at least one server;
         // a plan that starts empty cannot grow without rebuilding Tools, so
         // that case is reported rather than silently accepted. The MCP
@@ -3281,6 +3285,11 @@ async fn execute(
                 .flatten()
                 .map(|limit| std::time::Instant::now() + limit)
         });
+    // COST-02: the Session's and the active Goal's budgets, each with its own
+    // accounting window, and the scope/axis pairs already warned about so a
+    // warning is one fact in the transcript instead of a line every turn.
+    let mut budgets = Budgets::read(inner, session).await?;
+    let mut budget_warned = HashSet::new();
     // Todo debt: count provider turns against the last `todos` revision so a
     // long stretch of tool calls cannot leave the persisted checklist silently
     // behind the work. The existing no-progress guard only watches text-only
@@ -3290,6 +3299,14 @@ async fn execute(
     loop {
         if cancel.is_cancelled() {
             return Ok(());
+        }
+        // COST-02: a budget is a premise of the turn about to be requested, so
+        // it is evaluated here, at the boundary where nothing is half-applied.
+        if !budgets.is_empty() {
+            budgets.refresh(inner, session).await?;
+            if !budget_gate(inner, session, run, &budgets, &mut budget_warned).await? {
+                return Ok(());
+            }
         }
         if delegated_deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
             inner
@@ -4301,6 +4318,12 @@ command: None,
                 })
             }),
         };
+        // COST-02: the settled turn is folded into every budget in force before
+        // its usage row is written, so the recorded `budget.state` describes the
+        // money and tokens the ledger is about to hold.
+        if !budgets.is_empty() {
+            budgets.advance(&reply.usage, cost.as_ref());
+        }
         inner
             .store
             .record(
@@ -4313,7 +4336,13 @@ command: None,
                 json!({"run_id":run,"step":step,"usage":reply.usage,"model":model.as_deref(),"route":route,"cost":cost,"cache":crate::usage::cache_lineage(&reply.usage),"context_message_seq":inner.store.max_message_seq(session).await?,"context_window":pressure.map(|(window,_)|json!(window)),"context_tokens":pressure.map(|(_,counted)|json!(counted))}),
             )
             .await?;
-        budget_spent = budget_spent.saturating_add(billed_tokens(&reply.usage));
+        budget_spent = budget_spent.saturating_add(crate::budget::billed_tokens(&reply.usage));
+        if !budgets.is_empty() {
+            inner
+                .store
+                .record(session, "budget.state", budgets.state())
+                .await?;
+        }
         // The billed turn's settle wall-clock rides the timing side table, so
         // usage reports can order turns in time without timestamps in replayed
         // payloads.
@@ -7490,14 +7519,221 @@ fn agent_tools(
         .collect()
 }
 
-/// Billed tokens for one provider turn in the TS runner's accounting: the
-/// inclusive input axis (cached and fresh alike) plus the inclusive output
-/// axis, which already contains reasoning.
-fn billed_tokens(usage: &Value) -> u64 {
-    usage["inputTokens"]
-        .as_u64()
-        .unwrap_or_default()
-        .saturating_add(usage["outputTokens"].as_u64().unwrap_or_default())
+/// The budgets in force for one run (COST-02).
+///
+/// Each scope keeps its own accounting window: the Session counts every turn it
+/// ever ran, a Goal counts the turns since the model recorded it, so a budget
+/// stated for a stretch of work is not charged with the work that prompted it.
+/// Both windows are read once from the ledger, then advanced turn by turn.
+struct Budgets {
+    session: Option<BudgetWindow>,
+    goal: Option<BudgetWindow>,
+    /// The Goal revision `goal` was opened at, so a rewritten Goal reopens its
+    /// window instead of inheriting the old one's spend.
+    goal_revision: Option<u64>,
+}
+
+struct BudgetWindow {
+    declaration: crate::budget::Declaration,
+    opened_ms: u64,
+    observed: crate::budget::Observed,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Scope {
+    Session,
+    Goal,
+}
+
+impl Scope {
+    fn name(self) -> &'static str {
+        match self {
+            Scope::Session => "Session",
+            Scope::Goal => "Goal",
+        }
+    }
+}
+
+impl Budgets {
+    /// Read both windows from their own starting point: the Session's first
+    /// recorded turn, and the event that recorded the active Goal.
+    async fn read(inner: &Arc<Inner>, session: &str) -> Result<Self, Error> {
+        let session_window = match inner.policy().budget() {
+            Some(declaration) => Some(BudgetWindow::open(inner, session, declaration, 0).await?),
+            None => None,
+        };
+        let state = inner.store.state(session).await?;
+        let goal_revision = state["goal"]["revision"].as_u64();
+        let goal = match (crate::budget::from_goal(&state), goal_revision) {
+            (Some(declaration), Some(revision)) => {
+                Some(BudgetWindow::open(inner, session, declaration, revision).await?)
+            }
+            _ => None,
+        };
+        Ok(Self {
+            session: session_window,
+            goal,
+            goal_revision,
+        })
+    }
+
+    /// A Goal recorded or rewritten mid-run takes effect at the next boundary.
+    /// The revision is the whole check: the Goal row cannot change without it.
+    async fn refresh(&mut self, inner: &Arc<Inner>, session: &str) -> Result<(), Error> {
+        let state = inner.store.state(session).await?;
+        let revision = state["goal"]["revision"].as_u64();
+        if revision == self.goal_revision {
+            return Ok(());
+        }
+        self.goal = match (crate::budget::from_goal(&state), revision) {
+            (Some(declaration), Some(revision)) => {
+                Some(BudgetWindow::open(inner, session, declaration, revision).await?)
+            }
+            _ => None,
+        };
+        self.goal_revision = revision;
+        Ok(())
+    }
+
+    /// Fold one settled provider turn into every window in force.
+    fn advance(&mut self, usage: &Value, cost: Option<&Value>) {
+        let now = crate::approval::now_ms();
+        for window in [&mut self.session, &mut self.goal].into_iter().flatten() {
+            window
+                .observed
+                .spend(usage, cost, now.saturating_sub(window.opened_ms));
+        }
+    }
+
+    fn windows(&self) -> impl Iterator<Item = (Scope, &BudgetWindow)> {
+        [
+            self.session.as_ref().map(|window| (Scope::Session, window)),
+            self.goal.as_ref().map(|window| (Scope::Goal, window)),
+        ]
+        .into_iter()
+        .flatten()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.session.is_none() && self.goal.is_none()
+    }
+
+    /// The durable payload a client paints the remaining amount from.
+    fn state(&self) -> Value {
+        json!({
+            "session": self.session.as_ref().map(|window| window.state(Scope::Session)),
+            "goal": self.goal.as_ref().map(|window| window.state(Scope::Goal)),
+        })
+    }
+}
+
+impl BudgetWindow {
+    async fn open(
+        inner: &Arc<Inner>,
+        session: &str,
+        declaration: crate::budget::Declaration,
+        after_seq: u64,
+    ) -> Result<Self, Error> {
+        let spend = inner.store.spend(session, after_seq).await?;
+        let opened_ms = match after_seq {
+            0 => spend.first_ms,
+            seq => inner
+                .store
+                .event_time(session, seq)
+                .await?
+                .or(spend.first_ms),
+        }
+        .unwrap_or_else(crate::approval::now_ms);
+        Ok(Self {
+            declaration,
+            opened_ms,
+            observed: spend.observed(Some(opened_ms), crate::approval::now_ms()),
+        })
+    }
+
+    fn state(&self, scope: Scope) -> Value {
+        let level = self.declaration.evaluate(&self.observed);
+        let mut state = self.declaration.state(&self.observed, level);
+        state["scope"] = json!(scope.name());
+        state["window_opened_ms"] = json!(self.opened_ms);
+        state
+    }
+}
+
+/// The budget gate at a provider-turn boundary (COST-02).
+///
+/// `false` ends the drain because a limit is spent: the next turn would spend
+/// what the operator did not authorise. The stop records what was left, leaves
+/// every admitted input in the durable inbox for the next run, and never
+/// touches the model selection — a budget is not a reason to switch routes. A
+/// warning is recorded once per scope and axis per run, at four fifths spent.
+async fn budget_gate(
+    inner: &Arc<Inner>,
+    session: &str,
+    run: &str,
+    budgets: &Budgets,
+    warned: &mut HashSet<(Scope, crate::budget::Axis)>,
+) -> Result<bool, Error> {
+    let level = |stopped: bool| {
+        budgets
+            .windows()
+            .filter_map(|(scope, window)| {
+                let level = window.declaration.evaluate(&window.observed);
+                let axis = level.axis()?;
+                (level.stopped() == stopped).then(|| {
+                    (
+                        scope,
+                        window,
+                        axis,
+                        window.declaration.share(axis, &window.observed),
+                    )
+                })
+            })
+            .reduce(|worst, next| if next.3 > worst.3 { next } else { worst })
+    };
+    if let Some((scope, window, axis, _)) = level(false) {
+        if warned.insert((scope, axis)) {
+            inner
+                .store
+                .record(session, "budget.warning", window.state(scope))
+                .await?;
+            inner
+                .store
+                .inject(
+                    session,
+                    &format!(
+                        "budget-warning-{run}-{}-{}",
+                        scope.name().to_lowercase(),
+                        axis.name()
+                    ),
+                    &crate::budget::warning_note(
+                        scope.name(),
+                        axis,
+                        &window.declaration,
+                        &window.observed,
+                    ),
+                    "engine",
+                )
+                .await?;
+        }
+    }
+    let Some((scope, window, axis, _)) = level(true) else {
+        return Ok(true);
+    };
+    inner
+        .store
+        .record(session, "budget.stopped", window.state(scope))
+        .await?;
+    inner
+        .store
+        .inject(
+            session,
+            &format!("budget-stop-{run}"),
+            &crate::budget::stop_note(scope.name(), axis, &window.declaration, &window.observed),
+            "engine",
+        )
+        .await?;
+    Ok(false)
 }
 
 /// The configured `provider/model` family a turn was served from, which is what

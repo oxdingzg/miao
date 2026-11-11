@@ -105,15 +105,17 @@ The installer places the release command at `~/.miao/bin/miao`. Start with the [
 
 ## Longer tasks, with limits
 
-The V2 autonomous loop is opt-in. It continues while todos remain open, with iteration and stall guards. A cost budget stops scheduling further provider turns after the estimated session cost reaches the threshold; it is not a hard cap on a provider bill or on a turn already in flight.
+The V2 autonomous loop is opt-in. It continues while todos remain open, with iteration and stall guards. A budget bounds cost, tokens, provider turns, or wall-clock time: state it for the Session in configuration, or state one for a Goal with the `goal` tool. At four fifths spent the run is warned with what is left, and at the limit it stops at the next provider-turn boundary — the message you already sent stays queued for the next run, and the model is never switched. Money counts only what a provider reported, so a note that makes a money claim says when a turn carried no charge and the remaining amount is a lower bound. It is not a hard cap on a provider bill or on a turn already in flight.
 
 ```jsonc
 {
   "loop": { "enabled": true, "max_iterations": 25 },
-  "cost": { "budget_usd": 5 },
+  "budget": { "cost_usd": 5, "turns": 40, "wallclock_ms": 3600000 },
   "compaction": { "prune": true },
 }
 ```
+
+`cost.budget_usd` remains supported as the money axis of the same budget.
 
 Place this in `.miao/miao.jsonc` for a project or `~/.config/miao/miao.jsonc` globally. These settings are optional; see the [configuration guide](docs/guide.en.md#4-configuration) before tuning them.
 

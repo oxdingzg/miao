@@ -11,6 +11,7 @@ mod bedrock_input;
 mod bedrock_stream;
 pub mod blob;
 pub mod branch_discipline;
+pub mod budget;
 mod cache_affinity;
 pub mod children;
 pub mod cli;

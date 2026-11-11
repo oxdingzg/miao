@@ -255,7 +255,30 @@ pub fn policy(documents: &[Document], miao_sandbox: Option<&str>) -> permission:
         approval_timeout_ms: 60_000,
         max_provider_turns: None,
         continuation_min_interval_ms: 30_000,
+        budget: budget_declaration(&normalized),
     }
+}
+
+/// The Session's cost, time, and turn budget (COST-02): the `budget` section,
+/// with the documented `cost.budget_usd` folded in as the money axis. That
+/// figure predates the section and is named in every released configuration, so
+/// a configuration that states only it keeps working. An invalid declaration is
+/// left for `Policy::new` to refuse, where the error names the axis.
+fn budget_declaration(normalized: &Value) -> Option<crate::budget::Declaration> {
+    let budget = normalized.get("budget");
+    let field = |key: &str| budget.and_then(|budget| budget.get(key));
+    let declaration = crate::budget::Declaration {
+        cost_usd: field("cost_usd").and_then(Value::as_f64).or_else(|| {
+            normalized
+                .get("cost")
+                .and_then(|cost| cost.get("budget_usd"))
+                .and_then(Value::as_f64)
+        }),
+        tokens: field("tokens").and_then(Value::as_u64),
+        turns: field("turns").and_then(Value::as_u64),
+        wallclock_ms: field("wallclock_ms").and_then(Value::as_u64),
+    };
+    (!declaration.is_empty()).then_some(declaration)
 }
 
 /// The native sandbox switch (product `SandboxPolicy.nativeEnabled`): an
@@ -1454,6 +1477,7 @@ mod tests {
                 "approval_timeout_ms": 60_000,
                 "max_provider_turns": null,
                 "continuation_min_interval_ms": 30_000,
+                "budget": null,
                 "auto": false,
             })
         );

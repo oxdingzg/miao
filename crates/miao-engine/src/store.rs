@@ -4443,6 +4443,50 @@ impl Store {
         .await
     }
 
+    /// What one accounting window of a Session has spent (COST-02).
+    ///
+    /// `after_seq` opens the window: `0` is the whole Session, and a Goal's
+    /// revision is the work done under that Goal. The counters come from the
+    /// ledger's own `usage` events, so a budget survives restarts and new
+    /// messages instead of resetting with the process.
+    pub(crate) async fn spend(
+        &self,
+        session: &str,
+        after_seq: u64,
+    ) -> Result<crate::budget::Spend, Error> {
+        let (session, after_seq) = (session.to_owned(), after_seq as i64);
+        self.call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT data,recorded_at_ms FROM engine_event WHERE session_id=?1 AND kind='usage' AND seq>?2 ORDER BY seq",
+            )?;
+            let mut rows = stmt.query(params![session, after_seq])?;
+            let mut spend = crate::budget::Spend::default();
+            while let Some(row) = rows.next()? {
+                let data: Value = serde_json::from_str(&row.get::<_, String>(0)?)?;
+                spend.observe(&data, row.get::<_, Option<u64>>(1)?);
+            }
+            Ok(spend)
+        })
+        .await
+    }
+
+    /// When one event was recorded, which is when a Goal's budget window
+    /// opened: a Goal budget counts the time since the model stated it.
+    pub(crate) async fn event_time(&self, session: &str, seq: u64) -> Result<Option<u64>, Error> {
+        let (session, seq) = (session.to_owned(), seq as i64);
+        self.call(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT recorded_at_ms FROM engine_event WHERE session_id=?1 AND seq=?2",
+                    params![session, seq],
+                    |row| row.get::<_, Option<u64>>(0),
+                )
+                .optional()?
+                .flatten())
+        })
+        .await
+    }
+
     pub async fn usage_report(&self, session: &str) -> Result<Value, Error> {
         let session = session.to_owned();
         self.call(move |conn| {
@@ -4871,6 +4915,18 @@ impl Store {
             // instead of an invitation to guess.
             let measured = turns + partial_turns;
             let reported = coverage["cacheRead"].as_u64().unwrap_or(0);
+            // COST-02: the newest budget evaluation the run recorded, so the
+            // report that already carries spend also carries what is left
+            // against the limits, without replaying the gate.
+            let budget: Value = conn
+                .query_row(
+                    "SELECT data FROM engine_event WHERE session_id=?1 AND kind='budget.state' ORDER BY seq DESC LIMIT 1",
+                    params![session],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .and_then(|data| serde_json::from_str::<Value>(&data).ok())
+                .unwrap_or(Value::Null);
             let mut cache_recommendations: Vec<Value> = Vec::new();
             if invalid_cache_rows > 0 {
                 cache_recommendations.push(json!({
@@ -4970,6 +5026,10 @@ impl Store {
                 "context": context,
                 "tools": {"calls": tool_calls, "failures": tool_failures},
                 "turnsDetail": turn_detail,
+                // COST-02: the newest budget evaluation the run recorded, so a
+                // client paints the remaining amount from the same report it
+                // already reads for spend instead of replaying the gate.
+                "budget": budget,
             }))
         }).await
     }

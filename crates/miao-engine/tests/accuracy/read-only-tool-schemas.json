@@ -33,15 +33,23 @@
       "budget": {
         "additionalProperties": false,
         "properties": {
+          "cost_usd": {
+            "exclusiveMinimum": 0,
+            "maximum": 100000,
+            "type": "number"
+          },
           "iterations": {
+            "maximum": 10000,
             "minimum": 1,
             "type": "integer"
           },
           "tokens": {
+            "maximum": 2000000000,
             "minimum": 1,
             "type": "integer"
           },
           "wallclock_ms": {
+            "maximum": 86400000,
             "minimum": 1,
             "type": "integer"
           }
