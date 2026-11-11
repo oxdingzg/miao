@@ -1644,7 +1644,10 @@ mod tests {
             !summary.contains("leave the transcript"),
             "a code-only revert must not claim the conversation is rewound: {summary}"
         );
-        assert!(summary.contains("Restore 1 file(s), remove 0"), "got {summary}");
+        assert!(
+            summary.contains("Restore 1 file(s), remove 0"),
+            "got {summary}"
+        );
         assert!(
             summary.contains("Shell commands and other side effects cannot be undone."),
             "got {summary}"

@@ -176,7 +176,8 @@ fn retain(conn: &rusqlite::Connection, database: &Path, session: &str) -> Result
         }
     }
     if let Some(staged) = staged(conn, session)? {
-        if let Ok(previous) = serde_json::from_str::<BTreeMap<String, Option<String>>>(&staged.previous)
+        if let Ok(previous) =
+            serde_json::from_str::<BTreeMap<String, Option<String>>>(&staged.previous)
         {
             keep.extend(previous.into_values().flatten());
         }

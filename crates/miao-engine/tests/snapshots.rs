@@ -101,7 +101,10 @@ async fn a_history_only_stage_rewinds_a_session_that_never_touched_a_file() {
     fs::write(workspace.join("a.txt"), "untouched").unwrap();
     // No capture exists, so a file revert has nothing to restore; the explicit
     // history-only stage still records the intent and commits.
-    let staged = store.revert_stage("s", 1, false, true, false).await.unwrap();
+    let staged = store
+        .revert_stage("s", 1, false, true, false)
+        .await
+        .unwrap();
     assert_eq!(staged["restored"], serde_json::json!([]));
     assert_eq!(staged["removed"], serde_json::json!([]));
     assert_eq!(
@@ -138,19 +141,16 @@ async fn a_code_only_stage_restores_files_and_leaves_the_transcript_alone() {
     store.record_file_touch("s", "a.txt").await.unwrap();
     store.capture_file_snapshot("s", 2).await.unwrap();
 
-    let staged = store.revert_stage("s", 1, true, false, false).await.unwrap();
+    let staged = store
+        .revert_stage("s", 1, true, false, false)
+        .await
+        .unwrap();
     assert_eq!(staged["scope"], "files");
     assert_eq!(staged["restored"], serde_json::json!(["a.txt"]));
-    assert_eq!(
-        fs::read_to_string(workspace.join("a.txt")).unwrap(),
-        "one"
-    );
+    assert_eq!(fs::read_to_string(workspace.join("a.txt")).unwrap(), "one");
     // The stage's own vocabulary is durable, so a client that reconnects reads
     // the boundary instead of guessing it.
-    assert_eq!(
-        store.staged_revert("s").await.unwrap()["scope"],
-        "files"
-    );
+    assert_eq!(store.staged_revert("s").await.unwrap()["scope"], "files");
 
     let committed = store.revert_commit("s").await.unwrap();
     assert_eq!(committed["scope"], "files");
@@ -160,10 +160,7 @@ async fn a_code_only_stage_restores_files_and_leaves_the_transcript_alone() {
     assert_eq!(snapshot["reverted_count"], 0);
     // A code-only commit is the end of the road: nothing was hidden, so a redo
     // has nothing to restore and the restored file stays restored.
-    assert_eq!(
-        fs::read_to_string(workspace.join("a.txt")).unwrap(),
-        "one"
-    );
+    assert_eq!(fs::read_to_string(workspace.join("a.txt")).unwrap(), "one");
     let events = store.events("s", 0, 500).await.unwrap();
     assert!(events
         .iter()
@@ -180,10 +177,7 @@ async fn a_revert_that_moves_nothing_is_refused() {
         .revert_stage("s", 1, false, false, false)
         .await
         .unwrap_err();
-    assert!(
-        error.to_string().contains("must restore files"),
-        "{error}"
-    );
+    assert!(error.to_string().contains("must restore files"), "{error}");
     assert!(store.staged_revert("s").await.unwrap().is_null());
 }
 
@@ -218,10 +212,7 @@ async fn a_stage_refuses_an_outside_edit_until_the_caller_forces_it() {
         forced["conflicts_overwritten"],
         serde_json::json!([{ "path": "a.txt", "action": "restore", "disk": "modified" }])
     );
-    assert_eq!(
-        fs::read_to_string(workspace.join("a.txt")).unwrap(),
-        "one"
-    );
+    assert_eq!(fs::read_to_string(workspace.join("a.txt")).unwrap(), "one");
 }
 
 #[tokio::test]
