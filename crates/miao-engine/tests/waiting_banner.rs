@@ -29,12 +29,16 @@ use std::sync::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-/// Answers every turn with text alone, so each provider turn is a chance for the
-/// loop to decide whether the delegated work it knows about is a reason to stop.
-/// The turn count is what each test reads: a Session that keeps continuing is
-/// the behaviour a running child must not take away.
+/// Answers with text alone, and records the delegation on its first turn: a child
+/// that is still running exists because it was started *during* this run, which
+/// is what the drain start's own recovery can leave alone. A start written before
+/// the run is a process that lost its owner, and recovery closes it.
+///
+/// The turn count is what the test reads: a child this Session delegated must not
+/// buy a provider turn.
 struct Idle {
     calls: AtomicUsize,
+    store: Store,
 }
 
 #[async_trait]
@@ -45,7 +49,14 @@ impl Provider for Idle {
         _: mpsc::Sender<Value>,
         _: CancellationToken,
     ) -> Result<Reply, ProviderError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            // The same child twice (a re-dispatch) and one child that another
+            // Session forked (an adoption this Session's journal alone cannot
+            // tell apart).
+            start(&self.store, "s", "child-a").await;
+            start(&self.store, "s", "child-a").await;
+            start(&self.store, "s", "child-foreign").await;
+        }
         Ok(Reply {
             needs_tools: false,
             content: json!([{"type":"text","text":"the delegated work is still going"}]),
@@ -238,9 +249,10 @@ async fn only_this_sessions_running_children_are_counted_once() {
     );
 }
 
-/// A running child is work this Session delegated, not a bound it must pause on:
-/// the drain keeps continuing so the Session can do the rest of its list while
-/// the child works. The note never names a child, so nothing here may print one.
+/// A running child is work this Session delegated, not a bound it must pause on
+/// and not a reason to keep asking a provider for another turn: the drain ends
+/// the way a pause would, without the note and without the pause gate. The note
+/// never names a child, so nothing here may print one.
 #[tokio::test]
 async fn a_running_child_does_not_pause_its_parent_and_prints_no_ids() {
     let dir = tempfile::tempdir().unwrap();
@@ -250,11 +262,9 @@ async fn a_running_child_does_not_pause_its_parent_and_prints_no_ids() {
     seed_work(&store, &workspace).await;
     fork_child(&store, "s", "child-a").await;
     fork_child(&store, "other", "child-foreign").await;
-    start(&store, "s", "child-a").await;
-    start(&store, "s", "child-a").await;
-    start(&store, "s", "child-foreign").await;
     let provider = Arc::new(Idle {
         calls: AtomicUsize::new(0),
+        store: store.clone(),
     });
     let runtime = Runtime::with_policy(
         store.clone(),
@@ -288,9 +298,10 @@ async fn a_running_child_does_not_pause_its_parent_and_prints_no_ids() {
         !notes.contains("child-a") && !notes.contains("child-foreign"),
         "the note never enumerates child ids: {notes}"
     );
-    assert!(
-        provider.calls.load(Ordering::SeqCst) > 1,
-        "the drain kept continuing its own list while the child ran"
+    assert_eq!(
+        provider.calls.load(Ordering::SeqCst),
+        1,
+        "the drain ends instead of polling a provider turn for a child it does not watch"
     );
 }
 

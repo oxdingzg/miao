@@ -5394,16 +5394,6 @@ command: None,
                     Some("turns")
                 } else if waiting_jobs > 0 {
                     Some("waiting")
-                } else if running_children > 0 {
-                    // A running child is not a reason to freeze this Session: it
-                    // is work this Session delegated and no longer has to watch.
-                    // A completed child admits no input of its own (AGT-06), so
-                    // the drain does not park on one either — it falls through to
-                    // the paced continuation below, where reading a settled
-                    // child's result costs one throttled turn instead of a pause
-                    // only the operator can lift. No bound fired here, so nothing
-                    // is recorded as stopped.
-                    None
                 } else if goal_stalls >= 2 && waited >= min_no_progress_secs {
                     Some("no-progress")
                 } else if goal_flat >= MAX_FLAT_CONTINUATIONS {
@@ -5479,16 +5469,23 @@ command: None,
                     for input_id in internal_inputs.iter() {
                         let _ = inner.store.cancel_input(session, input_id).await;
                     }
+                } else if running_children > 0 {
+                    // A running child is not a bound this Session pauses on: it
+                    // is work this Session delegated and no longer has to watch,
+                    // and the note that used to name it froze the Session for it.
+                    // It is not a continuation either. A completed child admits
+                    // no input of its own (AGT-06), so nothing here finishes the
+                    // wait, and re-injecting the continuation only re-requests a
+                    // provider turn at every pace interval on an unchanged list
+                    // until the no-progress bound — a Session that never finishes
+                    // instead of one that waits. End this drain: a failed child
+                    // still admits its own notice (#2862), and the operator's
+                    // next message starts the next run without a pause to lift.
+                    for input_id in internal_inputs.iter() {
+                        let _ = inner.store.cancel_input(session, input_id).await;
+                    }
+                    return Ok(());
                 } else {
-                    // Running background work reaches this branch only as a
-                    // delegated child: a live job pauses above, as a "waiting"
-                    // bound. A child is not a bound, so this drain keeps going
-                    // under the pace floor below rather than suppressing its
-                    // continuation. The suppression that used to sit here could
-                    // never run — the waiting pause preempted it — and had it run
-                    // it would have re-requested a provider turn immediately, on
-                    // unchanged history, which is the spin the #2862 analysis
-                    // measured rather than the rest it was meant to give.
                     // Pace the loop in wall-clock time: the model answers in
                     // seconds, so an unpaced drain re-prompts itself many
                     // times a minute while it is really only waiting. Polling
