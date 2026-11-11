@@ -45,6 +45,7 @@ pub mod mcp;
 mod media;
 pub mod openai_chat;
 pub mod openai_responses;
+pub mod optimization;
 pub mod patch;
 pub mod pdf;
 pub mod peer;

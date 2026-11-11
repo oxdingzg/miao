@@ -277,6 +277,9 @@ pub struct Tools {
     /// Which session's deliveries this clone reads and records. Empty is the
     /// direct-caller scope; the runtime scopes every model-driven call.
     read_scope: String,
+    /// VAL-04 ablation switch: `false` answers every read with the payload
+    /// again instead of answering an exact repeat with its earlier delivery.
+    minimal_reads: bool,
     edit_recovery: bool,
     short_anchors: bool,
     batch_edit: bool,
@@ -372,6 +375,7 @@ impl Tools {
             edit_snapshots: Arc::new(std::sync::Mutex::new(Snapshots::new())),
             read_ledger: Arc::new(std::sync::Mutex::new(ReadLedger::default())),
             read_scope: String::new(),
+            minimal_reads: true,
             edit_recovery: true,
             short_anchors: true,
             batch_edit: true,
@@ -1315,6 +1319,15 @@ impl Tools {
 
     pub fn with_writes(self, enabled: bool) -> Self {
         self.gates_mut().writes = enabled;
+        self
+    }
+
+    /// Evaluation ablation switch: `false` answers a repeated read with the
+    /// payload again instead of the fingerprint plus the earlier delivery, so an
+    /// arm can measure what duplicate-read suppression saves (VAL-04). The
+    /// ledger keeps counting either way.
+    pub fn with_minimal_reads(mut self, enabled: bool) -> Self {
+        self.minimal_reads = enabled;
         self
     }
 
@@ -2745,11 +2758,18 @@ impl Tools {
                             .unwrap_or_else(|held| held.into_inner());
                         let session = ledger.sessions.entry(self.read_scope.clone()).or_default();
                         let key = path.to_string_lossy().into_owned();
-                        let found = session.deliveries.get_mut(&key).and_then(|history| {
-                            history.iter().position(|delivery| {
-                                delivery.form == form && delivery.fingerprint == sha256
+                        // VAL-04: an ablated engine delivers the payload again.
+                        // The read is still recorded as a delivery, so the
+                        // ledger never claims bytes this arm did not save.
+                        let found = if self.minimal_reads {
+                            session.deliveries.get_mut(&key).and_then(|history| {
+                                history.iter().position(|delivery| {
+                                    delivery.form == form && delivery.fingerprint == sha256
+                                })
                             })
-                        });
+                        } else {
+                            None
+                        };
                         match found {
                             Some(position) => {
                                 session.reads += 1;

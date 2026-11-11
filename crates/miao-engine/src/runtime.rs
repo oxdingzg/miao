@@ -293,6 +293,9 @@ struct Inner {
     config_changes: broadcast::Sender<Value>,
     product: Arc<std::sync::RwLock<crate::product::State>>,
     context: Mutex<Option<ContextLimits>>,
+    /// Which optimization mechanisms this run keeps (VAL-04). Copy and read
+    /// once per gate, so an ablation arm removes exactly one mechanism.
+    optimization: StdRwLock<crate::optimization::Optimizations>,
     roles: Mutex<crate::roles::Bindings>,
     route_limits: Mutex<crate::model_routes::RouteLimits>,
     /// What the configuration charges per million tokens, keyed by the logical
@@ -549,6 +552,20 @@ impl Inner {
             .unwrap_or_else(|held| held.into_inner())
             .clone()
     }
+    /// Whether one optimization mechanism is enabled for this run. An ablation
+    /// arm removes exactly one; the defaults keep every one.
+    fn optimization(&self, mechanism: crate::optimization::Mechanism) -> bool {
+        self.optimization
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .enabled(mechanism)
+    }
+    fn set_optimizations(&self, optimizations: crate::optimization::Optimizations) {
+        *self
+            .optimization
+            .write()
+            .unwrap_or_else(|held| held.into_inner()) = optimizations;
+    }
     fn set_policy(&self, policy: Policy) {
         *self.policy.write().unwrap_or_else(|held| held.into_inner()) = Arc::new(policy);
     }
@@ -799,6 +816,7 @@ impl Runtime {
                 config_changes,
                 product: Arc::new(std::sync::RwLock::new(crate::product::State::default())),
                 context: Mutex::new(None),
+                optimization: StdRwLock::new(crate::optimization::Optimizations::defaults()),
                 roles: Mutex::new(crate::roles::Bindings::default()),
                 route_limits: Mutex::new(crate::model_routes::RouteLimits::default()),
                 prices: Mutex::new(crate::pricing::Table::default()),
@@ -1455,6 +1473,22 @@ impl Runtime {
 
     pub async fn set_context_limits(&self, limits: Option<ContextLimits>) {
         *self.inner.context.lock().await = limits;
+    }
+
+    /// Choose which optimization mechanisms this run keeps (VAL-04). The
+    /// defaults keep every one, which is the behaviour before the switches
+    /// existed; an ablation arm removes one at a time so a measurement can
+    /// attribute the difference to that mechanism alone.
+    pub fn set_optimizations(&self, optimizations: crate::optimization::Optimizations) {
+        self.inner.set_optimizations(optimizations);
+    }
+
+    pub fn optimizations(&self) -> crate::optimization::Optimizations {
+        self.inner
+            .optimization
+            .read()
+            .unwrap_or_else(|held| held.into_inner())
+            .to_owned()
     }
 
     /// Record where startup derived the LSP servers from, so `config_reload`
@@ -3298,8 +3332,12 @@ async fn execute(
         });
     // COST-02: the Session's and the active Goal's budgets, each with its own
     // accounting window, and the scope/axis pairs already warned about so a
-    // warning is one fact in the transcript instead of a line every turn.
-    let mut budgets = Budgets::read(inner, session).await?;
+    // warning is one fact in the transcript instead of a line every turn. VAL-04
+    // ablates the gate and the Goal window separately: an arm that removes
+    // `goal_budget` still charges the Session's own declaration.
+    let goal_budget = inner.optimization(crate::optimization::Mechanism::GoalBudget);
+    let cost_stop = inner.optimization(crate::optimization::Mechanism::CostStop);
+    let mut budgets = Budgets::read(inner, session, goal_budget).await?;
     let mut budget_warned = HashSet::new();
     // Todo debt: count provider turns against the last `todos` revision so a
     // long stretch of tool calls cannot leave the persisted checklist silently
@@ -3313,8 +3351,10 @@ async fn execute(
         }
         // COST-02: a budget is a premise of the turn about to be requested, so
         // it is evaluated here, at the boundary where nothing is half-applied.
-        if !budgets.is_empty() {
-            budgets.refresh(inner, session).await?;
+        // VAL-04 ablates the gate as a whole: with `cost_stop` removed the same
+        // declarations are still recorded, but no turn is warned or stopped.
+        if cost_stop && !budgets.is_empty() {
+            budgets.refresh(inner, session, goal_budget).await?;
             if !budget_gate(inner, session, run, &budgets, &mut budget_warned).await? {
                 return Ok(());
             }
@@ -3611,9 +3651,14 @@ async fn execute(
         // from the outgoing request only. Stored history is untouched, and the
         // knob rides the same `--context-limits` configuration that enables
         // compaction, so an unconfigured runtime sends exactly what it did
-        // before.
+        // before. VAL-04 keeps the knob's configuration untouched and removes
+        // the elision itself, which is what an arm measuring request size
+        // against stored recall needs.
         if let Some(limits) = &*inner.context.lock().await {
-            if let Some(budget) = limits.prune_chars {
+            if let Some(budget) = limits
+                .prune_chars
+                .filter(|_| inner.optimization(crate::optimization::Mechanism::ToolOutputBudget))
+            {
                 let stats = crate::context_trigger::prune_history_with_stats(
                     &mut history,
                     budget,
@@ -5071,7 +5116,12 @@ command: None,
                 .is_some()
                 .then(crate::context_trigger::ContextLimits::operator_requested)
         });
-        if let Some(limits) = limits.filter(|_| closed_answer) {
+        // VAL-04 ablates automatic compaction without removing an operator's own
+        // request: `requested` is a durable command the operator issued, so the
+        // switch only governs the automatic checkpoint.
+        let compaction = requested.is_some()
+            || inner.optimization(crate::optimization::Mechanism::AutoCompaction);
+        if let Some(limits) = limits.filter(|_| closed_answer && compaction) {
             let primary = Arc::clone(&provider);
             let bindings = inner.roles.lock().await.clone();
             let (role_provider, resolution) =
@@ -7735,16 +7785,18 @@ impl Scope {
 
 impl Budgets {
     /// Read both windows from their own starting point: the Session's first
-    /// recorded turn, and the event that recorded the active Goal.
-    async fn read(inner: &Arc<Inner>, session: &str) -> Result<Self, Error> {
+    /// recorded turn, and the event that recorded the active Goal. `goal` is
+    /// the VAL-04 switch: an arm that removes the Goal window still opens the
+    /// Session's, so the two boundaries stay separable.
+    async fn read(inner: &Arc<Inner>, session: &str, goal: bool) -> Result<Self, Error> {
         let session_window = match inner.policy().budget() {
             Some(declaration) => Some(BudgetWindow::open(inner, session, declaration, 0).await?),
             None => None,
         };
         let state = inner.store.state(session).await?;
         let goal_revision = state["goal"]["revision"].as_u64();
-        let goal = match (crate::budget::from_goal(&state), goal_revision) {
-            (Some(declaration), Some(revision)) => {
+        let goal = match (goal, crate::budget::from_goal(&state), goal_revision) {
+            (true, Some(declaration), Some(revision)) => {
                 Some(BudgetWindow::open(inner, session, declaration, revision).await?)
             }
             _ => None,
@@ -7758,14 +7810,19 @@ impl Budgets {
 
     /// A Goal recorded or rewritten mid-run takes effect at the next boundary.
     /// The revision is the whole check: the Goal row cannot change without it.
-    async fn refresh(&mut self, inner: &Arc<Inner>, session: &str) -> Result<(), Error> {
+    async fn refresh(
+        &mut self,
+        inner: &Arc<Inner>,
+        session: &str,
+        goal: bool,
+    ) -> Result<(), Error> {
         let state = inner.store.state(session).await?;
         let revision = state["goal"]["revision"].as_u64();
         if revision == self.goal_revision {
             return Ok(());
         }
-        self.goal = match (crate::budget::from_goal(&state), revision) {
-            (Some(declaration), Some(revision)) => {
+        self.goal = match (goal, crate::budget::from_goal(&state), revision) {
+            (true, Some(declaration), Some(revision)) => {
                 Some(BudgetWindow::open(inner, session, declaration, revision).await?)
             }
             _ => None,

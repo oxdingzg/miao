@@ -509,11 +509,23 @@ fn context_limits_from(
         .map_err(|error| error.into())
 }
 
+/// VAL-04: the mechanisms this start keeps. Absent configuration is the
+/// baseline — every mechanism enabled — so only an ablation arm names anything.
+fn optimizations_from(
+    flag: Option<&str>,
+    environment: Option<&str>,
+) -> Result<miao_engine::optimization::Optimizations, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(json) = flag.or(environment) else {
+        return Ok(miao_engine::optimization::Optimizations::defaults());
+    };
+    miao_engine::optimization::Optimizations::from_wire(json).map_err(|error| error.into())
+}
+
 pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Send + Sync>> {
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
         eprintln!(
-            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH | --agent-name NAME] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off] [--context-limits JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
+            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH | --agent-name NAME] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off] [--context-limits JSON] [--optimizations JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
 
         );
         std::process::exit(2);
@@ -551,6 +563,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             "--formatter-config",
             "--lsp-diagnostics",
             "--context-limits",
+            "--optimizations",
             "--hooks-config",
             "--context-config",
             "--workspace-instructions",
@@ -929,8 +942,21 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         miao_engine::config_derive::PolicyOrigin::Entry { acp }
     };
     let policy = Policy::new(policy_origin.derive(mode, auto_approve)?)?;
+    // VAL-04: which optimization mechanisms this start keeps. Absent
+    // configuration is the baseline — every mechanism enabled — so an
+    // unconfigured start behaves exactly as before and only an ablation arm
+    // states what it removes.
+    let optimizations = optimizations_from(
+        options.get("--optimizations").map(String::as_str),
+        std::env::var(miao_engine::optimization::Optimizations::ENVIRONMENT)
+            .ok()
+            .as_deref(),
+    )?;
     let mut tools = Tools::new(workspace)
         .await?
+        .with_minimal_reads(
+            optimizations.enabled(miao_engine::optimization::Mechanism::MinimalReads),
+        )
         .with_workspace_instructions(
             match options.get("--workspace-instructions").map(String::as_str) {
                 None | Some("true") => true,
@@ -1323,6 +1349,9 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     if let Some(limits) = context_limits {
         runtime.set_context_limits(Some(limits)).await;
     }
+    // The mechanisms this start keeps. Set here, before the first drain, so
+    // every run in this Location reads the same arm.
+    runtime.set_optimizations(optimizations);
     if let Some(origin) = &lsp_origin {
         runtime.set_lsp_origin(origin.clone()).await;
     }
