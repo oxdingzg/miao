@@ -940,10 +940,10 @@ impl Dialog {
             }
         }
         for (provider, indices) in groups {
-            if let Some(provider) = provider {
+            if let Some(name) = provider.as_deref() {
                 rows.push(Row {
-                    id: format!("group:{provider}"),
-                    label: provider,
+                    id: format!("group:{name}"),
+                    label: name.to_string(),
                     detail: String::new(),
                 });
             }
@@ -953,6 +953,18 @@ impl Dialog {
                     id: index.to_string(),
                     label: model.label(),
                     detail: model.origin(&shared),
+                });
+            }
+            // The keys behind a provider's models are one row away from them:
+            // `/model` and `ctrl+o` reach the same key list, so replacing or
+            // adding a key cannot be a chord an operator has to know first.
+            // The row trails the group, which keeps the first model the row
+            // Enter acts on.
+            if let Some(name) = provider.as_deref() {
+                rows.push(Row {
+                    id: format!("accounts:{name}"),
+                    label: "manage keys".to_string(),
+                    detail: "update or add a key".to_string(),
                 });
             }
         }
@@ -2643,10 +2655,13 @@ mod tests {
                 ("zhipu", ""),
                 ("glm-5 · openai-chat", "zhipu"),
                 ("flash · openai-chat", "zhipu"),
+                ("manage keys", "update or add a key"),
                 ("mtty", ""),
                 ("haiku · openai-chat", "mtty"),
+                ("manage keys", "update or add a key"),
             ],
-            "a header leaves the detail column empty; every model row names its provider"
+            "a header leaves the detail column empty, every model row names its provider, \
+             and each group ends with the row that names its keys"
         );
     }
 
@@ -2666,7 +2681,7 @@ mod tests {
         let details: Vec<&str> = list.rows.iter().map(|row| row.detail.as_str()).collect();
         assert_eq!(
             details,
-            vec!["", "zhipu · work", "zhipu · cred_b"],
+            vec!["", "zhipu · work", "zhipu · cred_b", "update or add a key"],
             "one provider, two keys: the account is what tells them apart"
         );
     }
@@ -2748,12 +2763,61 @@ mod tests {
                 "zhipu",
                 "glm-5 · openai-chat",
                 "flash · openai-chat",
+                "manage keys",
                 "mtty",
-                "haiku · openai-chat"
+                "haiku · openai-chat",
+                "manage keys"
             ]
         );
         assert!(list.rows[0].is_header());
         assert!(!list.rows[1].is_header());
+    }
+
+    /// Each provider group names the keys behind it, so a key is replaced or
+    /// added from the same picker the models are chosen from and not only from
+    /// `ctrl+o`. The row names the provider, so the app opens that provider's
+    /// key list rather than the flat one.
+    #[test]
+    fn every_provider_group_trails_its_own_key_row() {
+        let dialog = Dialog::models(&grouped(), None);
+        let list = dialog.list().expect("list");
+        let rows: Vec<(&str, &str)> = list
+            .rows
+            .iter()
+            .map(|row| (row.id.as_str(), row.label.as_str()))
+            .collect();
+        assert!(
+            rows.contains(&("accounts:zhipu", "manage keys")),
+            "the zhipu group names its keys: {rows:?}"
+        );
+        assert!(
+            rows.contains(&("accounts:mtty", "manage keys")),
+            "the mtty group names its keys: {rows:?}"
+        );
+        // It trails its own group: the first model stays the row Enter acts on.
+        let mtty = list
+            .rows
+            .iter()
+            .position(|row| row.id == "accounts:mtty")
+            .expect("the mtty key row");
+        assert_eq!(
+            list.rows[mtty - 1].label,
+            "haiku · openai-chat",
+            "the key row follows the models it serves"
+        );
+        assert_eq!(list.rows[mtty].detail, "update or add a key");
+        // A narrowed picker keeps it: `ctrl+o` inside the picker widens the
+        // list, so the operator who narrowed by provider must not lose the way
+        // to that provider's keys.
+        let narrowed = Dialog::models_with_filter(&grouped(), None, Some("mtty"));
+        let narrowed = narrowed.list().expect("list");
+        assert!(
+            narrowed
+                .rows
+                .iter()
+                .any(|row| row.id == "accounts:mtty" && row.label == "manage keys"),
+            "the narrowed picker keeps the provider's key row"
+        );
     }
 
     /// The operator's recent models lead the picker, the way the product's
@@ -2936,19 +3000,25 @@ mod tests {
         // The list opens on the first model, past the zhipu header.
         let list = dialog.list().expect("list");
         assert_eq!(list.selected, 1);
-        // Down crosses the mtty header between flash and haiku.
+        // Down crosses the zhipu key row and the mtty header between flash and
+        // haiku: a section label is never a resting place.
+        dialog.handle_key(key(KeyCode::Down));
         dialog.handle_key(key(KeyCode::Down));
         dialog.handle_key(key(KeyCode::Down));
         let list = dialog.list().expect("list");
-        assert_eq!(list.selected, 4, "the header is skipped");
+        assert_eq!(list.selected, 5, "the header is skipped");
         // Walking back crosses it the same way.
         dialog.handle_key(key(KeyCode::Up));
         let list = dialog.list().expect("list");
-        assert_eq!(list.selected, 2, "walking back skips the header too");
-        // Enter on the header's own position (its cursor neighbour) still
-        // decides a model, never the section label.
+        assert_eq!(list.selected, 3, "walking back skips the header too");
+        assert!(!list.rows[list.visible[list.selected]].is_header());
+        // Enter on the header's own position (its cursor neighbour) decides
+        // the model it reached, never the section label.
+        dialog.handle_key(key(KeyCode::Down));
+        let list = dialog.list().expect("list");
+        assert_eq!(list.selected, 5, "the header is skipped from either side");
         assert!(
-            matches!(dialog.handle_key(key(KeyCode::Enter)), Action::Chosen(index) if index == 2)
+            matches!(dialog.handle_key(key(KeyCode::Enter)), Action::Chosen(index) if index == 5)
         );
     }
 
