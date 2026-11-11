@@ -1588,7 +1588,11 @@ impl Runtime {
         // `cost` is derived once, from the same configuration: the rates a turn
         // is priced against are fixed at startup, so an edited price needs a
         // restart instead of quietly mispricing the rest of the Session.
-        let mut unsupported = vec!["tools", "agents", "cost"];
+        // `budget` is derived with the policy for the same reason: the Session's
+        // cost, time, and turn limits are one declaration fixed at launch, so an
+        // edit that looked applied while the old limits still bound the run
+        // would be worse than saying a restart is needed.
+        let mut unsupported = vec!["tools", "agents", "cost", "budget"];
         // The LSP registry only exists when startup found at least one server;
         // a plan that starts empty cannot grow without rebuilding Tools, so
         // that case is reported rather than silently accepted. The MCP
