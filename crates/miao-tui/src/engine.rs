@@ -2106,6 +2106,15 @@ async fn refresh_schedule(client: &EngineClient, bus: &Bus, session_id: &str) {
             return;
         }
     };
+    bus.send(AppEvent::Schedule(schedule_rows(&wakeups, &crons)));
+}
+
+/// The schedule panel's rows: `kind:id`, the line that names the row, and the
+/// detail under it. Kept pure so the fields a row shows are testable without an
+/// engine connection: a row says what it is scheduled by, the zone its
+/// occurrences were computed in, when it next runs, how often it has fired or
+/// been skipped, and — when the engine set one — when it expires.
+fn schedule_rows(wakeups: &Value, crons: &Value) -> Vec<(String, String, String)> {
     let mut rows = Vec::new();
     for row in wakeups.as_array().into_iter().flatten() {
         let Some(id) = row.get("timer_id").and_then(Value::as_str) else {
@@ -2115,10 +2124,17 @@ async fn refresh_schedule(client: &EngineClient, bus: &Bus, session_id: &str) {
             .get("state")
             .and_then(Value::as_str)
             .unwrap_or("pending");
+        let mut detail = vec![due_in(row.get("due_at_ms").and_then(Value::as_u64))];
+        detail.extend(zone(row));
+        detail.extend(expiry(row));
         rows.push((
             format!("wakeup:{id}"),
             format!("wakeup {id} · {state}"),
-            due_in(row.get("due_at_ms").and_then(Value::as_u64)),
+            detail
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · "),
         ));
     }
     for row in crons.as_array().into_iter().flatten() {
@@ -2135,13 +2151,43 @@ async fn refresh_schedule(client: &EngineClient, bus: &Bus, session_id: &str) {
             .get("skipped_count")
             .and_then(Value::as_u64)
             .unwrap_or(0);
+        let next = match row.get("next_occurrence_ms").and_then(Value::as_u64) {
+            Some(next) => format!("next {}", due_in(Some(next))),
+            None => String::new(),
+        };
+        let mut detail = vec![expression.to_string()];
+        detail.extend(zone(row));
+        detail.push(next);
+        detail.extend(expiry(row));
+        detail.push(format!("{fired} fired · {skipped} skipped"));
         rows.push((
             format!("cron:{id}"),
             format!("cron {id} · {state}"),
-            format!("{expression} · {fired} fired · {skipped} skipped"),
+            detail
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · "),
         ));
     }
-    bus.send(AppEvent::Schedule(rows));
+    rows
+}
+
+/// The zone the occurrences were computed in. A row scheduled before zones were
+/// recorded has none, and the row simply does not claim one.
+fn zone(row: &Value) -> Option<String> {
+    row.get("timezone")
+        .and_then(Value::as_str)
+        .filter(|zone| !zone.trim().is_empty())
+        .map(str::to_string)
+}
+
+/// When the schedule stops existing, when the engine recorded one. It is the
+/// other half of "when does this run": a recurring row whose lifetime is over
+/// reads as expired rather than as merely idle.
+fn expiry(row: &Value) -> Option<String> {
+    let at = row.get("expires_at_ms").and_then(Value::as_u64)?;
+    Some(format!("expires {}", due_in(Some(at))))
 }
 
 /// How far away a scheduled wakeup is, in the same coarse units the rest of the
@@ -2685,5 +2731,77 @@ mod context_notice_tests {
         assert!(context_degradation_notice(&clean).is_none());
         assert!(context_degradation_notice(&event("tool.completed", json!([]))).is_none());
         assert!(context_degradation_notice(&event("instructions_loaded", json!({}))).is_none());
+    }
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    use super::*;
+
+    /// The panel's row text is what carries a schedule's operative facts, so it
+    /// is asserted directly rather than through a rendered dialog: the zone the
+    /// occurrences were computed in, when it next runs, and when it expires.
+    #[test]
+    fn a_cron_row_states_its_zone_next_run_and_expiry() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as u64)
+            .unwrap_or(0);
+        let rows = schedule_rows(
+            &json!([]),
+            &json!([{
+                "cron_id": "c1",
+                "state": "scheduled",
+                "cron": "*/5 * * * *",
+                "timezone": "Asia/Shanghai",
+                "next_occurrence_ms": now + 330_000,
+                "expires_at_ms": now + 7_300_000,
+                "fired_count": 2,
+                "skipped_count": 1
+            }]),
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "cron:c1");
+        assert_eq!(rows[0].1, "cron c1 · scheduled");
+        assert_eq!(
+            rows[0].2,
+            "*/5 * * * * · Asia/Shanghai · next in 5m · expires in 2h · 2 fired · 1 skipped"
+        );
+    }
+
+    /// A schedule recorded before zones existed, or one without a lifetime,
+    /// must not invent either: the row simply omits the part it has no fact for.
+    #[test]
+    fn a_cron_row_omits_parts_the_engine_did_not_record() {
+        let rows = schedule_rows(
+            &json!([]),
+            &json!([{
+                "cron_id": "c2",
+                "state": "scheduled",
+                "cron": "0 9 * * 1",
+                "fired_count": 0,
+                "skipped_count": 0
+            }]),
+        );
+        assert_eq!(rows[0].2, "0 9 * * 1 · 0 fired · 0 skipped");
+    }
+
+    #[test]
+    fn a_wakeup_row_states_its_due_time_and_zone() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as u64)
+            .unwrap_or(0);
+        let rows = schedule_rows(
+            &json!([{
+                "timer_id": "t1",
+                "state": "pending",
+                "due_at_ms": now + 90_000,
+                "timezone": "Europe/Berlin"
+            }]),
+            &json!([]),
+        );
+        assert_eq!(rows[0].0, "wakeup:t1");
+        assert_eq!(rows[0].2, "in 1m · Europe/Berlin");
     }
 }
