@@ -5856,6 +5856,45 @@ async fn permission_profile(inner: &Inner, policy: &Policy) -> Result<Value, Err
     Ok(profile)
 }
 
+/// Tell a delegating Session that a background child failed, and wake it.
+///
+/// A failed child leaves nothing to read by the time the parent notices, so the
+/// notice names the child, carries the child's own words (bounded) and points at
+/// `task_result` for the rest. A completed child admits nothing on purpose:
+/// AGT-06 measured that, and its answer is read on demand.
+async fn notify_child_failure(inner: &Arc<Inner>, parent: &str, child: &str, error: &str) {
+    // A failed child usually leaves no assistant text, so the only record of
+    // *why* it failed is its own terminal event: read it back instead of
+    // notifying the parent with an empty reason.
+    let reason = if error.trim().is_empty() {
+        match inner.store.latest_event(child, "stop_failure").await {
+            Ok(Some(event)) => event
+                .data
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            _ => String::new(),
+        }
+    } else {
+        error.to_owned()
+    };
+    if let Ok(Some(admitted)) = inner
+        .store
+        .admit_subagent_failure(parent, child, &reason)
+        .await
+    {
+        let _ = notify_admission(
+            inner,
+            parent,
+            &admitted,
+            "subagent.failure_wake_failed",
+            json!({"subagent_id": child}),
+        )
+        .await;
+    }
+}
+
 async fn notify_admission(
     inner: &Inner,
     session: &str,
@@ -7201,7 +7240,7 @@ async fn delegate(
         let call = call.to_owned();
         let watcher_child = child.clone();
         tokio::spawn(async move {
-            if let Err(error) = finish_delegation(
+            let settled = finish_delegation(
                 &background,
                 &parent,
                 &run,
@@ -7212,16 +7251,29 @@ async fn delegate(
                 permit,
                 background.stop.clone(),
             )
-            .await
-            {
-                let _ = background
-                    .store
-                    .record(
-                        &parent,
-                        crate::events::Lifecycle::SubagentStop.name(),
-                        json!({"run_id":run,"subagent_id":watcher_child,"call_id":call,"reason":"failed","text":error.to_string()}),
-                    )
-                    .await;
+            .await;
+            match settled {
+                // A child that failed will never produce the answer the parent
+                // would have read, so the parent is told the way a finished
+                // background job tells its owner. A completed child stays
+                // silent: AGT-06 pins that no input is admitted for it.
+                Ok(value) if value["report"]["status"] == json!("failed") => {
+                    let text = value["text"].as_str().unwrap_or_default().to_owned();
+                    notify_child_failure(&background, &parent, &watcher_child, &text).await;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    let text = error.to_string();
+                    let _ = background
+                        .store
+                        .record(
+                            &parent,
+                            crate::events::Lifecycle::SubagentStop.name(),
+                            json!({"run_id":run,"subagent_id":watcher_child,"call_id":call,"reason":"failed","text":text}),
+                        )
+                        .await;
+                    notify_child_failure(&background, &parent, &watcher_child, &text).await;
+                }
             }
         });
         return Ok(json!({"session_id":child,"background":true,"status":"running"}));
@@ -7498,12 +7550,33 @@ async fn finish_delegation(
         "cost":{"child":child_cost,"combined":combined},
         "history":format!("full trace in child Session {child}"),
     });
+    // A failed child leaves no assistant text, so the reason it failed is kept
+    // beside the report: the parent reads a row, not a second query.
+    let error = if reason == "failed" {
+        inner
+            .store
+            .latest_event(child, "stop_failure")
+            .await
+            .ok()
+            .flatten()
+            .and_then(|event| {
+                event
+                    .data
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
     inner
         .store
         .record(
             parent,
             crate::events::Lifecycle::SubagentStop.name(),
             json!({"run_id":run,"subagent_id":child,"call_id":call,"reason":reason,
+                   "error":error,
                    "text":text,
                    "message":failure.as_deref(),
                    "tokens":{"input":usage["providerUsage"]["tokens"]["input"].as_u64().unwrap_or(0),"output":usage["providerUsage"]["tokens"]["output"].as_u64().unwrap_or(0)},
