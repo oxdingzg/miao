@@ -14,6 +14,12 @@ test("adds the 简体中文 link under the first heading", () => {
   )
 })
 
+test("keeps a document that already carries the link unchanged", () => {
+  const link = "[简体中文](https://github.com/oxdingzg/miao/blob/main/docs/releases/v0.3.63.zh.md)"
+  const notes = `# miao v0.3.63\n\n${link}\n\nv0.3.63 makes compaction watchable.\n`
+  expect(addChineseLink(notes, "v0.3.63")).toBe(notes)
+})
+
 test("uses the given repository", () => {
   expect(chineseLink("v9.9.9", "owner/repo")).toBe(
     "[简体中文](https://github.com/owner/repo/blob/main/docs/releases/v9.9.9.zh.md)",
@@ -28,11 +34,17 @@ test("falls back to prepending when there is no heading", () => {
 
 
 
-function publishFixture(english: boolean, chinese: boolean) {
+function publishFixture(english: boolean, chinese: boolean, linked = false) {
   const cwd = mkdtempSync(path.join(tmpdir(), "miao-release-notes-"))
   const docs = path.join(cwd, "docs/releases")
   mkdirSync(docs, { recursive: true })
-  if (english) writeFileSync(path.join(docs, "v1.2.3.md"), "## Version 1.2.3\n\n### Upgrading\nRestart existing windows.\n")
+  if (english)
+    writeFileSync(
+      path.join(docs, "v1.2.3.md"),
+      linked
+        ? "# miao v1.2.3\n\n[简体中文](https://github.com/owner/repo/blob/main/docs/releases/v1.2.3.zh.md)\n\n### Upgrading\nRestart existing windows.\n"
+        : "## Version 1.2.3\n\n### Upgrading\nRestart existing windows.\n",
+    )
   if (chinese) writeFileSync(path.join(docs, "v1.2.3.zh.md"), "## 版本 1.2.3\n\n### 升级\n重启已有窗口。\n")
   try {
     return Bun.spawnSync([process.execPath, path.join(import.meta.dir, "release-notes.ts"), "v1.2.3"], {
@@ -54,6 +66,12 @@ test("publisher uses the curated English pair instead of the shorter draft chang
   expect(notes).toContain("### Upgrading\nRestart existing windows.")
   expect(notes).toContain("https://github.com/owner/repo/blob/main/docs/releases/v1.2.3.zh.md")
   expect(notes).not.toContain("terse fix")
+})
+
+test("publisher prints the 简体中文 link once when the document carries it", () => {
+  const result = publishFixture(true, true, true)
+  expect(result.exitCode).toBe(0)
+  expect(result.stdout.toString().split("docs/releases/v1.2.3.zh.md").length - 1).toBe(1)
 })
 
 test("publisher rejects a missing English document", () => {
