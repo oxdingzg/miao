@@ -746,13 +746,15 @@ pub(crate) async fn execute_with_progress(
     )
 }
 
-/// Read one pipe to EOF, reporting each chunk as it arrives.
+/// Read one pipe, reporting each chunk as it arrives.
 ///
-/// The accumulated buffer keeps exactly the shape the old `take(32769)` gave
-/// it — at most 32769 bytes, so `bytes.len() > 32768` still means "the command
-/// overflowed the limit" — while the progress channel now sees output as it is
-/// produced instead of once at EOF. That is what lets a running background job
-/// answer "what is it saying" (#1962).
+/// The cap is exactly what `take(32769).read_to_end` gave: read up to 32769
+/// bytes and then **stop reading**. Stopping is what tells the caller the
+/// command overflowed (`bytes.len() > 32768` → `output_limit`), so a reader that
+/// drained forever would turn that into a plain timeout. What is new is that
+/// each chunk reaches the progress channel as it arrives instead of only at
+/// end-of-stream, which is what lets a running background job answer "what is it
+/// saying" (#1962).
 async fn read_pipe(
     mut stream: impl AsyncRead + Unpin,
     is_stdout: bool,
@@ -766,15 +768,16 @@ async fn read_pipe(
         if read == 0 {
             break;
         }
-        if bytes.len() < LIMIT {
-            let room = LIMIT - bytes.len();
-            bytes.extend_from_slice(&chunk[..read.min(room)]);
-        }
+        bytes.extend_from_slice(&chunk[..read]);
         if let Some(progress) = progress.as_ref() {
             let _ = progress.try_send(json!({
                 "stream": if is_stdout { "stdout" } else { "stderr" },
                 "text": String::from_utf8_lossy(&chunk[..read]),
             }));
+        }
+        if bytes.len() > 32768 {
+            bytes.truncate(LIMIT);
+            break;
         }
     }
     Ok((is_stdout, bytes))
