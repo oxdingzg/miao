@@ -155,7 +155,11 @@ jobs:
         # a release build, and it talks to the release through GH_TOKEN and
         # GH_REPO. Without them the leg builds and smokes a binary that never
         # lands on the release — how v0.3.26 published with zero assets.
-        run: bun script/build-native-cli.ts --native-cli
+        # --native-cli alone builds only the runner's own architecture; the
+        # --darwin flag adds the cross-built x86_64 slice, whose loss since the
+        # per-platform switch left Intel macOS releases arm64-only (the installer
+        # then had no miao-darwin-x64.zip to fetch).
+        run: bun script/build-native-cli.ts --native-cli ${{ runner.os == 'macOS' && '--darwin' || '' }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ needs.version.outputs.repo }}
