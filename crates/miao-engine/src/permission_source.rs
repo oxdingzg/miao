@@ -130,12 +130,18 @@ impl Store {
         target: Target,
     ) -> Result<Record, Error> {
         require_target(&workspace, &target)?;
-        let canonical = tokio::fs::canonicalize(&workspace).await?;
+        // The spelling every Location writer uses (`placement::canonical`): the
+        // plain canonical form, without the Windows `\\?\` verbatim prefix. The
+        // handoff triggers match this workspace against `engine_location.root` by
+        // exact string equality, so demanding `fs::canonicalize` here — which
+        // keeps the prefix on Windows — pinned the one form that never matches
+        // and made a frozen source block nothing there (#2903).
+        let canonical = crate::placement::canonical(std::path::Path::new(&workspace));
         if canonical.to_str() != Some(workspace.as_str())
-            || !tokio::fs::metadata(canonical).await?.is_dir()
+            || !tokio::fs::metadata(&canonical).await?.is_dir()
         {
             return Err(Error::Invalid(
-                "permission source requires its canonical directory".into(),
+                "permission source requires the directory's canonical spelling".into(),
             ));
         }
         self.call(move |connection| {
@@ -301,9 +307,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let workspace = directory.path().join("workspace");
         std::fs::create_dir(&workspace).unwrap();
-        let workspace = workspace
-            .canonicalize()
-            .unwrap()
+        // The same spelling a Session's Location gets, so the fixture exercises
+        // the workspace string the product actually stores (#2903).
+        let workspace = crate::placement::canonical(&workspace)
             .to_str()
             .unwrap()
             .to_owned();
@@ -454,7 +460,10 @@ mod tests {
         let (directory, source, workspace) = fixture().await;
         let other = directory.path().join("other");
         std::fs::create_dir(&other).unwrap();
-        let other = other.canonicalize().unwrap().to_str().unwrap().to_owned();
+        let other = crate::placement::canonical(&other)
+            .to_str()
+            .unwrap()
+            .to_owned();
         let pattern = source
             .put_permission_pattern(workspace.clone(), rule("a/**"))
             .await
@@ -744,10 +753,7 @@ mod tests {
     #[tokio::test]
     async fn shared_run_binding_preserves_legacy_fences_and_rolls_back_unmarked_promotion() {
         let directory = tempfile::tempdir().unwrap();
-        let workspace = directory
-            .path()
-            .canonicalize()
-            .unwrap()
+        let workspace = crate::placement::canonical(directory.path())
             .to_str()
             .unwrap()
             .to_owned();

@@ -73,7 +73,7 @@ impl HandoffBinding {
                 )?)
             })
             .await?;
-        Ok(tokio::fs::canonicalize(path).await?)
+        Ok(crate::placement::canonical(std::path::Path::new(&path)))
     }
 
     pub(crate) fn source(&self) -> crate::store::Store {
@@ -193,7 +193,7 @@ impl Project {
         if let Some(id) = &workspace_id {
             crate::permission_migration::require_rules(id, &[])?;
         }
-        let directory = tokio::fs::canonicalize(directory).await?;
+        let directory = crate::placement::canonical(directory.as_ref());
         if !tokio::fs::metadata(&directory).await?.is_dir() {
             return Err(Error::Invalid(
                 "permission context requires a directory".into(),
@@ -555,10 +555,7 @@ mod tests {
     #[tokio::test]
     async fn handoff_checks_the_destination_before_import_and_before_receipt_retry() {
         let directory = tempfile::tempdir().unwrap();
-        let canonical = directory
-            .path()
-            .canonicalize()
-            .unwrap()
+        let canonical = crate::placement::canonical(directory.path())
             .to_str()
             .unwrap()
             .to_owned();
@@ -709,10 +706,7 @@ mod tests {
     #[tokio::test]
     async fn actual_local_native_patterns_keep_ids_timestamps_and_revocation_on_handoff() {
         let directory = tempfile::tempdir().unwrap();
-        let canonical = directory
-            .path()
-            .canonicalize()
-            .unwrap()
+        let canonical = crate::placement::canonical(directory.path())
             .into_os_string()
             .into_string()
             .unwrap();
@@ -900,10 +894,7 @@ mod tests {
     #[tokio::test]
     async fn completed_source_binding_reads_real_receipts_and_preserves_revocation() {
         let directory = tempfile::tempdir().unwrap();
-        let workspace = directory
-            .path()
-            .canonicalize()
-            .unwrap()
+        let workspace = crate::placement::canonical(directory.path())
             .to_str()
             .unwrap()
             .to_owned();
@@ -982,10 +973,7 @@ mod tests {
     #[tokio::test]
     async fn source_binding_refuses_another_root_scope_and_a_lost_destination_receipt() {
         let directory = tempfile::tempdir().unwrap();
-        let workspace = directory
-            .path()
-            .canonicalize()
-            .unwrap()
+        let workspace = crate::placement::canonical(directory.path())
             .to_str()
             .unwrap()
             .to_owned();
