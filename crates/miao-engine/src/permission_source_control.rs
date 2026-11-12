@@ -74,7 +74,14 @@ impl Controller {
                 "permission source requires an existing database and directory".into(),
             ));
         }
-        let directory = tokio::fs::canonicalize(directory).await?;
+        // The same spelling `Tools::new` gives this Session's Location. The
+        // handoff triggers match a frozen source to a Session by exact string
+        // equality against `engine_location.root`, and every Location writer goes
+        // through `placement::canonical`, which drops the Windows `\\?\` verbatim
+        // prefix that `canonicalize` adds there. Canonicalizing plainly here kept
+        // the prefix, so the comparison never held and a frozen source blocked
+        // nothing on Windows (#2903).
+        let directory = crate::placement::canonical(directory);
         if !tokio::fs::metadata(&directory).await?.is_dir() {
             return Err(Error::Invalid(
                 "permission source requires a directory".into(),
