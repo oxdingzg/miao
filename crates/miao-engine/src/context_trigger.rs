@@ -125,7 +125,8 @@ pub struct ContextLimits {
     pub ratio: f64,
     /// Explicit token headroom: trim protection + summary output + slack.
     pub headroom: u64,
-    /// Summarizer passes carry at most this many selected messages.
+    /// Summarizer passes carry at most this many selected messages. `0` leaves
+    /// the size budget below to decide.
     pub per_pass: usize,
     /// Serialized chars one tool-result payload may keep in the outgoing request
     /// before it is elided. Absent leaves tool output whole (pruning off).
@@ -155,7 +156,7 @@ impl ContextLimits {
             window: 0,
             ratio: 0.0,
             headroom: 0,
-            per_pass: 8,
+            per_pass: 0,
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: default_protect_turns(),
@@ -195,8 +196,13 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     /// forced pass cannot cut a tool continuation or a reverted transcript.
     pub forced: bool,
     pub budget: &'a Budget,
-    /// Summarizer passes carry at most this many selected messages.
+    /// Summarizer passes carry at most this many selected messages. `0` leaves
+    /// the size budget below to decide.
     pub per_pass: usize,
+    /// Serialized characters one summarizer call may carry. The runtime derives
+    /// it from the window the pass plans against, so a long history plans calls
+    /// by size rather than by message count. `0` keeps the count-only plan.
+    pub segment_chars: usize,
     /// The run's own cancellation. One pass is one summarizer call per
     /// `per_pass` messages, so a long Session plans hundreds of sequential
     /// calls: an interrupt has to end the pass at the next segment instead of
@@ -264,6 +270,7 @@ where
         forced,
         budget,
         per_pass,
+        segment_chars,
         cancel,
         breaker,
         notify,
@@ -382,7 +389,17 @@ where
         );
         return Ok(false);
     }
-    let plan = plan_summary(messages.len(), per_pass);
+    // The budget is what keeps a long history to a handful of calls; the message
+    // cap only bounds one answer's size, so it is applied when the caller set it.
+    let plan = if segment_chars > 0 {
+        let sizes: Vec<usize> = messages
+            .iter()
+            .map(|message| message_excerpt(message, SUMMARIZER_MESSAGE_CHARS).len() + 1)
+            .collect();
+        plan_summary_by_size(&sizes, per_pass, segment_chars)
+    } else {
+        plan_summary(messages.len(), per_pass)
+    };
     notify(json!({
         "session_id": session, "run_id": run,
         "kind": "compaction.started", "segments": plan.segments.len(),
@@ -391,15 +408,12 @@ where
     // The prefix path retains the exact last provider request, which describes
     // one particular cut. A scoped request names its own range and target, so it
     // always takes the segment path.
-    if through.is_none()
-        && focus.is_none()
-        && budget.window.is_some_and(|window| {
-            context
-                .saturating_add(pending_tokens)
-                .saturating_add(budget.headroom)
-                < window
-        })
-    {
+    // The prefix path carries the request this Session actually sent, so it is
+    // the most faithful summary input there is. It used to be refused whenever
+    // the history was over the window — exactly when compaction is needed —
+    // because the request did not fit; the closure now elides tool output to
+    // fit instead of skipping the path.
+    if through.is_none() && focus.is_none() {
         let outcome = tokio::select! {
             biased;
             _ = cancel.cancelled() => None,
@@ -610,6 +624,68 @@ fn settled(
         return Segment::Cancelled;
     }
     Segment::Answered(answered)
+}
+
+/// Elide tool output until a summarizer request fits `window` tokens, largest
+/// payload first, naming each elided payload by the handle `recall` restores.
+///
+/// The exact last request is the most faithful summary input a Session can give
+/// the summarizer, so trimming it is better than skipping that path: skipping is
+/// what made a Session at the window's edge fall back to summarizing its whole
+/// history one small slice at a time. Returns whether the request now fits; a
+/// request whose text alone cannot be trimmed enough tells the caller to take
+/// the segmented path, which never sends the whole history in one call.
+pub fn fit_request(messages: &mut [Message], window: u64, headroom: u64) -> bool {
+    // `estimate_tokens` charges three characters per token, so the character
+    // budget is three times the tokens the window leaves.
+    let budget = (window.saturating_sub(headroom) as usize).saturating_mul(3);
+    let mut payloads = Vec::new();
+    let mut total = 0usize;
+    for (message, body) in messages.iter().enumerate() {
+        let Some(blocks) = body.content.as_array() else {
+            continue;
+        };
+        for (block, part) in blocks.iter().enumerate() {
+            // Prose counts toward the window exactly like tool output does; only
+            // tool output can be elided, because only it has a handle to restore.
+            let text = part
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let prose = part.get("text").and_then(Value::as_str).unwrap_or_default();
+            total = total.saturating_add(text.len()).saturating_add(prose.len());
+            if part["type"] != "tool_result" || text.is_empty() {
+                continue;
+            }
+            // The handle is built while the message is only borrowed: naming it
+            // after the elision would borrow the same message the loop is about
+            // to mutate.
+            let handle = match part["tool_use_id"].as_str() {
+                Some(id) if !id.is_empty() && id.len() <= 128 => {
+                    format!(
+                        r#"[tool output archived — recall {{"tool_use_id":"{id}"}} to restore]"#
+                    )
+                }
+                _ => "[oversized tool output omitted]".to_string(),
+            };
+            payloads.push((message, block, text.len(), handle));
+        }
+    }
+    if total <= budget {
+        return true;
+    }
+    payloads.sort_by_key(|(_, _, len, _)| std::cmp::Reverse(*len));
+    for (message, block, len, handle) in payloads {
+        if total <= budget {
+            break;
+        }
+        let Some(part) = messages[message].content.get_mut(block) else {
+            continue;
+        };
+        part["content"] = json!(handle);
+        total = total.saturating_sub(len).saturating_add(handle.len());
+    }
+    total <= budget
 }
 
 /// Per-message cap on what one summarizer pass reads from a stored message.
@@ -1144,6 +1220,53 @@ pub struct SummaryPlan {
     pub segments: Vec<(usize, usize)>,
 }
 
+/// Partition the selected messages by how much one summarizer call may carry.
+///
+/// A call ends when the excerpt characters it would send reach `segment_chars`,
+/// or when it reaches `per_pass` messages if the caller set a cap (`0` leaves the
+/// budget alone to decide). Counting messages is what made a million-token
+/// history plan hundreds of calls: a capped excerpt of eight messages is a few
+/// thousand tokens, and the summarizer's own window is a hundred times that.
+pub fn plan_summary_by_size(sizes: &[usize], per_pass: usize, segment_chars: usize) -> SummaryPlan {
+    let single = || SummaryPlan {
+        mode: "single",
+        segments: vec![(0, sizes.len())],
+    };
+    let fits_one_call = sizes.iter().sum::<usize>() <= segment_chars.max(1)
+        && (per_pass == 0 || sizes.len() <= per_pass);
+    if sizes.is_empty() || fits_one_call {
+        return single();
+    }
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut carried = 0;
+    for (index, size) in sizes.iter().enumerate() {
+        let over_budget = carried > 0 && carried + size > segment_chars;
+        let over_cap = per_pass > 0 && index - start >= per_pass;
+        if over_budget || over_cap {
+            segments.push((start, index));
+            start = index;
+            carried = 0;
+        }
+        carried += size;
+    }
+    if start < sizes.len() {
+        segments.push((start, sizes.len()));
+    }
+    SummaryPlan {
+        mode: if segments.len() <= 1 {
+            "single"
+        } else {
+            "segmented"
+        },
+        segments: if segments.len() <= 1 {
+            single().segments
+        } else {
+            segments
+        },
+    }
+}
+
 /// Partition `prefix` messages into summarizer passes of at most `per_pass`
 /// messages. A non-positive budget means "cannot summarize"; the plan stays
 /// empty rather than guessing.
@@ -1552,6 +1675,76 @@ mod tests {
                 segments: vec![]
             }
         );
+    }
+
+    /// A pass is planned by what one summarizer call can carry, not by how many
+    /// messages there are: eight messages of a capped excerpt are a few thousand
+    /// tokens, and the summarizer's own window is a hundred times that.
+    #[test]
+    fn a_pass_is_planned_by_size_not_by_message_count() {
+        let sizes = [100usize, 100, 100, 100];
+        assert_eq!(
+            plan_summary_by_size(&sizes, 0, 250),
+            SummaryPlan {
+                mode: "segmented",
+                segments: vec![(0, 2), (2, 4)]
+            }
+        );
+        // The same history in one call when the budget can carry it.
+        assert_eq!(
+            plan_summary_by_size(&sizes, 0, 10_000),
+            SummaryPlan {
+                mode: "single",
+                segments: vec![(0, 4)]
+            }
+        );
+        // An operator's message cap still applies when they set one.
+        assert_eq!(
+            plan_summary_by_size(&sizes, 1, 10_000),
+            SummaryPlan {
+                mode: "segmented",
+                segments: vec![(0, 1), (1, 2), (2, 3), (3, 4)]
+            }
+        );
+        // An oversized message is its own call: a segment is never empty.
+        assert_eq!(
+            plan_summary_by_size(&[500, 10], 0, 100),
+            SummaryPlan {
+                mode: "segmented",
+                segments: vec![(0, 1), (1, 2)]
+            }
+        );
+    }
+
+    /// The exact last request is the most faithful summary input a Session can
+    /// give, so an over-window one is trimmed — tool output first, by the handle
+    /// `recall` restores — instead of being refused.
+    #[test]
+    fn an_over_window_request_is_trimmed_rather_than_refused() {
+        let mut messages = vec![
+            text_message("user", "look at this"),
+            Message {
+                role: "user".into(),
+                content: json!([{
+                    "type": "tool_result",
+                    "tool_use_id": "call_1",
+                    "content": "x".repeat(30_000),
+                }]),
+                checkpoint: None,
+                recorded_at_ms: None,
+            },
+        ];
+        // Thirty thousand characters are about ten thousand tokens, which a
+        // two-thousand-token window cannot hold.
+        assert!(fit_request(&mut messages, 2_000, 0));
+        let trimmed = messages[1].content[0]["content"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(trimmed.contains("recall"), "{trimmed}");
+        // Prose the summarizer cannot do without stays: a request whose own text
+        // is too large is refused rather than silently emptied.
+        let mut prose = vec![text_message("user", &"y".repeat(30_000))];
+        assert!(!fit_request(&mut prose, 2_000, 0));
     }
 
     #[test]

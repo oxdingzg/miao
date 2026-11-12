@@ -372,7 +372,9 @@ fn window_limits(window: u64) -> ContextLimits {
         // Mirrors the product's headroom: pruning protection, the summary
         // reserve, and the default slack.
         headroom: 40_000 + 2_048 + 20_000,
-        per_pass: 8,
+        // The size budget below decides; a message cap of 8 turned a
+        // million-token history into three hundred summarizer calls.
+        per_pass: 0,
         prune_chars: None,
         prune_total_chars: None,
         protect_turns: 2,
@@ -5134,6 +5136,12 @@ command: None,
                 }
                 _ => None,
             };
+            // How much history one summarizer call may carry: the window the
+            // summarizer itself plans against, converted from tokens to the
+            // engine's own three-characters-per-token estimate. A bound role
+            // model is the narrower of the two, so it decides when it is known.
+            let summarizer_window = role_capacity.unwrap_or(limits.window).max(1);
+            let segment_chars = (summarizer_window as usize).clamp(16_000, 4_000_000);
             if resolution != crate::roles::Resolution::Primary {
                 let _ = inner
                     .store
@@ -5226,6 +5234,17 @@ command: None,
                         Err(error) => return Some(Err(error.to_string())),
                     };
                     snapshot.messages.extend(tail);
+                    // The exact request is the best summary input there is, but it
+                    // has to fit the summarizer: elide tool output (the bulk of it,
+                    // and the part `recall` can restore) rather than refusing the
+                    // path whenever the Session is at the window's edge.
+                    if !crate::context_trigger::fit_request(
+                        &mut snapshot.messages,
+                        summarizer_window,
+                        limits.headroom,
+                    ) {
+                        return None;
+                    }
                     Some(crate::runtime_profile::scoped(
                         crate::runtime_profile::Scope {
                             store:store.clone(),session:session.into(),run:run.into(),step,context_epoch,
@@ -5253,6 +5272,7 @@ command: None,
                     focus: requested.as_ref().and_then(|request| request.focus.clone()),
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
+                    segment_chars,
                     cancel: cancel.clone(),
                     breaker: &mut breaker,
                     notify: &mut notify,
