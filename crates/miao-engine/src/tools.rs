@@ -1939,6 +1939,7 @@ impl Tools {
         &self,
         prepared: Prepared,
         cancel: CancellationToken,
+        progress: Option<process::Progress>,
     ) -> Result<Value, ToolError> {
         if !self.background_enabled() || prepared.name != "start_job" {
             return Err(ToolError::Unsupported);
@@ -1950,7 +1951,7 @@ impl Tools {
             return Err(ToolError::ResourceChanged);
         }
         let runner = self.runner.as_deref().ok_or(ToolError::Unsupported)?;
-        process::execute(
+        process::execute_with_progress(
             runner,
             &self.root,
             &prepared.path,
@@ -1958,6 +1959,7 @@ impl Tools {
             self.process_network(),
             self.process_sandbox(),
             cancel,
+            progress,
         )
         .await
     }
