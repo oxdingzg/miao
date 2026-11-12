@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use crate::keybinds::Action;
 
 /// Config documents, lowest to highest priority inside one directory.
-const FILE_NAMES: [&str; 4] = ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"];
+pub(crate) const FILE_NAMES: [&str; 4] =
+    ["miao.json", "miao.jsonc", "opencode.json", "opencode.jsonc"];
 /// Directory names a project may use for markdown commands.
 const COMMAND_DIRS: [&str; 2] = ["commands", "command"];
 
@@ -19,6 +20,7 @@ const COMMAND_DIRS: [&str; 2] = ["commands", "command"];
 pub enum Builtin {
     Models,
     Permissions,
+    Sandbox,
     WorkspaceChanges,
     Worktrees,
     TurnTimings,
@@ -55,9 +57,10 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 30] = [
+    pub const ALL: [Builtin; 31] = [
         Builtin::Models,
         Builtin::Permissions,
+        Builtin::Sandbox,
         Builtin::WorkspaceChanges,
         Builtin::Worktrees,
         Builtin::TurnTimings,
@@ -93,6 +96,7 @@ impl Builtin {
         match self {
             Builtin::Models => "model",
             Builtin::Permissions => "permissions",
+            Builtin::Sandbox => "sandbox",
             Builtin::WorkspaceChanges => "changes",
             Builtin::Worktrees => "worktree",
             Builtin::TurnTimings => "timings",
@@ -147,6 +151,7 @@ impl Builtin {
         match self {
             Builtin::Models => "Select a model",
             Builtin::Permissions => "Review saved permissions",
+            Builtin::Sandbox => "Toggle OS sandbox for shell commands",
             Builtin::WorkspaceChanges => "Show workspace file changes",
             Builtin::Worktrees => "Git worktrees of this checkout",
             Builtin::TurnTimings => "Show phase timings of this turn",
@@ -189,6 +194,7 @@ impl Builtin {
         match self {
             Builtin::Models => Some(Action::ModelList),
             Builtin::Permissions => None,
+            Builtin::Sandbox => None,
             Builtin::WorkspaceChanges => Some(Action::WorkspaceChanges),
             // Worktrees have no chord of their own: the palette is where an
             // operator looks for a rare action like this one.

@@ -146,6 +146,9 @@ pub enum Request {
         session_id: String,
         binding: Value,
     },
+    /// `/sandbox`: flip the engine's sandbox switch; the reply names the new
+    /// state and the TUI persists it into the operator's global config.
+    SetSandbox,
     /// The host's workspace list, served by the engine (TUI-09).
     Workspaces,
     /// Host authority the engine does not own (workspace creation, remote
@@ -433,6 +436,10 @@ impl Handle {
             session_id: session_id.to_string(),
             binding,
         });
+    }
+
+    pub fn set_sandbox(&self) {
+        let _ = self.tx.send(Request::SetSandbox);
     }
 
     pub fn move_session(&self, session_id: &str, target_directory: &str) {
@@ -1291,6 +1298,34 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("select failed: {error}")))
+                        }
+                    }
+                }
+                Request::SetSandbox => {
+                    let result = client.request("set_sandbox", json!({ "enabled": null })).await;
+                    let state = result
+                        .as_ref()
+                        .ok()
+                        .and_then(|value| value.get("sandbox"))
+                        .and_then(Value::as_bool)
+                        .map(|enabled| {
+                            let name = if enabled { "enabled" } else { "disabled" };
+                            match crate::config::persist_sandbox(enabled) {
+                                Ok(path) => {
+                                    format!("Sandbox {name} (saved to {})", path.display())
+                                }
+                                Err(error) => {
+                                    format!("Sandbox {name} (config not saved: {error})")
+                                }
+                            }
+                        });
+                    match (result, state) {
+                        (Ok(_), Some(notice)) => bus.send(AppEvent::Notice(notice)),
+                        (Ok(_), None) => {
+                            bus.send(AppEvent::ActionFailed("sandbox reply missing state".into()))
+                        }
+                        (Err(error), _) => {
+                            bus.send(AppEvent::ActionFailed(format!("sandbox failed: {error}")))
                         }
                     }
                 }

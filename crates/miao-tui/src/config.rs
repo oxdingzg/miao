@@ -9,6 +9,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::commands::FILE_NAMES;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AttentionConfig {
     pub enabled: bool,
@@ -201,6 +203,57 @@ pub fn global_dir() -> Option<PathBuf> {
         return Some(PathBuf::from(base).join("miao"));
     }
     std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config").join("miao"))
+}
+
+/// Persist `/sandbox`: set `sandbox.mode` in the global config directory, the
+/// same directory the engine reads with `--config-dir`, so the next engine
+/// start keeps the choice. The last existing document wins; a document that is
+/// not plain JSON keeps its comments because rewriting it would strip them, so
+/// the search moves on and falls back to a fresh `miao.json`. Returns the file
+/// written.
+pub fn persist_sandbox(enabled: bool) -> Result<PathBuf, String> {
+    let dir = global_dir().ok_or("no global config directory")?;
+    persist_sandbox_in(&dir, enabled)
+}
+
+/// The worker behind `persist_sandbox`, split out so tests can pass a
+/// temporary directory instead of pointing `MIAO_CONFIG_DIR` at one.
+pub fn persist_sandbox_in(dir: &Path, enabled: bool) -> Result<PathBuf, String> {
+    let mode = if enabled { "workspace-write" } else { "off" };
+    std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    for path in FILE_NAMES.iter().rev().map(|name| dir.join(name)) {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        // A document that is not plain JSON keeps its comments because
+        // rewriting it would strip them, so the search moves on.
+        let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let Some(object) = value.as_object_mut() else {
+            continue;
+        };
+        let sandbox = object
+            .entry("sandbox")
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        if !sandbox.is_object() {
+            *sandbox = serde_json::Value::Object(serde_json::Map::new());
+        }
+        sandbox["mode"] = serde_json::Value::String(mode.into());
+        let text = serde_json::to_string_pretty(&value)
+            .map_err(|error| format!("config encode failed: {error}"))?;
+        std::fs::write(&path, format!("{text}\n"))
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        return Ok(path);
+    }
+    // No readable document exists: start a fresh `miao.json`.
+    let path = dir.join("miao.json");
+    let value = serde_json::json!({ "sandbox": { "mode": mode } });
+    let text =
+        serde_json::to_string_pretty(&value).map_err(|error| format!("encode failed: {error}"))?;
+    std::fs::write(&path, format!("{text}\n"))
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    Ok(path)
 }
 
 fn merge(text: &str, path: &Path, config: &mut Config, warnings: &mut Vec<String>) {
@@ -1018,6 +1071,53 @@ mod tests {
         let (_, warnings) = merge_at(r#"{"zzzzzzzzz": 1}"#, &dir);
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(!warnings[0].contains("did you mean"), "{warnings:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_sandbox_sets_the_mode_and_keeps_other_keys() {
+        let dir = temp_dir("persist-sandbox-basic");
+        std::fs::write(dir.join("miao.json"), r#"{"model":"x"}"#).unwrap();
+        let written = persist_sandbox_in(&dir, true).unwrap();
+        assert_eq!(written, dir.join("miao.json"));
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&written).unwrap()).unwrap();
+        assert_eq!(value["sandbox"]["mode"], "workspace-write");
+        assert_eq!(value["model"], "x");
+        let written = persist_sandbox_in(&dir, false).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&written).unwrap()).unwrap();
+        assert_eq!(value["sandbox"]["mode"], "off");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_sandbox_prefers_the_highest_priority_document() {
+        // `opencode.json` outranks `miao.json` in the merge order, so the
+        // write lands there when both are plain JSON.
+        let dir = temp_dir("persist-sandbox-precedence");
+        std::fs::write(dir.join("miao.json"), "{}").unwrap();
+        std::fs::write(dir.join("opencode.json"), r#"{"model":"y"}"#).unwrap();
+        let written = persist_sandbox_in(&dir, true).unwrap();
+        assert_eq!(written, dir.join("opencode.json"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_sandbox_skips_jsonc_and_starts_a_fresh_document() {
+        // Rewriting a JSONC file would strip its comments, so the search
+        // falls through to a fresh `miao.json` instead.
+        let dir = temp_dir("persist-sandbox-jsonc");
+        std::fs::write(
+            dir.join("miao.jsonc"),
+            "{\n  // note\n  \"model\": \"x\"\n}\n",
+        )
+        .unwrap();
+        let written = persist_sandbox_in(&dir, true).unwrap();
+        assert_eq!(written, dir.join("miao.json"));
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&written).unwrap()).unwrap();
+        assert_eq!(value["sandbox"]["mode"], "workspace-write");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

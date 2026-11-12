@@ -357,6 +357,11 @@ pub enum Command {
         session_id: String,
         binding: Option<crate::session_model::Binding>,
     },
+    /// `/sandbox`: flip the operator's sandbox switch for this engine process.
+    /// `None` toggles; the reply carries the new value.
+    SetSandbox {
+        enabled: Option<bool>,
+    },
     SelectAccount {
         session_id: String,
         credential_id: Option<String>,

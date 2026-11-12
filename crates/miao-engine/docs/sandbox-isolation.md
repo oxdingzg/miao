@@ -21,8 +21,9 @@ The sandbox switch belongs to the operator, not to the model or to a saved
 approval:
 
 - `MIAO_SANDBOX` wins in both directions over the merged `sandbox.mode` document
-  value (`config_derive.rs`, `sandbox_enabled`); with neither set, commands stay
-  confined.
+  value (`config_derive.rs`, `sandbox_enabled`); with neither set, the sandbox
+  stays off — the Claude-Code-style default the TUI's `/sandbox` command flips
+  at runtime and persists into the global config.
 - The model-facing tool input (`process::Input`) has no sandbox field and
   rejects unknown fields, and the runner payload it builds defaults `sandbox` to
   `true`. A model cannot ask its way out.

@@ -19,7 +19,7 @@ async fn real_stdio_adapter_runs_sandboxed_tool_without_inheriting_provider_keys
     let workspace = dir.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
     let config = dir.path().join("policy.json");
-    std::fs::write(&config,json!({"mode":"workspace","allow_process":true,"rules":[{"tool":"*","path":"**","decision":"allow"}]}).to_string()).unwrap();
+    std::fs::write(&config,json!({"mode":"workspace","allow_process":true,"sandbox":true,"rules":[{"tool":"*","path":"**","decision":"allow"}]}).to_string()).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_miao-engine"))
         .args([
             "serve",

@@ -1774,6 +1774,10 @@ impl App {
                 }
                 self.open_dialog(Dialog::SavedPermissions(dialog));
             }
+            Builtin::Sandbox => match self.engine.as_ref() {
+                Some(engine) => engine.set_sandbox(),
+                None => self.notice("Engine is not connected"),
+            },
             Builtin::Worktrees => self.open_worktrees(),
             Builtin::WorkspaceChanges => {
                 let Some(session_id) = self.session_id() else {

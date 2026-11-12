@@ -38,6 +38,7 @@ fn policy() -> Policy {
         continuation_min_interval_ms: 0,
         mode: Mode::Workspace,
         allow_process: true,
+        sandbox: true,
         rules: vec![Rule {
             tool: "*".into(),
             path: "**".into(),
