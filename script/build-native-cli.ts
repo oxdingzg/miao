@@ -18,6 +18,12 @@ import { Script } from "@miao/script"
 // arm64 siblings (and never finished inside their budget).
 const darwinFlag = process.argv.includes("--darwin")
 
+// The darwin pairs cross-compile with the Apple toolchain and make no sense
+// from another host, where they would fail late inside cargo with an
+// unfamiliar linker error instead of here with the actual mistake.
+if (darwinFlag && process.platform !== "darwin")
+  throw new Error("--darwin builds the darwin archives and requires a darwin host")
+
 // Which crate is the product is decided once, here. `docs/cli.md` names
 // `crates/miao-cli` (`miao`) as the single binary, and this pipeline has to build
 // that same crate: naming another one ships a binary that answers `--version`
