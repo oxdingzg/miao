@@ -16,9 +16,6 @@ use tokio::time::Instant;
 use crate::dialogs::{AccountInfo, ModelInfo};
 use crate::event::{AppEvent, Bus, JobRow};
 
-/// How much of a job's result the preview row shows before it is clipped. The
-/// renderer clips to the row width anyway; this keeps the event small.
-const DETAIL_CHARS: usize = 120;
 use crate::platform::attention;
 use crate::session::{
     catalog_rows, home_rows, DisplayFile, RevertPlan, SessionState, SessionSummary, Transcript,
@@ -2097,24 +2094,6 @@ fn owner_short(session_id: Option<&str>) -> String {
 /// The single line a jobs row shows for its selected job: the state it reached
 /// and what it produced. The engine answers `null` for a job it does not know,
 /// and `result` stays null while the job is queued or running.
-/// The newest lines of a job's output, joined for the single row that shows it:
-/// the question the row answers is what the job is saying now, not what it said
-/// first.
-fn tail(text: &str, limit: usize) -> String {
-    const LINES: usize = 3;
-    let lines: Vec<&str> = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    let joined = lines[lines.len().saturating_sub(LINES)..].join(" · ");
-    if joined.chars().count() <= limit {
-        return joined;
-    }
-    let mut clipped = joined.chars().take(limit).collect::<String>();
-    clipped.push('…');
-    clipped
-}
-
 /// Ask the engine for the Session's scheduled wakeups and cron jobs and hand
 /// them to the panel. Each row is `kind:id` so a cancel names the right kind,
 /// with the timing the engine reported as its detail.
