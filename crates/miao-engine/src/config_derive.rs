@@ -283,8 +283,8 @@ fn budget_declaration(normalized: &Value) -> Option<crate::budget::Declaration> 
 
 /// The native sandbox switch (product `SandboxPolicy.nativeEnabled`): an
 /// explicit `MIAO_SANDBOX` wins in both directions, the merged `sandbox.mode`
-/// decides otherwise, and with neither the engine keeps confining commands —
-/// except on Windows, where confinement needs an explicit opt-in.
+/// decides otherwise, and with neither the sandbox stays off — the
+/// Claude-Code-style default the `/sandbox` command turns on.
 pub fn sandbox_enabled(documents: &[Document], miao_sandbox: Option<&str>) -> bool {
     if let Some(decision) = env_switch(miao_sandbox) {
         return decision;
@@ -303,13 +303,9 @@ pub fn sandbox_enabled(documents: &[Document], miao_sandbox: Option<&str>) -> bo
     // program opens it: git-bash dies during runtime init and `git status`
     // reports "/dev/null: Permission denied". The device DACL is machine-wide
     // and cannot carry a container ACE without admin rights, so no
-    // per-invocation grant fixes it. Confine there only when the operator
-    // asks for it.
-    if cfg!(windows) {
-        matches!(mode, Some("workspace-write"))
-    } else {
-        !matches!(mode, Some("off"))
-    }
+    // per-invocation grant fixes it. Every platform therefore shares the same
+    // explicit opt-in instead of a platform split.
+    matches!(mode, Some("workspace-write"))
 }
 
 /// Extra directories `sandbox.writable_roots` grants the confined command.
@@ -1423,10 +1419,9 @@ mod tests {
         assert!(!sandbox_enabled(&off_by_default, Some("0")));
         // An empty value means unset, like the product's environment read.
         assert!(sandbox_enabled(&off_by_default, Some("")));
-        // With no explicit choice the engine confines, except on Windows,
-        // where the AppContainer breaks MSYS shells and confinement needs
-        // the explicit opt-in above.
-        assert_eq!(sandbox_enabled(&documents(&[]), None), !cfg!(windows));
+        // With no explicit choice the sandbox stays off — the Claude-Code-style
+        // default the `/sandbox` command (or `sandbox.mode`) turns on.
+        assert!(!sandbox_enabled(&documents(&[]), None));
     }
 
     #[test]

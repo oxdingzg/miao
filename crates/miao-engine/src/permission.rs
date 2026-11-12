@@ -70,9 +70,10 @@ pub struct Config {
     /// `permission_mode: auto`, widened to the whole launch.
     #[serde(default)]
     pub auto: bool,
-    /// Operator sandbox switch. The engine keeps confining commands unless a
-    /// product policy explicitly records `sandbox: false`.
-    #[serde(default = "sandbox_on")]
+    /// Operator sandbox switch. Off by default — the Claude-Code-style default
+    /// the `/sandbox` command or `sandbox.mode: "workspace-write"` turns on;
+    /// `MIAO_SANDBOX` overrides in both directions.
+    #[serde(default = "sandbox_default")]
     pub sandbox: bool,
     /// Extra directories the sandbox lets commands write to, beyond the
     /// workspace, the command's own working directory and temp. `sandbox
@@ -110,8 +111,8 @@ fn continuation_interval() -> u64 {
 fn approval_timeout() -> u64 {
     60_000
 }
-fn sandbox_on() -> bool {
-    true
+fn sandbox_default() -> bool {
+    false
 }
 impl Config {
     /// Entry-point default. An interactive editor (ACP) is the approval
@@ -144,7 +145,7 @@ impl Default for Config {
             allow_cron: false,
             process_network: false,
             auto: false,
-            sandbox: sandbox_on(),
+            sandbox: sandbox_default(),
             rules: vec![],
             approval_timeout_ms: approval_timeout(),
             max_provider_turns: provider_turns(),
@@ -195,6 +196,19 @@ pub struct Policy {
     auto: bool,
 }
 impl Policy {
+    /// The operator's sandbox switch this policy snapshot carries.
+    pub(crate) fn sandbox(&self) -> bool {
+        self.config.sandbox
+    }
+
+    /// Flip the switch for a live `/sandbox` toggle. The runtime clones the
+    /// snapshot, flips it here, and replaces the whole cell, so a turn
+    /// already holding its snapshot keeps it and the next turn reads the new
+    /// value.
+    pub(crate) fn set_sandbox(&mut self, enabled: bool) {
+        self.config.sandbox = enabled;
+    }
+
     /// Derive an immutable policy for one agent turn. Capability limits and all
     /// configured denials remain authoritative; agent rules use the same
     /// deny > ask > allow ordering as the base policy. Bind the revision to the

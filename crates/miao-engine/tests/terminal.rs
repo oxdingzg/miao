@@ -296,6 +296,9 @@ async fn runtime_dispatches_terminal_tools_through_durable_history() {
             mode: Mode::Workspace,
             allow_process: true,
             allow_background: true,
+            // The pty confinement assertions need the switch on: the product
+            // default is off since `/sandbox` owns the toggle.
+            sandbox: true,
             rules: vec![Rule {
                 tool: "*".into(),
                 path: "**".into(),

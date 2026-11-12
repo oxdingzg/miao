@@ -1627,6 +1627,17 @@ impl Runtime {
             .map_err(|error| Error::Invalid(format!("config normalization failed: {error}")))
     }
 
+    /// `/sandbox`: flip the operator's sandbox switch for this process. `None`
+    /// toggles. The swap follows the reload contract: a turn already holding
+    /// its policy snapshot keeps it, and the next turn reads the new value.
+    pub async fn set_sandbox(&self, enabled: Option<bool>) -> Result<Value, Error> {
+        let mut policy = (*self.inner.policy()).clone();
+        let next = enabled.unwrap_or(!policy.sandbox());
+        policy.set_sandbox(next);
+        self.inner.set_policy(policy);
+        Ok(serde_json::json!({ "sandbox": next }))
+    }
+
     pub async fn reload_config(&self) -> Result<Value, Error> {
         // `agents` belongs here rather than in silence: a configuration agent is
         // resolved once at launch (`--agent-config` / `--agent-name`) and there

@@ -163,6 +163,7 @@ impl Host {
                 session_id,
                 binding,
             } => runtime.select_model(&session_id, binding).await,
+            Command::SetSandbox { enabled } => runtime.set_sandbox(enabled).await,
             Command::SelectAccount {
                 session_id,
                 credential_id,

@@ -5,15 +5,15 @@ use miao_engine::{
 use serde_json::json;
 
 #[test]
-fn sandbox_switch_defaults_on_and_parses_an_explicit_off() {
+fn sandbox_switch_defaults_off_and_parses_explicit_values() {
     let default: Config =
         serde_json::from_str("{\"mode\":\"workspace\",\"allow_process\":true}").unwrap();
-    assert!(default.sandbox);
-    let off: Config =
-        serde_json::from_str("{\"mode\":\"workspace\",\"allow_process\":true,\"sandbox\":false}")
+    assert!(!default.sandbox);
+    let on: Config =
+        serde_json::from_str("{\"mode\":\"workspace\",\"allow_process\":true,\"sandbox\":true}")
             .unwrap();
-    assert!(!off.sandbox);
-    assert!(!Policy::new(off).unwrap().process_sandbox());
+    assert!(on.sandbox);
+    assert!(Policy::new(on).unwrap().process_sandbox());
 }
 
 #[test]

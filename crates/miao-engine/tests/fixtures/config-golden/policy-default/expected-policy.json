@@ -9,7 +9,7 @@
   "allow_wakeup": true,
   "allow_cron": true,
   "process_network": true,
-  "sandbox": true,
+  "sandbox": false,
   "writable_roots": [],
   "rules": [],
   "approval_timeout_ms": 60000,
