@@ -1114,18 +1114,12 @@ impl App {
             // than on a placeholder that never fills.
             AppEvent::Jobs(rows) => {
                 self.open_dialog(Dialog::jobs(&rows));
-                self.preview_selected_job();
             }
             AppEvent::Worktrees(trees) => {
                 self.open_dialog(Dialog::worktrees(&trees));
             }
             AppEvent::Schedule(rows) => {
                 self.open_dialog(Dialog::schedule(&rows));
-            }
-            AppEvent::JobDetail { job_id, detail } => {
-                if let Some(Dialog::Jobs(list)) = self.dialog.as_mut() {
-                    list.set_detail(&job_id, detail);
-                }
             }
             AppEvent::SessionMoved => {
                 self.dialog = None;
@@ -1676,9 +1670,6 @@ impl App {
         };
         let action = dialog.handle_key(key);
         self.dialog_action(action);
-        // Moving to another job asks for its detail; the engine answers with
-        // `JobDetail`, which fills that row only.
-        self.preview_selected_job();
     }
 
     fn handle_leader(&mut self, key: KeyEvent) {
@@ -2584,34 +2575,6 @@ impl App {
             return;
         };
         engine.jobs(&session_id);
-    }
-
-    /// Preview the job under the cursor: the list only names its state, so the
-    /// row shows what the job produced once the engine answers. Asked once per
-    /// row, because the detail stays on the row until the list is rebuilt.
-    fn preview_selected_job(&mut self) {
-        let Some(Dialog::Jobs(list)) = self.dialog.as_mut() else {
-            return;
-        };
-        let Some(job_id) = list.selected_id() else {
-            return;
-        };
-        let job_id = job_id.clone();
-        if list.preview_asked(&job_id) {
-            return;
-        }
-        // The asked-marker needs the dialog mutably, so it lands before the
-        // shared borrows of the Session and the engine start.
-        if let Some(Dialog::Jobs(list)) = self.dialog.as_mut() {
-            list.mark_preview_asked(&job_id);
-        }
-        let Some(session_id) = self.session_id() else {
-            return;
-        };
-        let Some(engine) = self.engine.as_ref() else {
-            return;
-        };
-        engine.job_detail(&session_id, &job_id);
     }
 
     /// List what the Session has scheduled: wakeups and cron jobs both cancel
@@ -10391,108 +10354,6 @@ mod tests {
             requests.try_recv(),
             Ok(engine::Request::StopAllJobs { session_id }) if session_id == "ses_a"
         ));
-    }
-
-    #[test]
-    fn opening_the_jobs_dialog_previews_the_selected_job() {
-        // The list only names each job's state, so the row the cursor is on asks
-        // for its detail as soon as the dialog has rows.
-        let (mut app, mut requests) = revert_session_app();
-        app.handle(AppEvent::Jobs(vec![
-            JobRow {
-                id: "job_1".into(),
-                owner: "ses_a".into(),
-                state: "running".into(),
-                detail: "bun test".into(),
-                subagent: false,
-            },
-            JobRow {
-                id: "job_2".into(),
-                owner: "ses_a".into(),
-                state: "finished".into(),
-                detail: "bun run deploy".into(),
-                subagent: false,
-            },
-        ]));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::JobDetail { session_id, job_id })
-                if session_id == "ses_a" && job_id == "job_1"
-        ));
-    }
-
-    #[test]
-    fn a_job_detail_answer_lands_on_its_own_row() {
-        let (mut app, _requests) = revert_session_app();
-        app.handle(AppEvent::Jobs(vec![
-            JobRow {
-                id: "job_1".into(),
-                owner: "ses_a".into(),
-                state: "finished".into(),
-                detail: "bun test".into(),
-                subagent: false,
-            },
-            JobRow {
-                id: "job_2".into(),
-                owner: "ses_a".into(),
-                state: "running".into(),
-                detail: "bun run deploy".into(),
-                subagent: false,
-            },
-        ]));
-        app.handle(AppEvent::JobDetail {
-            job_id: "job_2".into(),
-            detail: "running · no result yet".into(),
-        });
-        let list = app.dialog.as_ref().and_then(Dialog::list).expect("jobs");
-        // The answer lands on the row it names; the other row keeps what it
-        // already carried before any answer landed.
-        assert_eq!(list.rows[0].detail, "bun test");
-        assert_eq!(list.rows[1].detail, "running · no result yet");
-    }
-
-    #[test]
-    fn moving_between_jobs_previews_each_row_once() {
-        let (mut app, mut requests) = revert_session_app();
-        app.handle(AppEvent::Jobs(vec![
-            JobRow {
-                id: "job_1".into(),
-                owner: "ses_a".into(),
-                state: "finished".into(),
-                detail: "bun test".into(),
-                subagent: false,
-            },
-            JobRow {
-                id: "job_2".into(),
-                owner: "ses_a".into(),
-                state: "running".into(),
-                detail: "bun run deploy".into(),
-                subagent: false,
-            },
-        ]));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::JobDetail { job_id, .. }) if job_id == "job_1"
-        ));
-        app.handle(AppEvent::JobDetail {
-            job_id: "job_1".into(),
-            detail: "finished · {\"exit_code\":0}".into(),
-        });
-        app.handle(key(KeyCode::Down, KeyModifiers::NONE));
-        assert!(matches!(
-            requests.try_recv(),
-            Ok(engine::Request::JobDetail { job_id, .. }) if job_id == "job_2"
-        ));
-        app.handle(AppEvent::JobDetail {
-            job_id: "job_2".into(),
-            detail: "running · no result yet".into(),
-        });
-        // Both rows know their detail, so walking back up asks for nothing.
-        app.handle(key(KeyCode::Up, KeyModifiers::NONE));
-        assert!(
-            requests.try_recv().is_err(),
-            "a known detail is not asked for twice"
-        );
     }
 
     #[test]

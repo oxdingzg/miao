@@ -448,11 +448,6 @@ pub struct ListDialog {
     /// Sessions only: the pinned Session ids in display order, one per `1`-`9`
     /// quick slot, so a digit reaches a pin without walking the list.
     pub slots: Vec<String>,
-    /// Rows whose preview the app already asked the engine for, kept apart
-    /// from the detail: a jobs row carries its command as the detail before
-    /// any preview answer lands, so the detail cannot say whether the engine
-    /// was asked.
-    pub(crate) previewed: Vec<String>,
     /// The row that is already in effect — the Session this window has open,
     /// or the model the Session runs on. The cursor says where a key would
     /// land; this says what is already true, so it is painted apart from the
@@ -500,7 +495,6 @@ impl ListDialog {
             visible,
             search: false,
             slots: Vec::new(),
-            previewed: Vec::new(),
             current: None,
         };
         // A leading header names a group and never takes the cursor, so the
@@ -618,27 +612,6 @@ impl ListDialog {
     /// something the engine can answer more about.
     pub(crate) fn selected_id(&self) -> Option<String> {
         self.current_id()
-    }
-
-    /// Fill in a detail once the engine answers. Only the row with that id
-    /// changes, so an answer for a row the operator already left is ignored
-    /// instead of landing under the wrong job.
-    pub(crate) fn set_detail(&mut self, id: &str, detail: String) {
-        if let Some(row) = self.rows.iter_mut().find(|row| row.id == id) {
-            row.detail = detail;
-        }
-    }
-
-    /// Whether the preview for `id` was already asked for, once per row
-    /// instead of on every cursor move.
-    pub(crate) fn preview_asked(&self, id: &str) -> bool {
-        self.previewed.iter().any(|asked| asked == id)
-    }
-
-    pub(crate) fn mark_preview_asked(&mut self, id: &str) {
-        if !self.preview_asked(id) {
-            self.previewed.push(id.to_string());
-        }
     }
 }
 
@@ -2439,7 +2412,6 @@ mod tests {
             visible: (0..labels.len()).collect(),
             search: false,
             slots: Vec::new(),
-            previewed: Vec::new(),
             current: None,
         }
     }
@@ -3429,58 +3401,6 @@ mod tests {
             confirm.handle_key(key(KeyCode::Enter)),
             Action::Confirmed(ConfirmKind::StopAllJobs)
         ));
-    }
-
-    #[test]
-    fn a_job_detail_fills_only_the_row_that_asked_for_it() {
-        // A row shows the job's command as its detail before any preview answer
-        // lands, and the answer for the selected row replaces it. An answer for
-        // a job the operator already left must not land under the new one.
-        let mut dialog = Dialog::jobs(&[
-            JobRow {
-                id: "job_1".into(),
-                owner: "ses_a".into(),
-                state: "running".into(),
-                detail: "bun test".into(),
-                subagent: false,
-            },
-            JobRow {
-                id: "job_2".into(),
-                owner: "ses_c".into(),
-                state: "running".into(),
-                detail: "bun run deploy".into(),
-                subagent: false,
-            },
-        ]);
-        let list = dialog.list_mut().expect("list");
-        assert_eq!(list.selected_id().as_deref(), Some("job_1"));
-        assert_eq!(
-            list.rows
-                .iter()
-                .find(|row| row.id == "job_1")
-                .map(|row| row.detail.as_str()),
-            Some("bun test"),
-            "the command is known before any preview answer lands"
-        );
-
-        list.set_detail("job_2", "running · no result yet".into());
-        let list = dialog.list().expect("list");
-        assert_eq!(
-            list.rows
-                .iter()
-                .find(|row| row.id == "job_1")
-                .map(|row| row.detail.as_str()),
-            Some("bun test")
-        );
-        assert_eq!(
-            list.rows
-                .iter()
-                .find(|row| row.id == "job_2")
-                .map(|row| row.detail.as_str()),
-            Some("running · no result yet"),
-            "the answer names its job, so it fills that row only"
-        );
-        assert_eq!(list.rows[1].detail, "running · no result yet");
     }
 
     /// `e` edits the row under the cursor instead of cancelling it, and it

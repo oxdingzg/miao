@@ -170,11 +170,6 @@ pub enum Request {
     StopAllJobs {
         session_id: String,
     },
-    /// One job's detail, for the preview of the selected row.
-    JobDetail {
-        session_id: String,
-        job_id: String,
-    },
     /// The Session's scheduled wakeups and cron jobs.
     Schedule {
         session_id: String,
@@ -516,15 +511,6 @@ impl Handle {
             session_id: session_id.into(),
             kind: kind.into(),
             id: id.into(),
-        });
-    }
-
-    /// Ask for one background job's detail. The list only names the state, so
-    /// the preview costs a round trip per selected row rather than one per row.
-    pub fn job_detail(&self, session_id: &str, job_id: &str) {
-        let _ = self.tx.send(Request::JobDetail {
-            session_id: session_id.into(),
-            job_id: job_id.into(),
         });
     }
 
@@ -1442,26 +1428,6 @@ async fn run(
                         }
                     }
                 }
-                Request::JobDetail {
-                    session_id,
-                    job_id,
-                } => {
-                    let answer = client
-                        .request(
-                            "job",
-                            json!({ "session_id": session_id, "job_id": job_id }),
-                        )
-                        .await;
-                    match answer {
-                        Ok(value) => bus.send(AppEvent::JobDetail {
-                            job_id: job_id.clone(),
-                            detail: job_detail(&value),
-                        }),
-                        Err(error) => {
-                            bus.send(AppEvent::ActionFailed(format!("job failed: {error}")))
-                        }
-                    }
-                }
                 Request::ChangeSchedule {
                     session_id,
                     kind,
@@ -2077,10 +2043,12 @@ fn parse_job_rows(value: &Value) -> Vec<JobRow> {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
+                // The output is what the operator asked to see; a long command
+                // must not push it out of the row.
                 detail: if output.is_empty() {
                     command.to_string()
                 } else {
-                    format!("{command} · {output}")
+                    format!("{output} · {command}")
                 },
                 id,
                 subagent: false,
@@ -2129,40 +2097,6 @@ fn owner_short(session_id: Option<&str>) -> String {
 /// The single line a jobs row shows for its selected job: the state it reached
 /// and what it produced. The engine answers `null` for a job it does not know,
 /// and `result` stays null while the job is queued or running.
-fn job_detail(value: &Value) -> String {
-    let Some(job) = value.as_object() else {
-        return "not found in this Session".into();
-    };
-    let state = job
-        .get("state")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    let Some(result) = job.get("result").filter(|result| !result.is_null()) else {
-        return format!("{state} · no result yet");
-    };
-    // A job's result is run metadata wrapped around the output, so serializing it
-    // put `{"enforcement_required":false,…}` in the row where the operator asked
-    // what the job said (#1962). Read the output itself, as the list answer does.
-    let stdout = result
-        .get("stdout")
-        .and_then(Value::as_str)
-        .or_else(|| {
-            result
-                .get("result")
-                .and_then(|inner| inner.get("stdout"))
-                .and_then(Value::as_str)
-        })
-        .unwrap_or_default();
-    let text = match stdout.trim().is_empty() {
-        true => result
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("no output"),
-        false => stdout,
-    };
-    format!("{state} · {}", tail(text, DETAIL_CHARS))
-}
-
 /// The newest lines of a job's output, joined for the single row that shows it:
 /// the question the row answers is what the job is saying now, not what it said
 /// first.
@@ -2578,57 +2512,6 @@ fn pairs(value: &Value) -> Vec<(String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The row exists to answer "what is it saying". A job's result is run
-    /// metadata wrapped around the output, so serializing it put the envelope
-    /// (`{"enforcement_required":false,…}`) in the row instead of the output it
-    /// carried (#1962).
-    #[test]
-    fn a_finished_job_previews_its_output_not_the_result_envelope() {
-        let job = serde_json::json!({
-            "state": "completed",
-            "result": {
-                "enforcement_required": false,
-                "exit_code": 0,
-                "stdout": "tick 1\ntick 2\ntick 3\n",
-                "stderr": ""
-            }
-        });
-        assert_eq!(job_detail(&job), "completed · tick 1 · tick 2 · tick 3");
-    }
-
-    /// A job with nothing to say yet keeps the wording the dialog already used.
-    #[test]
-    fn a_job_without_a_result_still_says_no_result_yet() {
-        let job = serde_json::json!({ "state": "running", "result": null });
-        assert_eq!(job_detail(&job), "running · no result yet");
-    }
-
-    /// A job that produced no output but failed shows why, not an empty row.
-    #[test]
-    fn a_failed_job_previews_its_error_when_there_is_no_output() {
-        let job = serde_json::json!({
-            "state": "failed",
-            "result": { "error": "file IO failed: No such file or directory" }
-        });
-        assert_eq!(
-            job_detail(&job),
-            "failed · file IO failed: No such file or directory"
-        );
-    }
-
-    /// One long line is clipped to the row's budget, and says it was clipped.
-    #[test]
-    fn a_long_output_is_clipped_and_marked() {
-        let job = serde_json::json!({
-            "state": "completed",
-            "result": { "stdout": "x".repeat(DETAIL_CHARS * 2) }
-        });
-        let detail = job_detail(&job);
-        let body = detail.strip_prefix("completed · ").expect("state prefix");
-        assert_eq!(body.chars().count(), DETAIL_CHARS + 1);
-        assert!(body.ends_with('…'), "{body}");
-    }
 
     /// The wire name must be the protocol's own: a dotted `usage.hourly` is not
     /// a method, and the engine answered every hourly read with `unknown
