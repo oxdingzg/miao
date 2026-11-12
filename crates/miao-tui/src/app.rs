@@ -2215,7 +2215,7 @@ impl App {
                     } else {
                         "a wakeup edit needs a delay in seconds"
                     };
-                    self.notice(hint.to_string());
+                    self.notice(&hint);
                     return;
                 }
                 let Some(Dialog::ScheduleEdit(edit)) = self.dialog.take() else {

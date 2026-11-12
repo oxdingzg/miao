@@ -3439,7 +3439,10 @@ mod tests {
         ));
         // The editor itself is a text dialog: it takes keys and has a title, so
         // the generic renderer paints it like the other prompts.
-        let editor = Dialog::schedule_edit("cron", "c1", "0 */2 * * *");
+        let editor = match Dialog::schedule_edit("cron", "c1", "0 */2 * * *") {
+            Dialog::ScheduleEdit(edit) => edit,
+            _ => unreachable!("schedule_edit returns the edit dialog"),
+        };
         assert_eq!(editor.input.text(), "0 */2 * * *");
         assert_eq!(editor.title(), "edit schedule");
         assert!(editor.rename_input().is_some());
