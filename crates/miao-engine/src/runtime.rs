@@ -9234,7 +9234,9 @@ mod window_tests {
         let limits = window(1_000_000);
         assert_eq!(limits.window, 1_000_000);
         assert_eq!(limits.headroom, 40_000 + 2_048 + 20_000);
-        assert_eq!(limits.per_pass, 8);
+        // A pass is planned by the size one summarizer call can carry, not by a
+        // message count, so the message cap stays off.
+        assert_eq!(limits.per_pass, 0);
         assert_eq!(limits.protect_turns, 2);
     }
 
