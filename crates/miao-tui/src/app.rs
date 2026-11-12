@@ -10437,8 +10437,13 @@ mod tests {
         app.handle(key(KeyCode::Char('e'), KeyModifiers::NONE));
         assert!(
             matches!(app.dialog, Some(Dialog::ScheduleEdit(_))),
-            "e opens the editor instead of cancelling"
+            "e opens the editor prefilled with the row's schedule"
         );
+        // The editor starts from the row's current schedule, so the operator
+        // clears it and types the replacement.
+        for _ in "*/5 * * * *".chars() {
+            app.handle(key(KeyCode::Backspace, KeyModifiers::NONE));
+        }
         for c in "0 9 * * 1".chars() {
             app.handle(key(KeyCode::Char(c), KeyModifiers::NONE));
         }
