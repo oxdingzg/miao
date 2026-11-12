@@ -804,6 +804,9 @@ pub struct ScheduleEditDialog {
     pub kind: String,
     pub id: String,
     pub input: Editor,
+    /// What the row currently schedules (`0 */2 * * *`, a delay in seconds),
+    /// rendered as the field label so the edit starts from the truth.
+    pub label: &'static str,
 }
 
 pub struct WorktreeNewDialog {
@@ -1373,12 +1376,21 @@ impl Dialog {
     }
 
     /// Edit one schedule in place: the row names what it is (`kind:id`) and the
-    /// operator types the new expression (a cron pattern) or delay (seconds).
-    pub fn schedule_edit(kind: &str, id: &str) -> Self {
+    /// operator edits the current expression (a cron pattern) or delay
+    /// (seconds), which the dialog prefills so the edit starts from the truth.
+    pub fn schedule_edit(kind: &str, id: &str, current: &str) -> Self {
+        let label: &'static str = if kind == "cron" {
+            "cron expression"
+        } else {
+            "delay seconds"
+        };
+        let mut input = Editor::new();
+        input.set_text(current);
         Dialog::ScheduleEdit(ScheduleEditDialog {
             kind: kind.to_string(),
             id: id.to_string(),
-            input: Editor::new(),
+            input,
+            label,
         })
     }
 
@@ -1799,12 +1811,14 @@ impl Dialog {
         true
     }
 
-    pub fn rename_input(&self) -> Option<&Editor> {
+    /// The editor plus the label its variant renders above it: a schedule edit
+    /// edits the cron pattern or delay, not a title.
+    pub fn rename_input(&self) -> Option<(&Editor, &'static str)> {
         match self {
-            Dialog::Rename(rename) => Some(&rename.input),
-            Dialog::Tag(tag) => Some(&tag.input),
-            Dialog::WorktreeNew(dialog) => Some(&dialog.input),
-            Dialog::ScheduleEdit(dialog) => Some(&dialog.input),
+            Dialog::Rename(rename) => Some((&rename.input, "title")),
+            Dialog::Tag(tag) => Some((&tag.input, "title")),
+            Dialog::WorktreeNew(dialog) => Some((&dialog.input, "title")),
+            Dialog::ScheduleEdit(dialog) => Some((&dialog.input, dialog.label)),
             _ => None,
         }
     }
@@ -3425,7 +3439,8 @@ mod tests {
         ));
         // The editor itself is a text dialog: it takes keys and has a title, so
         // the generic renderer paints it like the other prompts.
-        let editor = Dialog::schedule_edit("cron", "c1");
+        let editor = Dialog::schedule_edit("cron", "c1", "0 */2 * * *");
+        assert_eq!(editor.input.text(), "0 */2 * * *");
         assert_eq!(editor.title(), "edit schedule");
         assert!(editor.rename_input().is_some());
     }

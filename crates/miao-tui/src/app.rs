@@ -2056,7 +2056,21 @@ impl App {
                     .map(|(kind, id)| (kind.to_string(), id.to_string()))
                     .unwrap_or_default();
                 if !id.is_empty() {
-                    self.open_dialog(Dialog::schedule_edit(&kind, &id));
+                    // The row's detail opens with the current schedule, so the
+                    // editor starts from it instead of an empty field.
+                    let current = self
+                        .dialog
+                        .as_ref()
+                        .and_then(Dialog::list)
+                        .and_then(|list| {
+                            list.rows
+                                .iter()
+                                .find(|row| row.id == *entry)
+                                .map(|row| row.detail.clone())
+                        })
+                        .and_then(|detail| detail.split(" · ").next().map(str::to_string))
+                        .unwrap_or_default();
+                    self.open_dialog(Dialog::schedule_edit(&kind, &id, &current));
                 }
             }
             DialogAction::CancelSchedule(entry) => {
@@ -2180,6 +2194,30 @@ impl App {
                 }
             }
             DialogAction::Submit(value) if matches!(self.dialog, Some(Dialog::ScheduleEdit(_))) => {
+                let Some(Dialog::ScheduleEdit(edit)) = self.dialog.as_ref() else {
+                    return;
+                };
+                // Validate here so a typo stays in the editor instead of a
+                // round trip that fails the engine (#2928's schedule edit).
+                let valid = match edit.kind.as_str() {
+                    "cron" => {
+                        value.split_whitespace().count() == 5
+                            && value.bytes().all(|byte| {
+                                byte.is_ascii_digit()
+                                    || matches!(byte, b'*' | b',' | b'-' | b'/' | b' ' | b'\t')
+                            })
+                    }
+                    _ => value.trim().parse::<u64>().is_ok(),
+                };
+                if !valid {
+                    let hint = if edit.kind == "cron" {
+                        "a cron edit needs exactly 5 fields (e.g. 0 */2 * * *)"
+                    } else {
+                        "a wakeup edit needs a delay in seconds"
+                    };
+                    self.notice(hint.to_string());
+                    return;
+                }
                 let Some(Dialog::ScheduleEdit(edit)) = self.dialog.take() else {
                     return;
                 };
