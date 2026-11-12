@@ -162,5 +162,9 @@ function protectedPath(resource: string): boolean {
   const base = path.basename(resource)
   if (PROTECTED_NAMES.has(base) || base.startsWith(".env")) return true
   if (PROTECTED_SUFFIXES.some((suffix) => base.endsWith(suffix))) return true
-  return resource.split(path.sep).some((segment) => PROTECTED_SEGMENTS.has(segment))
+  // Split on both separators, not `path.sep`: a Windows engine is handed
+  // POSIX-style resources (`/project/.git/config`) straight from the model, and
+  // splitting on `\` alone left `.git` invisible there — which classified a
+  // protected path as `safe` (#2873).
+  return resource.split(/[\\/]+/).some((segment) => PROTECTED_SEGMENTS.has(segment))
 }
