@@ -362,6 +362,10 @@ test("a native create retry adopts the winner after its initial empty read", asy
 // the same storage path the creator computes: one function, two callers.
 test("lists only TypeScript-owned Sessions and derives one storage path per Location", async () => {
   const tmp = await tmpdir()
+  // `AbsolutePath` only accepts a spelling that is absolute on this platform, so
+  // the fixture cannot hard-code POSIX paths (#2873).
+  const foreignRoot = process.platform === "win32" ? "C:\\root" : "/root"
+  const foreign = (name: string) => AbsolutePath.make(path.join(foreignRoot, name))
   try {
     const storage = path.join(tmp.path, "miao.db")
     const legacy = await run(
@@ -377,7 +381,7 @@ test("lists only TypeScript-owned Sessions and derives one storage path per Loca
           placement: {
             engine: "rust",
             storage: AbsolutePath.make(path.join(tmp.path, "engine.db")),
-            location: { directory: AbsolutePath.make("/workspace/native") },
+            location: { directory: foreign("native") },
           },
         })
         return yield* SessionEnginePlacement.legacy(db)
@@ -385,12 +389,12 @@ test("lists only TypeScript-owned Sessions and derives one storage path per Loca
     )
     expect(legacy).toEqual([SessionV2.ID.make("ses_legacy")])
 
-    const storageA = SessionEnginePlacement.storageFor("/root", { directory: AbsolutePath.make("/workspace/a") })
-    const storageAgain = SessionEnginePlacement.storageFor("/root", { directory: AbsolutePath.make("/workspace/a") })
-    const storageB = SessionEnginePlacement.storageFor("/root", { directory: AbsolutePath.make("/workspace/b") })
+    const storageA = SessionEnginePlacement.storageFor(foreignRoot, { directory: foreign("a") })
+    const storageAgain = SessionEnginePlacement.storageFor(foreignRoot, { directory: foreign("a") })
+    const storageB = SessionEnginePlacement.storageFor(foreignRoot, { directory: foreign("b") })
     expect(storageA).toBe(storageAgain)
     expect(storageA).not.toBe(storageB)
-    expect(path.dirname(storageA)).toBe("/root")
+    expect(path.dirname(storageA)).toBe(foreignRoot)
     expect(path.basename(storageA)).toMatch(/^[a-f0-9]{64}\.db$/)
   } finally {
     await tmp[Symbol.asyncDispose]()
