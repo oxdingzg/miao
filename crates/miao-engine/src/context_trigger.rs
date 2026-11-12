@@ -243,6 +243,20 @@ const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
 /// spent on the segments before it.
 const SUMMARY_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long one summarizer call gets before the pass retries it, and how long
+/// that retry gets. A test drives these instead of waiting twenty seconds to
+/// reach the retry path.
+#[derive(Debug, Clone, Copy)]
+struct Deadlines {
+    first: Duration,
+    retry: Duration,
+}
+
+const SUMMARIZER_DEADLINES: Deadlines = Deadlines {
+    first: SUMMARY_TIMEOUT,
+    retry: SUMMARY_RETRY_TIMEOUT,
+};
+
 /// Reject one pass and keep the reason. The progress notice is ephemeral by
 /// design, so a Session that keeps failing to compact used to be diagnosable
 /// only from an operator's memory of a toast; the store keeps the reason.
@@ -505,7 +519,9 @@ where
             };
             // A summarizer that never returns must not hold the turn: the call is
             // bounded, and a timeout degrades like any other summary failure.
-            match summarize_segment(&mut summarize, &instruction, &cancel).await {
+            match summarize_segment(&mut summarize, &instruction, &cancel, SUMMARIZER_DEADLINES)
+                .await
+            {
                 Segment::Cancelled => {
                     notify(json!({
                         "session_id": session, "run_id": run,
@@ -572,7 +588,14 @@ where
                     let instruction = format!(
                         "Summarize this portion of the conversation; older history was truncated to fit the model window, so keep facts, decisions and the durable state block:\n{trimmed}"
                     );
-                    match summarize_segment(&mut summarize, &instruction, &cancel).await {
+                    match summarize_segment(
+                        &mut summarize,
+                        &instruction,
+                        &cancel,
+                        SUMMARIZER_DEADLINES,
+                    )
+                    .await
+                    {
                         Segment::Answered(Ok(part)) => {
                             parts.push(part);
                             notify(json!({
@@ -663,20 +686,21 @@ async fn summarize_segment<S, F>(
     summarize: &mut S,
     instruction: &str,
     cancel: &tokio_util::sync::CancellationToken,
+    deadlines: Deadlines,
 ) -> Segment
 where
     S: FnMut(String) -> F,
     F: Future<Output = Result<String, String>>,
 {
     if let Ok(answered) =
-        tokio::time::timeout(SUMMARY_TIMEOUT, summarize(instruction.to_owned())).await
+        tokio::time::timeout(deadlines.first, summarize(instruction.to_owned())).await
     {
         return settled(answered, cancel);
     }
     if cancel.is_cancelled() {
         return Segment::Cancelled;
     }
-    match tokio::time::timeout(SUMMARY_RETRY_TIMEOUT, summarize(instruction.to_owned())).await {
+    match tokio::time::timeout(deadlines.retry, summarize(instruction.to_owned())).await {
         Ok(answered) => settled(answered, cancel),
         Err(_) if cancel.is_cancelled() => Segment::Cancelled,
         Err(_) => Segment::Slow,
@@ -1745,6 +1769,99 @@ mod tests {
                 segments: vec![]
             }
         );
+    }
+
+    /// A summarizer that misses its first deadline is retried with the wider
+    /// one instead of failing the pass: failing it used to discard every
+    /// segment summarized before it and count against gate ⑤.
+    #[tokio::test]
+    async fn a_missed_deadline_is_retried_with_the_wider_one() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let deadlines = Deadlines {
+            first: Duration::from_millis(10),
+            retry: Duration::from_secs(5),
+        };
+        let mut calls = 0;
+        let outcome = summarize_segment(
+            &mut |_body: String| {
+                calls += 1;
+                let late = calls == 1;
+                async move {
+                    if late {
+                        tokio::time::sleep(Duration::from_millis(40)).await;
+                    }
+                    Ok("summary".to_string())
+                }
+            },
+            "condense this",
+            &cancel,
+            deadlines,
+        )
+        .await;
+        assert!(
+            matches!(outcome, Segment::Answered(Ok(_))),
+            "the retry answers"
+        );
+        assert_eq!(calls, 2, "exactly one retry after the missed deadline");
+    }
+
+    /// A summarizer that never answers spends both deadlines and is reported as
+    /// slow, which is the only path that feeds gate ⑤.
+    #[tokio::test]
+    async fn a_summarizer_that_never_answers_is_slow() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let deadlines = Deadlines {
+            first: Duration::from_millis(5),
+            retry: Duration::from_millis(5),
+        };
+        let mut calls = 0;
+        let outcome = summarize_segment(
+            &mut |_body: String| {
+                calls += 1;
+                async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    Ok("late".to_string())
+                }
+            },
+            "condense this",
+            &cancel,
+            deadlines,
+        )
+        .await;
+        assert!(matches!(outcome, Segment::Slow));
+        assert_eq!(calls, 2, "both deadlines were spent");
+    }
+
+    /// An interrupt during the first deadline ends the pass instead of spending
+    /// the retry: the operator already asked for the turn to stop.
+    #[tokio::test]
+    async fn an_interrupt_during_the_first_deadline_cancels_the_retry() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let interrupt = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            interrupt.cancel();
+        });
+        let deadlines = Deadlines {
+            first: Duration::from_millis(30),
+            retry: Duration::from_secs(5),
+        };
+        let mut calls = 0;
+        let outcome = summarize_segment(
+            &mut |_body: String| {
+                calls += 1;
+                async {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    Ok("summary".to_string())
+                }
+            },
+            "condense this",
+            &cancel,
+            deadlines,
+        )
+        .await;
+        assert!(matches!(outcome, Segment::Cancelled));
+        assert_eq!(calls, 1, "a cancelled pass does not spend the retry");
     }
 
     /// A pass is planned by what one summarizer call can carry, not by how many
