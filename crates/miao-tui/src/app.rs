@@ -5168,7 +5168,6 @@ fn title_from_prompt(prompt: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::JobRow;
     use crate::session::{Entry, RevertPlan, Transcript};
     use crate::theme::{self, DEFAULT_THEME};
     use std::collections::BTreeMap;
