@@ -3787,8 +3787,8 @@ pub fn render_dialog(frame: &mut Frame, area: Rect, dialog: &Dialog, theme: &The
         render_sign_in(frame, inner, sign_in, theme);
         return;
     }
-    if let Some(input) = dialog.rename_input() {
-        render_rename(frame, inner, input, theme);
+    if let Some((input, label)) = dialog.rename_input() {
+        render_rename(frame, inner, input, label, theme);
         return;
     }
     if let Some(confirm) = dialog.confirm() {
@@ -3997,11 +3997,17 @@ fn render_palette(frame: &mut Frame, area: Rect, palette: &PaletteDialog, theme:
     frame.render_widget(Paragraph::new(lines), list_area);
 }
 
-fn render_rename(frame: &mut Frame, area: Rect, input: &crate::editor::Editor, theme: &Theme) {
+fn render_rename(
+    frame: &mut Frame,
+    area: Rect,
+    input: &crate::editor::Editor,
+    label: &str,
+    theme: &Theme,
+) {
     let palette = theme.palette;
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "title",
+            label,
             Style::new().fg(palette.text_muted),
         ))),
         Rect { height: 1, ..area },
