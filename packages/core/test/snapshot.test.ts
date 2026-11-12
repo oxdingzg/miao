@@ -182,6 +182,9 @@ describe("Snapshot", () => {
       Effect.promise(() => tmpdir()),
       (tmp) =>
         Effect.gen(function* () {
+          // POSIX-only fixture: `*` and `:` are reserved characters on Windows,
+          // so these paths cannot exist there at all (#2873).
+          if (process.platform === "win32") return
           const project = path.join(tmp.path, "project")
           const weird = path.join(project, "weird*dir")
           yield* Effect.promise(async () => {

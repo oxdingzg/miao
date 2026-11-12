@@ -152,9 +152,13 @@ describe("ProviderWireArchiveStore", () => {
 describe("ProviderWireArchiveStore.directoryFor", () => {
   it.live("sends boolean flags to the log directory and paths to themselves", () =>
     Effect.gen(function* () {
+      // `directoryFor` resolves a custom directory with `path.resolve`, so the
+      // custom value has to be absolute *for this platform*: `/tmp/wire` is not
+      // absolute on Windows and would resolve against the current drive.
+      const custom = path.resolve(process.platform === "win32" ? "C:\\tmp\\wire" : "/tmp/wire")
       expect(ProviderWireArchiveStore.directoryFor("1", "/log")).toBe(path.join("/log", MANAGED_DIRECTORY))
       expect(ProviderWireArchiveStore.directoryFor("TRUE", "/log")).toBe(path.join("/log", MANAGED_DIRECTORY))
-      expect(ProviderWireArchiveStore.directoryFor("/tmp/wire", "/log")).toBe("/tmp/wire")
+      expect(ProviderWireArchiveStore.directoryFor(custom, "/log")).toBe(custom)
     }),
   )
 })

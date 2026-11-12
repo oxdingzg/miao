@@ -200,10 +200,12 @@ describe("Git batched diffs", () => {
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
       )
+      // Windows cannot hold a newline or a tab in a path: the write itself fails
+      // with ENOENT, so the git-side quoting this case exists for is unreachable
+      // there (#2873). Keep the rest of the name set on both platforms.
       const names = [
         "space name.txt",
-        "tab\tname.txt",
-        "line\nname.txt",
+        ...(process.platform === "win32" ? [] : ["tab\tname.txt", "line\nname.txt"]),
         'quote"name.txt',
         "中文.txt",
         "[literal].txt",
