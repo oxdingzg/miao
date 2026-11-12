@@ -607,12 +607,6 @@ impl ListDialog {
             .and_then(|index| self.rows.get(*index))
             .map(|row| row.id.clone())
     }
-
-    /// The id of the row the cursor is on, for a dialog whose rows name
-    /// something the engine can answer more about.
-    pub(crate) fn selected_id(&self) -> Option<String> {
-        self.current_id()
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

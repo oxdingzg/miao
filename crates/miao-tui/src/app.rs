@@ -9677,8 +9677,8 @@ mod tests {
             app.dialog
                 .as_ref()
                 .and_then(Dialog::list)
-                .and_then(|list| list.selected_id()),
-            Some("0".to_string())
+                .and_then(|list| list.rows.first().map(|row| row.id.as_str())),
+            Some("0")
         );
         let target = app
             .dialog
