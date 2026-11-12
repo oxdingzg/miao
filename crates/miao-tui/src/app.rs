@@ -9673,11 +9673,13 @@ mod tests {
         ]));
         app.open_dialog(Dialog::models(&catalog, None));
         // The first model stays the row Enter acts on: the key row trails it.
+        // (The first *row* is the provider group header, which never takes the
+        // cursor — hence asserting the selection, not `rows.first()`.)
         assert_eq!(
             app.dialog
                 .as_ref()
                 .and_then(Dialog::list)
-                .and_then(|list| list.rows.first().map(|row| row.id.as_str())),
+                .and_then(|list| list.rows.get(list.selected).map(|row| row.id.as_str())),
             Some("0")
         );
         let target = app
