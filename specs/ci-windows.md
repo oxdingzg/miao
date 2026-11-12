@@ -57,12 +57,17 @@ release commit on 2026-11-03 (runs 41530268572, 41537726830) and exposed:
 | Test | Count | Root cause class | Evidence | Next step |
 | --- | --- | --- | --- | --- |
 | `runtime::cancel_authority_tests::*` | 8 | Host pipe-capacity / event-wait deadlines on hosted Windows (all eight share the harness) | run 41537726830, 84s single-threaded run | Debug on a Windows host (build machine `96`); give the harness explicit event deadlines |
-| `permission_source::tests::a_frozen_source_retains_durable_input_without_starting_a_provider` | 1 | Same class | same run | Same as above |
 
-Both are skipped at the release gate (`--skip cancel_authority_tests --skip
-a_frozen_source_retains_durable_input`) so the other 338 tests still gate the
-release. Remove the skips once the suite passes on Windows and a green release
-proves it.
+Only `runtime::cancel_authority_tests` is still skipped at the release gate
+(`--skip cancel_authority_tests`) so the rest of the suite still gates the
+release.
+
+`permission_source::tests::a_frozen_source_retains_durable_input_without_starting_a_provider`
+came off that list with #2903/#2915: the handoff row stored the Windows
+`\\?\C:\...` spelling while `engine_location.root` stored the plain one, so the
+freeze trigger's string equality never held and a frozen source blocked
+nothing. Both writers now use `placement::canonical`, measured on a Windows
+host at 90 passed / 0 failed for `cargo test --lib permission`.
 
 
 ### engine (windows) — release gate
@@ -70,8 +75,11 @@ proves it.
 The release-gate suite first ran against a release commit on 2026-11-03
 (runs 41530268572, 41537726830, 41541777831) and kept exposing new layers:
 
-- `runtime::cancel_authority_tests` (8) + `permission_source::a_frozen_source`
-  — host pipe-capacity deadlines; now skipped at the gate.
+- `runtime::cancel_authority_tests` (8) — host pipe-capacity deadlines; still
+  skipped at the gate.
+- `permission_source::a_frozen_source` — was a real product defect, not a
+  timeout (#2903): the workspace was spelled with the Windows `\\?\` prefix
+  while the Location used the plain form. Fixed in #2915, skip removed.
 - `tests/accuracy.rs` integration binaries (denied_write, product_fix) —
   filesystem-effect assertions fail on hosted Windows; integration tests are
   now off Windows at the gate entirely, like the non-blocking TS unit suite.
