@@ -633,14 +633,17 @@ pub(crate) async fn execute_with_progress(
     )
     .await?;
     let mut readers = JoinSet::new();
+    // A pty has no incremental reader yet, so its one report still comes at
+    // end-of-stream below; a pipe now reports each chunk as it arrives.
+    let pty = master.is_some();
     if let Some(master) = master {
         readers.spawn(read_pty(master));
     } else {
         if let Some(stdout) = group.child.stdout.take() {
-            readers.spawn(read_pipe(stdout, true));
+            readers.spawn(read_pipe(stdout, true, progress.clone()));
         }
         if let Some(stderr) = group.child.stderr.take() {
-            readers.spawn(read_pipe(stderr, false));
+            readers.spawn(read_pipe(stderr, false, progress.clone()));
         }
     }
     let mut stdout = Vec::new();
@@ -663,12 +666,18 @@ pub(crate) async fn execute_with_progress(
                 if let Some(part)=part {
                     let (is_stdout,bytes)=part.map_err(|_|ToolError::Io(std::io::Error::other("pipe reader failed")))??;
                     let oversized=bytes.len()>32768;
-                    if let Some(progress)=progress.as_ref() {
-                        if !bytes.is_empty() {
-                            let _=progress.try_send(json!({
-                                "stream":if is_stdout{"stdout"}else{"stderr"},
-                                "text":String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]),
-                            }));
+                    // Pipe readers report each chunk as it arrives, so this
+                    // end-of-stream send would only repeat the first 2048 bytes.
+                    // A pty reports nothing until it closes, so it still needs
+                    // this one.
+                    if pty {
+                        if let Some(progress)=progress.as_ref() {
+                            if !bytes.is_empty() {
+                                let _=progress.try_send(json!({
+                                    "stream":if is_stdout{"stdout"}else{"stderr"},
+                                    "text":String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]),
+                                }));
+                            }
                         }
                     }
                     if is_stdout{stdout=bytes;}else{stderr=bytes;}
@@ -737,12 +746,40 @@ pub(crate) async fn execute_with_progress(
     )
 }
 
+/// Read one pipe, reporting each chunk as it arrives.
+///
+/// The cap is exactly what `take(32769).read_to_end` gave: read up to 32769
+/// bytes and then **stop reading**. Stopping is what tells the caller the
+/// command overflowed (`bytes.len() > 32768` → `output_limit`), so a reader that
+/// drained forever would turn that into a plain timeout. What is new is that
+/// each chunk reaches the progress channel as it arrives instead of only at
+/// end-of-stream, which is what lets a running background job answer "what is it
+/// saying" (#1962).
 async fn read_pipe(
-    stream: impl AsyncRead + Unpin,
+    mut stream: impl AsyncRead + Unpin,
     is_stdout: bool,
+    progress: Option<Progress>,
 ) -> Result<(bool, Vec<u8>), ToolError> {
+    const LIMIT: usize = 32769;
     let mut bytes = Vec::new();
-    stream.take(32769).read_to_end(&mut bytes).await?;
+    let mut chunk = [0u8; 2048];
+    loop {
+        let read = stream.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read]);
+        if let Some(progress) = progress.as_ref() {
+            let _ = progress.try_send(json!({
+                "stream": if is_stdout { "stdout" } else { "stderr" },
+                "text": String::from_utf8_lossy(&chunk[..read]),
+            }));
+        }
+        if bytes.len() > 32768 {
+            bytes.truncate(LIMIT);
+            break;
+        }
+    }
     Ok((is_stdout, bytes))
 }
 

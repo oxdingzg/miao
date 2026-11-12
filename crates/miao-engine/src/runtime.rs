@@ -62,6 +62,9 @@ const TOOL_WAIT_NOTICE: std::time::Duration = std::time::Duration::from_secs(5);
 const DRAIN_SLOTS: usize = 8;
 const JOB_SLOTS: usize = 4;
 const JOBS_PER_SESSION: usize = 2;
+/// How much of a running job's output stays in memory for the list answer; the
+/// list itself shows a 200-character tail of it.
+const LIVE_OUTPUT_CHARS: usize = 400;
 const SUBAGENT_SLOTS: usize = crate::subagent::CONCURRENCY_LIMIT;
 
 /// Queue accounting for one pool: how many calls are waiting, how many were
@@ -266,6 +269,10 @@ struct Inner {
     tool_replay: Option<ToolReplay>,
     actors: Mutex<HashMap<String, Actor>>,
     jobs: Mutex<HashMap<String, Background>>,
+    /// The newest output of each running job. `Store::jobs` reads a tail from
+    /// the finished job's result, which does not exist while the command runs,
+    /// so the process keeps it in memory until the result lands (#1962).
+    job_output: Mutex<HashMap<String, String>>,
     terminals: crate::terminal::Registry,
     /// The credential store this start reads, when a host told us. The picker
     /// needs it to tell "this provider has an account but no route" from "this
@@ -804,6 +811,7 @@ impl Runtime {
                 tool_replay,
                 actors: Mutex::new(HashMap::new()),
                 jobs: Mutex::new(HashMap::new()),
+                job_output: Mutex::new(HashMap::new()),
                 terminals: crate::terminal::Registry::default(),
                 credential_db: std::sync::OnceLock::new(),
                 timers: Mutex::new(HashMap::new()),
@@ -4831,7 +4839,8 @@ command: None,
                                     }
                                 }
                                 "job_list" => {
-                                    Ok(json!({"jobs":inner.store.jobs(session).await?}))
+                                    let jobs = running_output(inner, inner.store.jobs(session).await?).await;
+                                    Ok(json!({ "jobs": jobs }))
                                 }
                                 "job_wait" => {
                                     match crate::jobs::Wait::parse(prepared.input().clone()) {
@@ -8797,6 +8806,26 @@ async fn start_background(
     Ok(admission)
 }
 
+/// Fill `output` on listed jobs from the in-memory tail of a running one: the
+/// stored answer only has a tail once the job's result lands, and the question
+/// the list answers — what is it saying — is asked while it runs (#1962).
+async fn running_output(inner: &Inner, mut jobs: Vec<Value>) -> Vec<Value> {
+    let tails = inner.job_output.lock().await;
+    for job in jobs.iter_mut() {
+        if job["output"]
+            .as_str()
+            .is_some_and(|output| !output.is_empty())
+        {
+            continue;
+        }
+        let Some(tail) = job["job_id"].as_str().and_then(|id| tails.get(id)) else {
+            continue;
+        };
+        job["output"] = json!(tail);
+    }
+    jobs
+}
+
 async fn background(
     inner: Arc<Inner>,
     session: &str,
@@ -8817,10 +8846,31 @@ async fn background(
         return Ok(());
     };
     inner.store.start_job(session, id).await?;
+    // Keep the newest text a running job produced, so `job_list` can answer
+    // what it is saying before its result exists (#1962).
+    let (output_tx, mut output_rx) = mpsc::channel::<Value>(64);
+    let tail_inner = inner.clone();
+    let tail_id = id.to_owned();
+    let tail = tokio::spawn(async move {
+        while let Some(part) = output_rx.recv().await {
+            let Some(text) = part["text"].as_str() else {
+                continue;
+            };
+            let mut tails = tail_inner.job_output.lock().await;
+            let entry = tails.entry(tail_id.clone()).or_default();
+            entry.push_str(text);
+            let count = entry.chars().count();
+            if count > LIVE_OUTPUT_CHARS {
+                *entry = entry.chars().skip(count - LIVE_OUTPUT_CHARS).collect();
+            }
+        }
+    });
     let result = inner
         .tools
-        .execute_background(prepared, cancel.clone())
+        .execute_background(prepared, cancel.clone(), Some(output_tx))
         .await;
+    let _ = tail.await;
+    inner.job_output.lock().await.remove(id);
     let (state, output) = match result {
         Ok(output) => {
             let state = if output["reason"] == "cancelled" {
