@@ -277,6 +277,7 @@ async fn a_billed_allowance_pause_prints_the_window_beside_the_tally() {
             ratio: 0.9,
             headroom: 0,
             per_pass: 8,
+            fold_ratio: 0.0,
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,

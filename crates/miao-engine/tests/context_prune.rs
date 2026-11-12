@@ -85,6 +85,7 @@ async fn run(prune_chars: Option<usize>) -> (String, Store) {
             ratio: 0.9,
             headroom: 100_000,
             per_pass: 1000,
+            fold_ratio: 0.0,
             prune_chars,
             prune_total_chars: None,
             protect_turns: 0,
