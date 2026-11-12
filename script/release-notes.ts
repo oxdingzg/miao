@@ -15,6 +15,10 @@ export function chineseLink(tag: string, repo: string = repoDefault): string {
 
 export function addChineseLink(notes: string, tag: string, repo: string = repoDefault): string {
   const link = chineseLink(tag, repo)
+  // Curated documents carry this link themselves so the published body and the
+  // repository copy agree; inserting it again printed the pair twice in the
+  // release bodies up to v0.3.62, so the insertion stays idempotent.
+  if (notes.includes(link)) return notes
   const lines = notes.split("\n")
   const heading = lines.findIndex((line) => line.startsWith("#"))
   if (heading === -1) return `${link}\n\n${notes}`
