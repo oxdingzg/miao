@@ -109,10 +109,6 @@ pub enum AppEvent {
     /// `(kind:id, label, detail)` newest first.
     Schedule(Vec<(String, String, String)>),
     /// One background job's detail, for the row the operator selected.
-    JobDetail {
-        job_id: String,
-        detail: String,
-    },
     /// The open Session moved to another workspace.
     SessionMoved,
     /// What a revert at one boundary would change, for the confirm dialog.
