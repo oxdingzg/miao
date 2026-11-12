@@ -268,11 +268,34 @@ pub(crate) fn valid_variant(variant: &str) -> bool {
 }
 
 pub(crate) fn valid_id(id: &str) -> bool {
+    // `@` is the account slot a per-key route carries
+    // (`provider/model@account`, from `native_routes::account_slot`, whose own
+    // alphabet is alphanumerics, `-` and `_`). Leaving `@` out rejected every
+    // derived per-account route, which failed the whole catalog reload the
+    // moment a second key was stored for one provider (#2928's /accounts flow).
     !id.is_empty()
         && id.len() <= 128
         && id
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "._:/-".contains(c))
+            .all(|c| c.is_ascii_alphanumeric() || "@._:/-".contains(c))
+}
+
+#[cfg(test)]
+mod valid_id_tests {
+    use super::valid_id;
+
+    #[test]
+    fn a_per_account_route_id_is_valid() {
+        assert!(valid_id("mtty/glm-5.3-flash@dingzhigang"));
+        assert!(valid_id("volcengine/deepseek-v4.1-flash-free"));
+    }
+
+    #[test]
+    fn junk_ids_stay_invalid() {
+        assert!(!valid_id(""));
+        assert!(!valid_id("has space"));
+        assert!(!valid_id("newline\n"));
+    }
 }
 
 #[async_trait]
