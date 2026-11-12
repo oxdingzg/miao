@@ -25,13 +25,19 @@ describe("PermissionClassifier", () => {
   })
 
   describe("bash", () => {
+    // The classifier understands bash syntax, and Windows runs PowerShell, so
+    // it never claims a command there: `unknown` is the safe answer, not a
+    // failure. The assertions below describe POSIX shells.
+    const posix = process.platform !== "win32"
+
     it("approves read-only commands", async () => {
-      expect(await PermissionClassifier.bash(["ls -la"])).toBe("safe")
-      expect(await PermissionClassifier.bash(["cat src/a.ts | grep foo"])).toBe("safe")
-      expect(await PermissionClassifier.bash(["git status"])).toBe("safe")
-      expect(await PermissionClassifier.bash(["git log --oneline -5"])).toBe("safe")
-      expect(await PermissionClassifier.bash(["echo hi && wc -c"])).toBe("safe")
-      expect(await PermissionClassifier.bash(["git"])).toBe("safe")
+      const expected = posix ? "safe" : "unknown"
+      expect(await PermissionClassifier.bash(["ls -la"])).toBe(expected)
+      expect(await PermissionClassifier.bash(["cat src/a.ts | grep foo"])).toBe(expected)
+      expect(await PermissionClassifier.bash(["git status"])).toBe(expected)
+      expect(await PermissionClassifier.bash(["git log --oneline -5"])).toBe(expected)
+      expect(await PermissionClassifier.bash(["echo hi && wc -c"])).toBe(expected)
+      expect(await PermissionClassifier.bash(["git"])).toBe(expected)
     })
 
     it("rejects writes and execution", async () => {
