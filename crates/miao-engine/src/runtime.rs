@@ -372,6 +372,9 @@ fn window_limits(window: u64) -> ContextLimits {
         // Mirrors the product's headroom: pruning protection, the summary
         // reserve, and the default slack.
         headroom: 40_000 + 2_048 + 20_000,
+        // Off by default: compacting early costs summary quality, so the
+        // watermark is the operator's choice and the threshold remains the rule.
+        fold_ratio: 0.0,
         // The size budget below decides; a message cap of 8 turned a
         // million-token history into three hundred summarizer calls.
         per_pass: 0,
@@ -5273,6 +5276,8 @@ command: None,
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
                     segment_chars,
+                    fold_at: (limits.fold_ratio > 0.0)
+                        .then_some((limits.window as f64 * limits.fold_ratio) as u64),
                     cancel: cancel.clone(),
                     breaker: &mut breaker,
                     notify: &mut notify,
@@ -9235,8 +9240,10 @@ mod window_tests {
         assert_eq!(limits.window, 1_000_000);
         assert_eq!(limits.headroom, 40_000 + 2_048 + 20_000);
         // A pass is planned by the size one summarizer call can carry, not by a
-        // message count, so the message cap stays off.
+        // message count, so the message cap stays off; folding is the operator's
+        // choice and stays off by default.
         assert_eq!(limits.per_pass, 0);
+        assert_eq!(limits.fold_ratio, 0.0);
         assert_eq!(limits.protect_turns, 2);
     }
 

@@ -166,6 +166,7 @@ async fn run_compaction(reject_prefix: bool) {
             ratio: 0.4,
             headroom: 512,
             per_pass: 64,
+            fold_ratio: 0.0,
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,

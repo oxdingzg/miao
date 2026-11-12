@@ -128,6 +128,10 @@ pub struct ContextLimits {
     /// Summarizer passes carry at most this many selected messages. `0` leaves
     /// the size budget below to decide.
     pub per_pass: usize,
+    /// A low watermark, as a fraction of the window, that starts a pass before
+    /// the threshold is reached. Zero keeps the threshold as the only trigger.
+    #[serde(default)]
+    pub fold_ratio: f64,
     /// Serialized chars one tool-result payload may keep in the outgoing request
     /// before it is elided. Absent leaves tool output whole (pruning off).
     #[serde(default)]
@@ -156,6 +160,7 @@ impl ContextLimits {
             window: 0,
             ratio: 0.0,
             headroom: 0,
+            fold_ratio: 0.0,
             per_pass: 0,
             prune_chars: None,
             prune_total_chars: None,
@@ -191,6 +196,12 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     /// What the summary must keep, in the operator's own words. Carried into
     /// the summarizer prompt; the durable state block is retained regardless.
     pub focus: Option<String>,
+    /// A low watermark that starts a pass before the window is nearly full.
+    /// Folding the oldest part early keeps every pass small and keeps the
+    /// Session away from the wall instead of compacting at it. `None` leaves the
+    /// threshold as the only trigger, which is the default: folding more often
+    /// is a quality trade, so it stays the operator's choice.
+    pub fold_at: Option<u64>,
     /// An operator request: one pass happens at this boundary even when the
     /// budget gate is under its threshold. Every other gate still applies, so a
     /// forced pass cannot cut a tool continuation or a reverted transcript.
@@ -232,6 +243,27 @@ const SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
 /// spent on the segments before it.
 const SUMMARY_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Reject one pass and keep the reason. The progress notice is ephemeral by
+/// design, so a Session that keeps failing to compact used to be diagnosable
+/// only from an operator's memory of a toast; the store keeps the reason.
+async fn reject(
+    store: &Store,
+    session: &str,
+    run: &str,
+    reason: &str,
+    context: u64,
+    breaker: &mut Breaker,
+) {
+    breaker.rejected(context);
+    let _ = store
+        .record(
+            session,
+            "compaction.rejected",
+            json!({"run_id": run, "reason": reason}),
+        )
+        .await;
+}
+
 pub async fn maybe_compact<S, F, P>(
     store: &Store,
     request: CompactRequest<'_, P>,
@@ -268,6 +300,7 @@ where
         through,
         focus,
         forced,
+        fold_at,
         budget,
         per_pass,
         segment_chars,
@@ -336,7 +369,11 @@ where
         }
     };
     let total = context.saturating_add(pending_tokens);
-    if !forced && !budget.should_compact(Some(context), pending_tokens) {
+    // Two triggers: the threshold that says the next request is about to be
+    // refused, and the optional low watermark that keeps passes small instead of
+    // making every pass pay for the whole history.
+    let folding = fold_at.is_some_and(|fold| total >= fold);
+    if !forced && !folding && !budget.should_compact(Some(context), pending_tokens) {
         // Below half the threshold nothing is near the wall, and one line per
         // settled turn would bury the case somebody is investigating; the
         // progress notice still goes out every time.
@@ -478,7 +515,15 @@ where
                     return Ok(false);
                 }
                 Segment::Slow => {
-                    breaker.rejected(context.saturating_add(pending_tokens));
+                    reject(
+                        store,
+                        session,
+                        run,
+                        "summary timeout",
+                        context.saturating_add(pending_tokens),
+                        breaker,
+                    )
+                    .await;
                     notify(json!({
                         "session_id": session, "run_id": run,
                         "kind": "compaction.failed", "reason": "summary timeout",
@@ -509,7 +554,15 @@ where
                             (trimmed.len() < body.len()).then_some(trimmed)
                         });
                     let Some(trimmed) = retry else {
-                        breaker.rejected(context.saturating_add(pending_tokens));
+                        reject(
+                            store,
+                            session,
+                            run,
+                            &reason,
+                            context.saturating_add(pending_tokens),
+                            breaker,
+                        )
+                        .await;
                         notify(json!({
                             "session_id": session, "run_id": run,
                             "kind": "compaction.failed", "reason": reason,
@@ -537,7 +590,15 @@ where
                             return Ok(false);
                         }
                         _ => {
-                            breaker.rejected(context.saturating_add(pending_tokens));
+                            reject(
+                                store,
+                                session,
+                                run,
+                                &reason,
+                                context.saturating_add(pending_tokens),
+                                breaker,
+                            )
+                            .await;
                             notify(json!({
                                 "session_id": session, "run_id": run,
                                 "kind": "compaction.failed", "reason": reason,
@@ -566,10 +627,19 @@ where
             Ok(true)
         }
         Err(error) => {
-            breaker.rejected(context.saturating_add(pending_tokens));
+            let reason = error.to_string();
+            reject(
+                store,
+                session,
+                run,
+                &reason,
+                context.saturating_add(pending_tokens),
+                breaker,
+            )
+            .await;
             notify(json!({
                 "session_id": session, "run_id": run,
-                "kind": "compaction.failed", "reason": error.to_string(),
+                "kind": "compaction.failed", "reason": reason,
             }));
             Ok(false)
         }

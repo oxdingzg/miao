@@ -313,6 +313,7 @@ async fn configured_context_limits_compact_at_the_settled_boundary() {
             ratio: 0.5,
             headroom: 0,
             per_pass: 10,
+            fold_ratio: 0.0,
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
