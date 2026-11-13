@@ -1,20 +1,21 @@
 name = "miao-dl"
 main = "dl.js"
 compatibility_date = "2026-11-01"
+account_id = "e8173df9e0f5ba9476dc8eb622b153b8"
 
 # dl.mtty.dev answers GitHub-shaped release paths for miao:
 #   /releases/*   the release surface of github.com/oxdingzg/miao
 #   /raw/main/*   the published install scripts
 #
-# Deploy with a Cloudflare account that owns the mtty.dev zone:
+# Deploy with a Cloudflare account that owns the mtty.dev zone — the stored
+# wrangler OAuth login (dingzhigang@gmail.com) is enough:
 #
-#   CLOUDFLARE_API_TOKEN=<token with Workers Scripts:Edit + Zone:Read> \
-#   CLOUDFLARE_ACCOUNT_ID=<account id> wrangler deploy
+#   wrangler deploy          # from this directory
 #
 # The custom domain below is created (or adopted) by `wrangler deploy`; the
 # zone must be on the same account. Traffic on the free plan is 100,000
 # requests a day — a streamed 37 MB asset spends almost no CPU, so the
 # download mirror costs nothing at this project's scale.
-[routes]
-pattern = "dl.mtty.dev"
-custom_domain = true
+routes = [
+  { pattern = "dl.mtty.dev", custom_domain = true },
+]
