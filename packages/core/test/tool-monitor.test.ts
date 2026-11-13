@@ -78,6 +78,10 @@ const call = (input: typeof MonitorTool.Input.Type, id = "call-monitor") => ({
 
 const FINAL = ["finished:", "timed out", "could not start"]
 
+// The fixture commands are shell-flavored per platform: the tool runs them
+// through the operator's shell, and cmd.exe on Windows has no printf/sleep.
+const win = process.platform === "win32"
+
 const isSynthetic = (event: EventV2.Payload): event is EventV2.Payload<typeof SessionEvent.NotificationAdmitted> =>
   event.type === SessionEvent.NotificationAdmitted.type
 
@@ -115,7 +119,14 @@ describe("MonitorTool", () => {
           yield* Effect.addFinalizer(() => observed.unsubscribe)
           const settled = yield* settleTool(
             registry,
-            call({ command: "printf 'ready\\nignored\\n'; sleep 1", pattern: "ready" }),
+            call(
+              {
+                command: win
+                  ? "echo ready& echo ignored& ping -n 2 127.0.0.1 >nul"
+                  : "printf 'ready\\nignored\\n'; sleep 1",
+                pattern: "ready",
+              },
+            ),
           )
           expect(settled).toMatchObject({ output: { structured: { jobID: expect.any(String) } } })
           // The command is still sleeping, so the call returned before it finished.
@@ -150,7 +161,10 @@ describe("MonitorTool", () => {
         Effect.gen(function* () {
           const observed = yield* observe(events)
           yield* Effect.addFinalizer(() => observed.unsubscribe)
-          yield* settleTool(registry, call({ command: "sleep 30", timeoutMs: 300 }, "call-monitor-timeout"))
+          yield* settleTool(
+            registry,
+            call({ command: win ? "ping -n 30 127.0.0.1 >nul" : "sleep 30", timeoutMs: 300 }, "call-monitor-timeout"),
+          )
           const jobID = (yield* jobs.list())[0].id
           expect(Option.isSome(yield* observed.finished)).toBe(true)
           expect(observed.notices.at(-1)).toContain("timed out after 300 ms")
