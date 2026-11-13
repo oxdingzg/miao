@@ -383,19 +383,20 @@ pub fn command_exists(name: &str) -> bool {
     std::env::split_paths(&paths).any(|dir| {
         names.iter().any(|name| {
             let candidate = dir.join(name);
-            if !candidate.is_file() {
-                return false;
-            }
+            // One expression per platform: the early return followed by a bare
+            // `true` reads as a boolean literal to clippy >= 1.100, which then
+            // fails `-D warnings` on the Windows leg only.
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                candidate
-                    .metadata()
-                    .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+                candidate.is_file()
+                    && candidate
+                        .metadata()
+                        .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
             }
             #[cfg(not(unix))]
             {
-                true
+                candidate.is_file()
             }
         })
     })
