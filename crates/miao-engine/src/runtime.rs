@@ -3204,15 +3204,149 @@ async fn record_promotions(
     lease: &SessionLease,
 ) -> Result<(), Error> {
     for event in promoted {
+        let input_id = event.data["input_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
         inner
             .store
             .record_fenced(
                 session,
                 crate::events::Lifecycle::UserPromptSubmit.name(),
-                json!({"run_id":run,"input_id":event.data["input_id"]}),
+                json!({"run_id":run,"input_id":input_id}),
                 lease,
             )
             .await?;
+        // A blocked loop is a gate, not an off switch: the event that arrives
+        // after the block is what re-opens it.
+        rearm_blocked_loop(inner, session, run, &input_id).await?;
+    }
+    Ok(())
+}
+
+/// Inputs the engine admits on its own behalf. They are loop bookkeeping, so
+/// they never re-arm a blocked loop: the pause notice in particular used to
+/// wake the Session, restart the same unchanged drain, and emit an endless run
+/// of text-only replies (issue #2948).
+fn engine_input(input_id: &str) -> bool {
+    [
+        "goal:",
+        "empty:",
+        "transport:",
+        "verify:",
+        "retry-after",
+        "loop-paused-",
+        "allowance-",
+        "deadline-",
+        "prompt-budget-",
+        "compaction:",
+    ]
+    .iter()
+    .any(|prefix| input_id.starts_with(prefix))
+}
+
+/// Whether an arriving input is a background notice rather than the operator
+/// speaking. A notice storm must not re-open the same unchanged list forever.
+fn notification_input(input_id: &str) -> bool {
+    ["monitor:", "watch:", "cron:", "wakeup:", "task:"]
+        .iter()
+        .any(|prefix| input_id.starts_with(prefix))
+}
+
+/// A short, stable key for one todo-list signature, used as the operation id of
+/// the state write and of the pause notice so a replayed turn repeats neither.
+fn signature_key(signature: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    signature.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+/// The live no-progress block for exactly this todo list, if nothing re-armed
+/// it since. A changed list carries a different signature and releases the gate
+/// on its own, which is how a finished dependency resumes the work.
+async fn live_loop_block(
+    inner: &Inner,
+    session: &str,
+    signature: &str,
+) -> Result<Option<(u64, u64)>, Error> {
+    let Some(blocked) = inner.store.latest_event(session, "loop.blocked").await? else {
+        return Ok(None);
+    };
+    if blocked.data["signature"].as_str() != Some(signature) {
+        return Ok(None);
+    }
+    if let Some(armed) = inner.store.latest_event(session, "loop.armed").await? {
+        if armed.seq > blocked.seq {
+            return Ok(None);
+        }
+    }
+    Ok(Some((
+        blocked.seq,
+        blocked.data["round"].as_u64().unwrap_or(0),
+    )))
+}
+
+/// Re-open a blocked loop when a real event arrives and record why. The loop
+/// then resumes on its own; nothing is lost, because the todo list and the goal
+/// stay durable across the block.
+async fn rearm_blocked_loop(
+    inner: &Inner,
+    session: &str,
+    run: &str,
+    input_id: &str,
+) -> Result<(), Error> {
+    if engine_input(input_id) {
+        return Ok(());
+    }
+    let state = inner.store.state(session).await?;
+    let signature = serde_json::to_string(&state["todos"]["value"]["todos"])?;
+    let Some((_, round)) = live_loop_block(inner, session, &signature).await? else {
+        return Ok(());
+    };
+    let operator = !notification_input(input_id);
+    // Past the second round on the same unchanged list, only the operator or a
+    // changed list resumes it: a notice storm would otherwise restart the same
+    // two continuations every few seconds.
+    if !operator && round >= 2 {
+        return Ok(());
+    }
+    inner
+        .store
+        .record(
+            session,
+            "loop.armed",
+            json!({"run_id":run,"input_id":input_id,"round":round,"signature":signature}),
+        )
+        .await?;
+    // Clear only the block the engine wrote itself; a block the operator set
+    // their own off switch stays.
+    let goal = &state["goal"]["value"];
+    if goal["status"] == "blocked"
+        && goal["evidence"]
+            .as_str()
+            .is_some_and(|text| text.starts_with("loop: "))
+    {
+        let mut next = goal.clone();
+        next["status"] = json!("active");
+        next["evidence"] = json!(format!(
+            "loop: resumed automatically by an arriving {}.",
+            if operator {
+                "operator message"
+            } else {
+                "background notification"
+            }
+        ));
+        if let Ok(mutation) = crate::state::Mutation::parse("goal", next) {
+            inner
+                .store
+                .update_state(
+                    session,
+                    &format!("loop-armed-{}", signature_key(&signature)),
+                    mutation,
+                )
+                .await?;
+        }
     }
     Ok(())
 }
@@ -5608,7 +5742,12 @@ command: None,
                     };
                     inner
                         .store
-                        .inject(session, &format!("loop-paused-{run}"), &pause, "engine")
+                        .inject(
+                            session,
+                            &format!("loop-paused-{}-{blocked_round}", signature_key(&signature)),
+                            &pause,
+                            "engine",
+                        )
                         .await?;
                     // A continuation this run already admitted must not outlive
                     // the pause: a queued `goal:` input left behind is promoted by
