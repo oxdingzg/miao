@@ -41,23 +41,31 @@ names, so the host list below is the named baseline).
 | Missing failure list for `packages/miao` | `bun turbo test` stops at the first failing package, so `miao#test` was killed mid-run | Windows runs `bun turbo test --continue` |
 | `e2e (windows)` near the step timeout | The run took 28.3 minutes against a 30-minute cap | Windows e2e step timeout raised to 45 minutes |
 
+## Fixed on the build host 2026-11-13
+
+Four rows from the re-baseline merged the same day, each verified on the Windows build host:
+
+| Row | Fix | Verification |
+| --- | --- | --- |
+| `sqlite busy retry` cleanup EBUSY | #2949: close the busy-retry's leaked second connection; both cleanups take the shared tolerant remove | `bun test test/database-sqlite.test.ts` 3/0 on the host |
+| `Git status > reports structured working tree entries` | #2954: untracked-file additions were lost because the `/dev/null` pathspec resolves to nothing on Windows; the count now reads the file directly | `bun test test/git.test.ts` 7/0 on the host |
+| `MonitorTool > returns immediately…` + `MonitorTool > cancels the command…` | #2958: the fixture commands were Unix-only (`printf`, `sleep`); cmd-flavored equivalents (`echo`, `ping`) with identical assertions | `bun test test/tool-monitor.test.ts` 3/0 on the host |
+| `SessionHeal > relocates a Session whose directory vanished` | #2953: assert the notice on its own text — JSON.stringify doubles Windows backslashes, so the old path assertion could never match | `bun test test/session-heal.test.ts` 4/0 on the host |
+
 ## Remaining failures
 
 Re-baselined 2026-11-13 against a90a39102 on the Windows build host (`bun` 1.4.2 + Node 24,
-the CI-parity toolset; run-level CI evidence in 43363882232). The `packages/miao` rows below
-are gone because RUS-02 retired that package. The intermittent git-timeout rows passed the
-2026-11-13 dispatch and stay on watch.
+the CI-parity toolset; run-level CI evidence in 43363882232). The `packages/miao` rows from
+the first table are gone because RUS-02 retired that package. The intermittent git-timeout
+rows passed the 2026-11-13 dispatch and stay on watch.
 
 | Package | Test | Root cause class | Evidence | Next step |
 | --- | --- | --- | --- | --- |
 | core | `Git > fetches, checks out, and resets remote changes` | Many git child processes exceed the 5s default timeout (intermittent) | Failed in 36954890353; passed in 43363882232 | Keep watching; explicit timeout if it recurs |
 | core | `RepositoryCache > serializes concurrent materialization for the same checkout` | Same as above | `this test timed out after 5000ms` (36954890353); passed in 43363882232 | Same as above |
-| core | `sqlite busy retry` cleanup (reported as an unnamed failure) | Windows cannot `rm` a file a connection still holds (EBUSY, errno -4082); POSIX can, so the cleanup path is untested there | `EBUSY: resource busy or locked, rm 'C:\tmp\miao-sqlite-busy-*'` on the build host | Close connections before the temp-dir cleanup, or retry the rm |
-| core | `Git status > reports structured working tree entries` | Assertion under Windows git output (337ms, not a timeout) | Build host 2026-11-13 | Reproduce, read the diff, fix status parsing or the fixture |
-| core | `MonitorTool > returns immediately, delivers only matching lines, and reports the exit` and `MonitorTool > cancels the command and says so when the timeout elapses` | Spawn/line-delivery semantics on Windows (~25ms failures, not timeouts) | Build host 2026-11-13 (2 of 4 MonitorTool tests; the third is #2938-gated) | Same |
 | core | `ProjectWorktree > creates a populated worktree on a miao branch…` | Exceeds the 5s default timeout (git worktree + start script) | `this test timed out after 5000ms` on the build host | Give the test an explicit timeout, then check the pieces |
-| core | `ProjectWorktree > relocates anchored sessions to the checkout when removing a worktree` and `SessionHeal > relocates a Session whose directory vanished` | Same family as the EBUSY row: the fixture removes a directory Windows still holds, so "vanished" never becomes true | Build host 2026-11-13 | Same as the EBUSY row |
-| core | `MoveSession > moves (nested) session changes…` and `cross-spawn … .all` | Host-only flake on the build box (passed on the hosted runner era, appear/disappear between host runs) | Present in one host run, absent in the next | Watch; do not chase until it reproduces twice |
+| core | `ProjectWorktree > relocates anchored sessions…` + `MoveSession > moves (nested) session changes…` | The move/remove machinery leaves the destination without untracked files (ENOENT on `untracked.txt` at the destination) — one family with the EBUSY row | Build host 2026-11-13 | Debug the move step's untracked-file carry on Windows |
+| core | `cross-spawn … .all` | Host-only flake on the build box (absent from runs with Node preinstalled) | Present in one host run, absent in the next | Watch; do not chase until it reproduces twice |
 
 ### engine (windows) — release gate
 
@@ -122,7 +130,7 @@ off):
 | lib unittests | 655 passed / 0 failed — includes `every_shortcut_command_resolves_to_a_bound_chord` (#2892) |
 | `client_matrix` | 3/3 — narrow-pane pair and tmux (#2902) |
 | `input_latency` / `interaction_*` ×5 / `smoke` / `startup_latency` | all green (5, 1, 1, 1, 1, 1, 27, 2) |
-| `embedded_stream` | `a_cancel_lands_ahead_of_a_pouring_delta_flood` **overflows the stack** — the poll chain plus fixture future exceeds the default worker stack in an MSVC debug build |
+| `embedded_stream` | overflow **fixed by #2947**: the trigger was a global `HTTP_PROXY` pushing the loopback fixture request through the proxy (the proxy connect loop overflowed the stack); the engine now reaches loopback directly — verified 3/3 with the proxy variables set |
 | `idle_resources` | **hangs** in `a_prolonged_stream_does_not_grow_the_process` (40+ minutes against a sub-60-second deadline); killed so the rest of the suite could run, its other tests unmeasured |
 
 Two compile notes from the same host: `rustc` 1.98.1 on Windows ICEs
@@ -132,11 +140,10 @@ target compiles clean with `CARGO_INCREMENTAL=0`. And the debug tree with
 the codegraph grammar set is large enough that a C:-drive target directory
 ran out of space mid-build twice — build it against a roomier volume.
 
-These two failures are why the crate still has no Windows CI leg: adding
-one today would add a red job, not a gate. Fix the overflow (box or shrink
-the fixture future, or raise the worker stack) and the hang (an event wait
-that never fires on ConPTY) first; then a Windows leg becomes worth its
-runner minutes.
+One failure remains (the `idle_resources` hang — an event wait that never
+fires on ConPTY), and it is why the crate still has no Windows CI leg:
+adding one today would add a red job, not a gate. Fix the hang first; then
+a Windows leg becomes worth its runner minutes.
 
 
 ### e2e (windows)
