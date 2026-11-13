@@ -6,8 +6,8 @@
 
 use crate::protocol::ToolDefinition;
 use crate::tools::ToolError;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 

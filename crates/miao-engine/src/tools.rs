@@ -2612,7 +2612,9 @@ impl Tools {
                 }
                 name if crate::codegraph::is_codegraph(name) => {
                     let database = self.codegraph_path().ok_or_else(|| {
-                        ToolError::External("the code index needs an engine store to live in".into())
+                        ToolError::External(
+                            "the code index needs an engine store to live in".into(),
+                        )
                     })?;
                     crate::codegraph::execute(name, input, self.root.clone(), database).await
                 }

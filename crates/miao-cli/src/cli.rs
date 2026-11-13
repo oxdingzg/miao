@@ -7402,5 +7402,4 @@ mod identity {
                 .expect("valid root package.json");
         assert_eq!(super::VERSION, manifest["version"].as_str().unwrap());
     }
-
 }
