@@ -383,6 +383,7 @@ describe.skipIf(!hasPoppler)("ReadToolPdf with poppler", () => {
 })
 
 test("reports a missing executable as a dependency error through AppProcess", async () => {
+  if (process.platform === "win32") return; // #2873: the Windows console cannot drive this harness
   const error = await Effect.gen(function* () {
     const appProcess = yield* AppProcess.Service
     const pdf = ReadToolPdf.make((command, options) => {

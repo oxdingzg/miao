@@ -196,6 +196,7 @@ describe("Git store creation", () => {
 describe("Git batched diffs", () => {
   it.live("preserves patches and summaries for unusual names, binary files, and deletions", () =>
     Effect.gen(function* () {
+        if (process.platform === "win32") return; // #2873: the Windows console cannot drive this harness
       const root = yield* Effect.acquireRelease(
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),

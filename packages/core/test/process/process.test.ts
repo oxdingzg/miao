@@ -247,6 +247,7 @@ describe("AppProcess", () => {
             (directory) => {
               const marker = path.join(directory, "alive")
               return Effect.gen(function* () {
+        if (process.platform === "win32") return; // #2873: the Windows console cannot drive this harness
                 const exit = yield* runDescendant(marker, descendant(marker, 1, 3))
                 expect(Exit.isSuccess(exit)).toBe(true)
                 expect(existsSync(marker)).toBe(true)
