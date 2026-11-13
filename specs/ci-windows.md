@@ -51,6 +51,7 @@ Four rows from the re-baseline merged the same day, each verified on the Windows
 | `Git status > reports structured working tree entries` | #2954: untracked-file additions were lost because the `/dev/null` pathspec resolves to nothing on Windows; the count now reads the file directly | `bun test test/git.test.ts` 7/0 on the host |
 | `MonitorTool > returns immediately…` + `MonitorTool > cancels the command…` | #2958: the fixture commands were Unix-only (`printf`, `sleep`); cmd-flavored equivalents (`echo`, `ping`) with identical assertions | `bun test test/tool-monitor.test.ts` 3/0 on the host |
 | `SessionHeal > relocates a Session whose directory vanished` | #2953: assert the notice on its own text — JSON.stringify doubles Windows backslashes, so the old path assertion could never match | `bun test test/session-heal.test.ts` 4/0 on the host |
+| `MoveSession > moves (nested) session changes…` | #2965: the untracked-file capture diffed against `/dev/null`, a path a Windows process passes to git verbatim and git cannot open — the patch lost every untracked file; `NUL` is used there now | `bun test test/move-session.test.ts` 3/0 on the host |
 
 ## Remaining failures
 
@@ -64,7 +65,7 @@ rows passed the 2026-11-13 dispatch and stay on watch.
 | core | `Git > fetches, checks out, and resets remote changes` | Many git child processes exceed the 5s default timeout (intermittent) | Failed in 36954890353; passed in 43363882232 | Keep watching; explicit timeout if it recurs |
 | core | `RepositoryCache > serializes concurrent materialization for the same checkout` | Same as above | `this test timed out after 5000ms` (36954890353); passed in 43363882232 | Same as above |
 | core | `ProjectWorktree > creates a populated worktree on a miao branch…` | Exceeds the 5s default timeout (git worktree + start script) | `this test timed out after 5000ms` on the build host | Give the test an explicit timeout, then check the pieces |
-| core | `ProjectWorktree > relocates anchored sessions…` + `MoveSession > moves (nested) session changes…` | The move/remove machinery leaves the destination without untracked files (ENOENT on `untracked.txt` at the destination) — one family with the EBUSY row | Build host 2026-11-13 | Debug the move step's untracked-file carry on Windows |
+| core | `ProjectWorktree > relocates anchored sessions…` | After removing a worktree the anchored session still points at the worktree directory instead of the checkout — and the worktree-data root resolved a POSIX-style path to `C:\tmp\miao-worktree-data-…` (drive-relative `/tmp`) | Build host 2026-11-13, received-path capture | Debug the relocation trigger and the worktree-data root resolution on Windows |
 | core | `cross-spawn … .all` | Host-only flake on the build box (absent from runs with Node preinstalled) | Present in one host run, absent in the next | Watch; do not chase until it reproduces twice |
 
 ### engine (windows) — release gate
