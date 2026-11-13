@@ -525,7 +525,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     let mode = args.first().map(String::as_str);
     if !matches!(mode, Some("serve" | "acp")) {
         eprintln!(
-            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH | --agent-name NAME] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off] [--context-limits JSON] [--optimizations JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
+            "Usage: miao-engine serve --db PATH --workspace PATH --model MODEL [--provider anthropic|openai-chat|openai-responses|subscription-responses|gemini|amazon-bedrock] [--endpoint URL] [--policy PATH] [--agent-config PATH | --agent-name NAME] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off] [--codegraph on|off] [--context-limits JSON] [--optimizations JSON] [--http ADDR [--http-token TOKEN]]\n       miao-engine acp --db PATH --workspace PATH --model MODEL [--provider ...] [--endpoint URL] [--policy PATH] [--agent-config PATH] [--config-dir PATH] [--mode read-only|workspace] [--permission-root-db PATH --permission-project ID] [--verify-command COMMAND] [--prompt-cache on|off] [--responses-cache-contract JSON] [--responses-websocket-contract JSON] [--tool-disclosure full|compact] [--mcp-disclosure off|threshold|always [--mcp-disclosure-allowlist ALIAS,...]] [--lsp-diagnostics on|off]\n       miao-engine export --db PATH --session ID [--after CURSOR]\n       miao-engine config explain --config-dir PATH | --config-sources JSON|-\n       miao-engine doctor [--db PATH]\n       miao-engine retention --db PATH [--session ID] [--apply]\n       miao-engine permissions --db PATH --project ID [--directory PATH [--workspace-id ID]]\n       miao-engine permission-source --db PATH --project ID --directory PATH\nUse ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY for the selected provider. Bedrock uses AWS_BEARER_TOKEN_BEDROCK or the AWS SDK credential chain (--aws-region/--aws-profile). An explicit engine database is required."
 
         );
         std::process::exit(2);
@@ -562,6 +562,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             "--lsp-config",
             "--formatter-config",
             "--lsp-diagnostics",
+            "--codegraph",
             "--context-limits",
             "--optimizations",
             "--hooks-config",
@@ -984,6 +985,11 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             None | Some("on") => true,
             Some("off") => false,
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
+        })
+        .with_codegraph(match options.get("--codegraph").map(String::as_str) {
+            None | Some("off") => false,
+            Some("on") => true,
+            Some(_) => return Err("--codegraph must be on or off".into()),
         });
     let mut route_limits = miao_engine::model_routes::RouteLimits::default();
     let mut model_origin = None;
