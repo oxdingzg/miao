@@ -597,6 +597,10 @@ pub struct App {
     /// fixture instead of the operator's live Zed database.
     zed_probe: fn(&Path) -> Option<zed::Selection>,
     clipboard_busy: bool,
+    /// A submit held because the draft's `[Image N]` markers outnumber the
+    /// attached pictures: the async clipboard read is still catching up, and
+    /// the held prompt resends once it lands.
+    held_prompt: Option<(String, Vec<Value>)>,
     startup: Startup,
     /// Built-in plus custom themes, in menu order.
     themes: theme::Catalog,
@@ -748,6 +752,7 @@ impl App {
             zed_polled: None,
             zed_probe: zed::selection,
             clipboard_busy: false,
+            held_prompt: None,
             startup,
             themes,
             live: None,
@@ -1002,6 +1007,11 @@ impl App {
                     Some(clipboard::Content::Image { mime, data }) => {
                         let count = self.shell.composer.attach_image(&mime, &data);
                         self.notice(&format!("attached image {count}"));
+                        // A held prompt was waiting for exactly this picture:
+                        // once it lands, send what was held.
+                        if let Some((text, _attachments)) = self.held_prompt.take() {
+                            self.submit(text, self.shell.composer.attachments().to_vec());
+                        }
                     }
                     Some(clipboard::Content::Text(text)) => {
                         // The clipboard is the second half of an empty paste,
@@ -1014,8 +1024,25 @@ impl App {
                         if !taken {
                             self.shell.composer.paste(&text);
                         }
+                        // Text is not the picture a held prompt wanted; give
+                        // the draft back with a way out.
+                        if let Some((held, attachments)) = self.held_prompt.take() {
+                            self.shell.composer.restore_with(&held, attachments);
+                            self.notice(
+                                "the clipboard holds no picture: paste it again or remove the image marker",
+                            );
+                        }
                     }
-                    None => self.notice("the clipboard is empty"),
+                    None => {
+                        if let Some((held, attachments)) = self.held_prompt.take() {
+                            self.shell.composer.restore_with(&held, attachments);
+                            self.notice(
+                                "the clipboard holds no picture: paste it again or remove the image marker",
+                            );
+                        } else {
+                            self.notice("the clipboard is empty");
+                        }
+                    }
                 }
             }
             AppEvent::EditorFinished(result) => match result {
@@ -4781,6 +4808,29 @@ impl App {
         self.submit(text, attachments);
     }
 
+    /// Count the `[Image N]` markers in a draft. A marker without a backing
+    /// attachment sends literal text to the model, which is the silent
+    /// picture loss this guard exists for.
+    fn image_markers(text: &str) -> usize {
+        let mut count = 0;
+        let mut cursor = 0;
+        while let Some(offset) = text[cursor..].find("[Image ") {
+            let start = cursor + offset;
+            let mut scan = start + "[Image ".len();
+            let digits = scan;
+            while scan < text.len() && text.as_bytes()[scan].is_ascii_digit() {
+                scan += 1;
+            }
+            if scan > digits && text[scan..].starts_with(']') {
+                count += 1;
+                cursor = scan + 1;
+            } else {
+                cursor = start + "[Image ".len();
+            }
+        }
+        count
+    }
+
     /// The composer's exit words (`exit`, `quit`, with or without the slash)
     /// quit instead of becoming prompts, the way the TS composer answers them.
     fn accept_exit_word(&mut self, text: &str) -> bool {
@@ -4889,6 +4939,35 @@ impl App {
             .map(ModelInfo::binding);
         if let Some(binding) = binding {
             engine.select_model(&session_id, binding);
+        }
+        // A recall or a re-pasted prompt can carry an `[Image N]` marker whose
+        // bytes are gone (the history keeps text, not attachments), and a
+        // fast Enter can also race the async clipboard read. Sending the
+        // marker alone is the silent failure operators read as "the model
+        // cannot see my image": hold the draft once so the in-flight read
+        // can land, and surface the orphan if it still is not there.
+        let markers = Self::image_markers(&text);
+        if markers > attachments.len() {
+            if self.held_prompt.is_none() {
+                let busy = self.clipboard_busy;
+                self.held_prompt = Some((text.clone(), attachments.clone()));
+                self.shell.composer.restore_with(&text, attachments);
+                self.notice(if busy {
+                    "finishing the image attachment…"
+                } else {
+                    "the draft references an image that is not attached; reading the clipboard…"
+                });
+                if !busy {
+                    self.read_clipboard();
+                }
+                return;
+            }
+            self.held_prompt = None;
+            self.shell.composer.restore_with(&text, attachments);
+            self.notice(&format!(
+                "[Image {markers}] has no attachment in this draft: paste the picture again or remove the marker"
+            ));
+            return;
         }
         engine.prompt(&session_id, &text, attachments);
         // The prompt left the composer, so its draft is gone too: keeping it
@@ -6610,6 +6689,68 @@ mod tests {
         assert_eq!(text.as_str(), "[Image 1] ");
         assert_eq!(attachments.len(), 1);
         assert_eq!(attachments[0]["mime"], "image/png");
+    }
+
+    /// A recall or a re-pasted prompt can carry an `[Image N]` marker whose
+    /// bytes are gone. The submit holds instead of sending the marker alone,
+    /// and the clipboard picture (when it lands) completes the prompt.
+    #[test]
+    fn an_orphan_image_marker_holds_then_sends_when_the_clipboard_lands() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_hold", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        app.submit("[Image 1] describe this".into(), Vec::new());
+        // Housekeeping requests (model pin, rename) may precede the hold; the
+        // guard is about the prompt itself.
+        let sent = control_requests(&mut requests);
+        assert!(
+            sent.iter().all(|request| !matches!(request, engine::Request::Prompt { .. })),
+            "an orphan marker must not send: {} request(s)", sent.len()
+        );
+        assert!(app.held_prompt.is_some());
+        app.handle(AppEvent::Clipboard(Some(clipboard::Content::Image {
+            mime: "image/png".into(),
+            data: "cG5n".into(),
+        })));
+        let asked = control_requests(&mut requests);
+        let [engine::Request::Prompt { attachments, .. }] = asked.as_slice() else {
+            panic!("the held prompt must send once the picture lands");
+        };
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0]["mime"], "image/png");
+    }
+
+    /// No picture on the clipboard: the hold blocks with a notice instead of
+    /// sending the marker alone.
+    #[test]
+    fn a_held_orphan_marker_blocks_when_the_clipboard_has_no_picture() {
+        let mut app = session_app();
+        let (handle, mut requests) = engine::Handle::recording();
+        app.attach_engine(handle);
+        app.handle(AppEvent::SessionOpened {
+            summary: Some(summary("ses_hold_none", 1)),
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState::default()),
+        });
+        app.submit("[Image 1] describe this".into(), Vec::new());
+        app.handle(AppEvent::Clipboard(None));
+        let sent = control_requests(&mut requests);
+        assert!(
+            sent.iter().all(|request| !matches!(request, engine::Request::Prompt { .. })),
+            "no picture, no send: {} request(s)", sent.len()
+        );
+        assert!(app.held_prompt.is_none());
+        assert!(app
+            .shell
+            .composer
+            .notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("paste it again")));
     }
 
     fn approval_state() -> SessionState {
