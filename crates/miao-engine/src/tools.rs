@@ -1230,9 +1230,9 @@ impl Tools {
         self
     }
 
-    /// The built-in code index. Off unless the host asks for it: its tool
-    /// definitions cost tokens on every turn, and indexing a workspace is the
-    /// operator's decision.
+    /// The built-in code index. On by default; the host turns it off when the
+    /// operator asked to (its tool definitions cost tokens on every turn, so the
+    /// off switch has to exist even though the default is on).
     pub(crate) fn with_codegraph(mut self, enabled: bool) -> Self {
         self.codegraph = enabled;
         self

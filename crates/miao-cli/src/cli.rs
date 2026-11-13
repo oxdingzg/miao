@@ -2024,10 +2024,12 @@ fn mcp_servers(layers: &[PathBuf]) -> Result<Vec<serde_json::Value>, String> {
     Ok(servers)
 }
 
-/// Whether the built-in code index is on for this start. The workspace
-/// configuration decides; `MIAO_CODEGRAPH` overrides it for one run, which is
-/// what an A/B measurement needs. Absent configuration means off: the index
-/// writes a store, and indexing a workspace is the operator's decision.
+/// Whether the built-in code index is on for this start. It is on unless the
+/// workspace configuration or `MIAO_CODEGRAPH` turns it off: the index costs one
+/// store file beside the engine's own and a few seconds on the first call, and
+/// it repays that several times over in tokens and tool calls. A default nobody
+/// has to discover is the point of shipping it built in; an operator who wants
+/// the tokens back can say so once.
 fn codegraph_enabled(layers: &[PathBuf], env: &impl Fn(&str) -> Option<String>) -> bool {
     if let Some(value) = env("MIAO_CODEGRAPH") {
         return matches!(
@@ -2036,14 +2038,15 @@ fn codegraph_enabled(layers: &[PathBuf], env: &impl Fn(&str) -> Option<String>) 
         );
     }
     let Some(parsed) = merged_config(layers) else {
-        return false;
+        return true;
     };
     match parsed.get("codegraph") {
         Some(serde_json::Value::Bool(enabled)) => *enabled,
-        Some(serde_json::Value::Object(section)) => {
-            section.get("enabled").and_then(|value| value.as_bool()) == Some(true)
-        }
-        _ => false,
+        Some(serde_json::Value::Object(section)) => section
+            .get("enabled")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true),
+        _ => true,
     }
 }
 
@@ -7373,34 +7376,34 @@ mod tests {
     }
 
     #[test]
-    fn the_code_index_is_switched_on_by_configuration_or_environment() {
-        let (root, global, workspace) = layered_fixture("codegraph-switch");
+    fn the_code_index_is_on_by_default_and_configuration_or_the_environment_can_turn_it_off() {
+        let (root, global, workspace) = layered_fixture("codegraph-default");
         let db = root.join("miao.db");
-        let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
-        assert!(
-            !argv.iter().any(|arg| arg == "--codegraph"),
-            "off unless asked for: {argv:?}"
-        );
-        std::fs::write(
-            global.join("miao.json"),
-            r#"{ "model": "deepseek", "codegraph": { "enabled": true }, "providers": { "vendor": { "api": { "type": "openai", "url": "https://global.test/v1" }, "models": { "deepseek": {} } } } }"#,
-        )
-        .expect("global config");
         let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
         let position = argv
             .iter()
             .position(|arg| arg == "--codegraph")
-            .expect("configuration switches the index on");
+            .expect("the index is on without any configuration");
         assert_eq!(argv.get(position + 1).map(String::as_str), Some("on"));
+        std::fs::write(
+            global.join("miao.json"),
+            r#"{ "model": "deepseek", "codegraph": { "enabled": false }, "providers": { "vendor": { "api": { "type": "openai", "url": "https://global.test/v1" }, "models": { "deepseek": {} } } } }"#,
+        )
+        .expect("global config");
+        let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
+        assert!(
+            !argv.iter().any(|arg| arg == "--codegraph"),
+            "configuration turns it off: {argv:?}"
+        );
         let env = |name: &str| -> Option<String> {
             match name {
-                "MIAO_CODEGRAPH" => Some("0".into()),
+                "MIAO_CODEGRAPH" => Some("1".into()),
                 other => fixture_env(&root)(other),
             }
         };
         let argv = engine_argv_with(&db, &workspace, "", None, env);
         assert!(
-            !argv.iter().any(|arg| arg == "--codegraph"),
+            argv.iter().any(|arg| arg == "--codegraph"),
             "the environment overrides configuration: {argv:?}"
         );
         std::fs::remove_dir_all(&root).ok();
