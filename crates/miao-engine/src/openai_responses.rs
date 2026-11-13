@@ -55,7 +55,7 @@ impl OpenAIResponses {
         profile: Profile,
     ) -> Result<Self, reqwest::Error> {
         Ok(Self {
-            client: reqwest::Client::builder()
+            client: crate::provider::http_client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,

@@ -1517,7 +1517,7 @@ async fn oauth_bearer(oauth: &Oauth) -> Result<String, Error> {
                 && url.fragment().is_none()
         })
         .ok_or_else(invalid)?;
-    let client = reqwest::Client::builder()
+    let client = crate::provider::http_client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(15))
         .build()

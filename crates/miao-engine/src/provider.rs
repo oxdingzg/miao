@@ -694,6 +694,123 @@ pub struct Anthropic {
     extra_headers: BTreeMap<String, String>,
 }
 
+/// The provider HTTP client honours the operator's proxy environment for
+/// external endpoints but always reaches loopback directly: the embedded
+/// engine talks to local gateways and test fixtures, and a global
+/// `HTTP_PROXY` that cannot see into the operator's machine turns every
+/// provider call into a proxy connect loop. reqwest's own env support has
+/// no loopback escape, so proxy resolution is owned here; the operator's
+/// `NO_PROXY` entries apply beside an always-on loopback set.
+pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
+    let no_proxy = reqwest::NoProxy::from_string(&no_proxy_entries(|name| std::env::var(name).ok()));
+    let mut builder = reqwest::Client::builder();
+    for scheme in ["https", "http"] {
+        if let Some(url) = proxy_url(scheme, |name| std::env::var(name).ok()) {
+            let addressed = match scheme {
+                "https" => reqwest::Proxy::https(&url),
+                _ => reqwest::Proxy::http(&url),
+            };
+            if let Ok(proxy) = addressed {
+                builder = builder.proxy(proxy.no_proxy(no_proxy.clone()));
+            }
+        }
+    }
+    builder
+}
+
+fn proxy_url(scheme: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
+    let (specific, common): (&[&str], &[&str]) = match scheme {
+        "https" => (&["HTTPS_PROXY", "https_proxy"], &["ALL_PROXY", "all_proxy"]),
+        _ => (&["HTTP_PROXY", "http_proxy"], &["ALL_PROXY", "all_proxy"]),
+    };
+    specific
+        .iter()
+        .chain(common)
+        .find_map(|name| env(name).filter(|value| !value.trim().is_empty()))
+}
+
+fn no_proxy_entries(env: impl Fn(&str) -> Option<String>) -> String {
+    let mut entries = vec![
+        "localhost".to_string(),
+        "127.0.0.1/8".to_string(),
+        "::1".to_string(),
+    ];
+    if let Some(user) = env("NO_PROXY").or_else(|| env("no_proxy")) {
+        let mut owned: Vec<String> = user
+            .split(',')
+            .map(|entry| entry.trim().to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        owned.append(&mut entries);
+        entries = owned;
+    }
+    entries.join(",")
+}
+
+#[cfg(test)]
+mod proxy_resolution_tests {
+    use super::{no_proxy_entries, proxy_url};
+
+    /// `HTTPS_PROXY`/`HTTP_PROXY` win for their own scheme; `ALL_PROXY` is the
+    /// common fallback; an empty value means unset, the way operators leave a
+    /// variable defined but blank.
+    #[test]
+    fn scheme_specific_variables_precede_the_common_one() {
+        let https = |name: &str| match name {
+            "HTTPS_PROXY" => Some("http://specific:3128".to_string()),
+            "ALL_PROXY" => Some("socks5://common:1080".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            proxy_url("https", https),
+            Some("http://specific:3128".to_string())
+        );
+        let common_only = |name: &str| match name {
+            "ALL_PROXY" => Some("socks5://common:1080".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            proxy_url("https", common_only),
+            Some("socks5://common:1080".to_string())
+        );
+        // ALL_PROXY is the common fallback for both schemes.
+        assert_eq!(
+            proxy_url("http", common_only),
+            Some("socks5://common:1080".to_string())
+        );
+        let https_specific = |name: &str| match name {
+            "HTTPS_PROXY" => Some("http://specific:3128".to_string()),
+            _ => None,
+        };
+        assert_eq!(proxy_url("http", https_specific), None);
+        let blank = |name: &str| match name {
+            "HTTP_PROXY" => Some("   ".to_string()),
+            _ => None,
+        };
+        assert_eq!(proxy_url("http", blank), None);
+    }
+
+    /// The operator's entries lead, and the loopback set is always present:
+    /// the engine's fixtures and local gateways must be reachable with a
+    /// global `HTTP_PROXY` that cannot see into the operator's machine.
+    #[test]
+    fn no_proxy_always_carries_the_loopback_set() {
+        let none = |name: &str| None::<String>;
+        assert_eq!(
+            no_proxy_entries(none),
+            "localhost,127.0.0.1/8,::1".to_string()
+        );
+        let user = |name: &str| match name {
+            "NO_PROXY" => Some("corp.internal, 10.0.0.0/8, ".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            no_proxy_entries(user),
+            "corp.internal,10.0.0.0/8,localhost,127.0.0.1/8,::1".to_string()
+        );
+    }
+}
+
 impl Anthropic {
     pub fn new(endpoint: String, key: String, model: String) -> Result<Self, reqwest::Error> {
         Self::with_source(endpoint, Source::Static(Credential::key(key)), model)
@@ -705,7 +822,7 @@ impl Anthropic {
         model: String,
     ) -> Result<Self, reqwest::Error> {
         Ok(Self {
-            client: reqwest::Client::builder()
+            client: http_client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,
@@ -731,7 +848,7 @@ impl Anthropic {
         model: String,
     ) -> Result<Self, reqwest::Error> {
         Ok(Self {
-            client: reqwest::Client::builder()
+            client: http_client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,
