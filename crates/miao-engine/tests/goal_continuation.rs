@@ -122,6 +122,69 @@ async fn setup(
     seed_work(store, ready, location).await;
     store.update_state("s", "goal", Mutation::parse("goal", json!({"objective":"Finish tasks","status":status,"autonomous":autonomous,"evidence":"Explicit engagement state"})).unwrap()).await.unwrap();
 }
+/// Wait for the n-th completed run. `finished` returns on the first one it
+/// finds, which is enough for one run but not for a sequence of runs.
+async fn finished_runs(store: &Store, wanted: usize) {
+    let mut after = 0;
+    let mut seen = 0;
+    tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        loop {
+            let events = store.events("s", after, 5000).await.unwrap();
+            seen += events
+                .iter()
+                .filter(|event| event.kind == "run.finished")
+                .count();
+            if seen >= wanted {
+                return;
+            }
+            if let Some(event) = events.last() {
+                after = event.seq;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("run.finished #{wanted} was not seen after cursor {after}"));
+}
+
+fn notification(index: usize) -> Input {
+    Input {
+        agent_references: Default::default(),
+        command: None,
+        session_id: "s".into(),
+        input_id: format!("monitor:job1:{index}"),
+        prompt: format!("watch \"job1\" matched: tick {index}"),
+        delivery: Delivery::Queue,
+    }
+}
+
+fn operator(index: usize) -> Input {
+    Input {
+        agent_references: Default::default(),
+        command: None,
+        session_id: "s".into(),
+        input_id: format!("in_operator_{index}"),
+        prompt: "继续".into(),
+        delivery: Delivery::Queue,
+    }
+}
+
+async fn waiting_runtime(store: &Store, provider: Arc<Script>, dir: &std::path::Path) -> Runtime {
+    Runtime::with_policy(
+        store.clone(),
+        provider,
+        Tools::new(dir).await.unwrap(),
+        Policy::new(Config {
+            continuation_min_interval_ms: 0,
+            mode: Mode::Workspace,
+            ..Config::default()
+        })
+        .unwrap(),
+    )
+    .await
+    .unwrap()
+}
+
 async fn finished(store: &Store) {
     // Advance through the bounded journal pages rather than repeatedly
     // parsing the entire growing prefix and competing with durable writes.
@@ -613,4 +676,164 @@ async fn one_tool_call_does_not_retire_the_no_progress_guard_for_the_rest_of_the
     // The tool turn, two idling replies, and the reply that answers the pause.
     assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
     runtime.shutdown().await;
+}
+
+// Issue #2948: the pause used to bound only the run that raised it, and a
+// background notice re-opened it, so one Session emitted 94 text-only "still
+// waiting" replies while it was really waiting on the operator.
+#[tokio::test]
+async fn a_blocked_loop_survives_a_notification_storm() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    setup(&store, "active", true, true, dir.path()).await;
+    let provider = Arc::new(Script {
+        calls: AtomicUsize::new(0),
+        progress: false,
+        churn: false,
+        finish_after: None,
+    });
+    let runtime = waiting_runtime(&store, provider.clone(), dir.path()).await;
+    async fn me(store: &Store, runtime: &Runtime, run: usize, input: Option<Input>) -> Vec<String> {
+        if let Some(input) = input {
+            store.admit(input).await.unwrap();
+        }
+        runtime.resume("s").await.unwrap();
+        finished_runs(store, run).await;
+        let events = store.events("s", 0, 5000).await.unwrap();
+        events
+            .iter()
+            .filter(|event| event.kind.starts_with("loop."))
+            .map(|event| format!("{}:{}", event.kind, event.data["round"]))
+            .collect()
+    }
+    let first = me(&store, &runtime, 1, None).await;
+    let blocked = |events: &[String]| {
+        events
+            .iter()
+            .filter(|event| event.starts_with("loop.blocked"))
+            .count()
+    };
+    assert_eq!(blocked(&first), 1, "{first:?}");
+    // The first notice is one round of grace: a finished job may genuinely be
+    // the news the loop was waiting for.
+    let second = me(&store, &runtime, 2, Some(notification(0))).await;
+    for event in store.events("s", 0, 5000).await.unwrap() {
+        if event.kind == "run.finished" || event.kind.starts_with("loop.") {
+            eprintln!(
+                "DBG {} {} reason={} round={}",
+                event.seq, event.kind, event.data["reason"], event.data["round"]
+            );
+        }
+        if event.kind == "input.promoted"
+            && !event.data["input_id"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("goal:")
+        {
+            eprintln!(
+                "DBG {} input.promoted {}",
+                event.seq, event.data["input_id"]
+            );
+        }
+    }
+    assert_eq!(blocked(&second), 2, "{second:?}");
+    let continuations = |events: &[String]| {
+        events
+            .iter()
+            .filter(|event| event.starts_with("loop.continuation"))
+            .count()
+    };
+    assert!(continuations(&second) > continuations(&first), "{second:?}");
+    // Past that round a notice feeds nothing: it must not restart the drain.
+    let third = me(&store, &runtime, 3, Some(notification(1))).await;
+    assert_eq!(
+        continuations(&third),
+        continuations(&second),
+        "a notice after the grace round restarted the drain: {third:?}"
+    );
+    let fourth = me(&store, &runtime, 4, Some(notification(2))).await;
+    assert_eq!(continuations(&fourth), continuations(&second), "{fourth:?}");
+    let state = store.state("s").await.unwrap();
+    assert_eq!(state["goal"]["value"]["status"], "blocked");
+    assert!(state["goal"]["value"]["evidence"]
+        .as_str()
+        .is_some_and(|text| text.starts_with("loop: ")));
+}
+
+// The other half of the contract: a block is a gate, not an off switch, so the
+// operator speaking re-opens it without any resume command.
+#[tokio::test]
+async fn an_operator_message_re_arms_a_blocked_loop() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    setup(&store, "active", true, true, dir.path()).await;
+    let provider = Arc::new(Script {
+        calls: AtomicUsize::new(0),
+        progress: false,
+        churn: false,
+        finish_after: None,
+    });
+    let runtime = waiting_runtime(&store, provider.clone(), dir.path()).await;
+    runtime.resume("s").await.unwrap();
+    finished_runs(&store, 1).await;
+    assert_eq!(
+        store.state("s").await.unwrap()["goal"]["value"]["status"],
+        "blocked"
+    );
+    let before = store
+        .events("s", 0, 5000)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|event| event.kind == "loop.continuation")
+        .count();
+    store.admit(operator(1)).await.unwrap();
+    runtime.resume("s").await.unwrap();
+    finished_runs(&store, 2).await;
+    let events = store.events("s", 0, 5000).await.unwrap();
+    assert!(
+        events.iter().any(|event| event.kind == "loop.armed"),
+        "{:?}",
+        events
+            .iter()
+            .filter(|event| event.kind.starts_with("loop."))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        events
+            .iter()
+            .filter(|event| event.kind == "loop.continuation")
+            .count()
+            > before,
+        "the re-armed loop keeps working"
+    );
+}
+
+// An operator who parks a goal keeps it parked: only a goal they set back to
+// active continues, never a background notice.
+#[tokio::test]
+async fn an_operator_pause_is_not_re_armed_by_a_notification() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    setup(&store, "paused", true, true, dir.path()).await;
+    let provider = Arc::new(Script {
+        calls: AtomicUsize::new(0),
+        progress: false,
+        churn: false,
+        finish_after: None,
+    });
+    let runtime = waiting_runtime(&store, provider.clone(), dir.path()).await;
+    runtime.resume("s").await.unwrap();
+    finished_runs(&store, 1).await;
+    store.admit(notification(9)).await.unwrap();
+    runtime.resume("s").await.unwrap();
+    finished_runs(&store, 2).await;
+    let events = store.events("s", 0, 5000).await.unwrap();
+    assert!(!events
+        .iter()
+        .any(|event| event.kind == "loop.continuation" || event.kind == "loop.armed"));
+    assert_eq!(
+        store.state("s").await.unwrap()["goal"]["value"]["status"],
+        "paused"
+    );
 }

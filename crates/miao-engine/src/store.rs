@@ -4659,6 +4659,24 @@ impl Store {
                       AND json_extract(data,'$.input_id') NOT LIKE 'goal:%'
                       AND json_extract(data,'$.input_id') NOT LIKE 'loop-paused-%'
                       AND json_extract(data,'$.input_id') NOT LIKE 'task:%'
+                      AND (
+                        -- The operator speaking, or any other external input,
+                        -- always re-opens the loop.
+                        (json_extract(data,'$.input_id') NOT LIKE 'monitor:%'
+                         AND json_extract(data,'$.input_id') NOT LIKE 'watch:%'
+                         AND json_extract(data,'$.input_id') NOT LIKE 'cron:%'
+                         AND json_extract(data,'$.input_id') NOT LIKE 'wakeup:%')
+                        -- A background notice re-opens only the first round of
+                        -- one unchanged list. Without that bound a Session that
+                        -- was really waiting emitted a text-only reply per
+                        -- notice for hours: 94 of them and 76 continuations in
+                        -- eight hours (#2948).
+                        OR COALESCE((SELECT json_extract(blocked.data,'$.round')
+                                     FROM engine_event blocked
+                                     WHERE blocked.session_id=?1
+                                       AND blocked.kind='loop.blocked'
+                                     ORDER BY blocked.seq DESC LIMIT 1), 0) < 2
+                      )
                  ), 0))",
                 params![session],
                 |row| row.get(0),
