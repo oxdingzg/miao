@@ -31,7 +31,7 @@ const scopedTmp = Effect.acquireRelease(
 const win = process.platform === "win32"
 const startCommand = win ? "type nul > started.txt" : "touch started.txt"
 
-const dataRoot = await fs.realpath(await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "miao-worktree-data-")))
+const dataRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "miao-worktree-data-")))
 afterAll(() => fs.rm(dataRoot, { recursive: true, force: true }))
 
 const it = testEffect(
