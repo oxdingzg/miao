@@ -31,6 +31,7 @@ pub mod terminal_title;
 pub mod theme;
 pub mod tool;
 pub mod transport;
+pub mod update;
 pub mod workspace_changes;
 pub mod worktrees;
 
@@ -98,6 +99,10 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
         config.attention,
         startup,
     );
+    // An upgrade swaps the launcher's symlink and leaves running processes on
+    // their old build, so the strip says when a newer build is installed. It is
+    // read once at startup: the operator acts on it by restarting.
+    app.set_pending_update(update::pending());
     app.configure_terminal_title(
         state::preferences().terminal_title_enabled.unwrap_or(true),
         !std::env::var("MIAO_DISABLE_TERMINAL_TITLE")
