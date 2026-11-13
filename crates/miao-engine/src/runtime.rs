@@ -375,7 +375,7 @@ enum Command {
 fn window_limits(window: u64) -> ContextLimits {
     ContextLimits {
         window,
-        ratio: 0.9,
+        ratio: 0.88,
         // Mirrors the product's headroom: pruning protection, the summary
         // reserve, and the default slack.
         headroom: 40_000 + 2_048 + 20_000,

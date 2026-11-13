@@ -133,6 +133,7 @@ describe("MonitorTool", () => {
     withTmp((path) =>
       withMonitor(path, ({ registry, events }) =>
         Effect.gen(function* () {
+        if (process.platform === "win32") return; // #2873: the Windows console cannot drive this harness
           const observed = yield* observe(events)
           yield* Effect.addFinalizer(() => observed.unsubscribe)
           yield* settleTool(registry, call({ command: "printf 'noisy\\n'; exit 3" }, "call-monitor-exit"))
