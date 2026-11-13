@@ -26,6 +26,11 @@ const scopedTmp = Effect.acquireRelease(
   (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
 ).pipe(Effect.flatMap((dir) => Effect.promise(() => fs.realpath(dir.path))))
 
+// The project's start command runs through the operator's shell, which has
+// no `touch` on Windows; `type nul >` creates the same empty marker file.
+const win = process.platform === "win32"
+const startCommand = win ? "type nul > started.txt" : "touch started.txt"
+
 const dataRoot = await fs.realpath(await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "miao-worktree-data-")))
 afterAll(() => fs.rm(dataRoot, { recursive: true, force: true }))
 
@@ -64,7 +69,7 @@ const setup = Effect.gen(function* () {
       worktree: AbsolutePath.make(repo),
       vcs: "git",
       sandboxes: [],
-      commands: { start: "touch started.txt" },
+      commands: { start: startCommand },
       time_created: 1,
       time_updated: 1,
     })
