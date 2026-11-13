@@ -702,7 +702,8 @@ pub struct Anthropic {
 /// no loopback escape, so proxy resolution is owned here; the operator's
 /// `NO_PROXY` entries apply beside an always-on loopback set.
 pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
-    let no_proxy = reqwest::NoProxy::from_string(&no_proxy_entries(|name| std::env::var(name).ok()));
+    let no_proxy =
+        reqwest::NoProxy::from_string(&no_proxy_entries(|name| std::env::var(name).ok()));
     let mut builder = reqwest::Client::builder();
     for scheme in ["https", "http"] {
         if let Some(url) = proxy_url(scheme, |name| std::env::var(name).ok()) {
@@ -795,7 +796,7 @@ mod proxy_resolution_tests {
     /// global `HTTP_PROXY` that cannot see into the operator's machine.
     #[test]
     fn no_proxy_always_carries_the_loopback_set() {
-        let none = |name: &str| None::<String>;
+        let none = |_: &str| None::<String>;
         assert_eq!(
             no_proxy_entries(none),
             "localhost,127.0.0.1/8,::1".to_string()
