@@ -1088,7 +1088,18 @@ const layer = Layer.effect(
         execute(
           input.repository.worktree,
           proc,
-        )(["diff", "--binary", "--no-index", "--", "/dev/null", file]).pipe(
+        )([
+          "diff",
+          "--binary",
+          "--no-index",
+          "--",
+          // A Windows process receives "/dev/null" verbatim, and git then
+          // cannot open it ("Could not access '/dev/null/<file>'") — the
+          // captured patch silently loses every untracked file. NUL is the
+          // null device there and /dev/null stays for POSIX systems.
+          process.platform === "win32" ? "NUL" : "/dev/null",
+          file,
+        ]).pipe(
           Effect.mapError(
             (cause) => new PatchError({ operation: "capture", directory: input.path, message: cause.message, cause }),
           ),
