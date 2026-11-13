@@ -122,30 +122,38 @@ function Install-MiaoEngine {
     } else {
       # The product ships x64 on Windows, including under ARM emulation.
       $asset = 'miao-engine-windows-x64.zip'
-      $url = "https://github.com/oxdingzg/miao/releases/download/v$Version/$asset"
       $archive = Join-Path $stage $asset
       $fallback = $false
-      try {
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
-      } catch {
-        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-          # A release can ship without an engine archive (an older pipeline, a
-          # failed platform build). Bundle the newest archive that exists; the
-          # protocol probe below still refuses an engine this product cannot
-          # talk to, so a mismatch degrades to TypeScript sessions exactly like
-          # a missing archive.
-          $fallback = $true
-          $url = "https://github.com/oxdingzg/miao/releases/latest/download/$asset"
-          try {
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
-          } catch {
-            if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-              Write-Host 'This release has no native engine archive; the TypeScript compatibility CLI keeps its own engine.' -ForegroundColor DarkGray
-              return
-            }
-            throw
+      # dl.mtty.dev mirrors the repository's GitHub release paths; GitHub
+      # itself stays as the fallback for a mirror that is unreachable. A 404
+      # means the asset really is absent on both, so it stops the loop and
+      # the latest-release fallback below decides what that means.
+      $urls = @(
+        "https://dl.mtty.dev/releases/download/v$Version/$asset",
+        "https://github.com/oxdingzg/miao/releases/download/v$Version/$asset"
+      )
+      $downloaded = $false
+      foreach ($candidate in $urls) {
+        try {
+          Invoke-WebRequest -UseBasicParsing -Uri $candidate -OutFile $archive -TimeoutSec 300
+          $downloaded = $true
+          break
+        } catch {
+          if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) { break }
+        }
+      }
+      if (-not $downloaded) {
+        $fallback = $true
+        $url = "https://github.com/oxdingzg/miao/releases/latest/download/$asset"
+        try {
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 300
+        } catch {
+          if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+            Write-Host 'This release has no native engine archive; the TypeScript compatibility CLI keeps its own engine.' -ForegroundColor DarkGray
+            return
           }
-        } else { throw }
+          throw
+        }
       }
       $manifest = Join-Path $stage ($asset + '.sha256')
       Invoke-WebRequest -UseBasicParsing -Uri ($url + '.sha256') -OutFile $manifest -TimeoutSec 60
@@ -221,9 +229,21 @@ function Install-Miao {
   else {
     $Version = $Version -replace "^v", ""
     if (-not $Version) {
-      $release = Invoke-RestMethod -UseBasicParsing -Headers @{ "User-Agent" = "miao-installer" } `
-        -Uri "https://api.github.com/repos/$repo/releases/latest"
-      $Version = $release.tag_name -replace "^v", ""
+      # dl.mtty.dev redirects /releases/latest to the tag path, so the final
+      # URL names the version the same way the bash installer parses it;
+      # api.github.com stays as the fallback (and its 60-requests-an-hour
+      # budget stays unspent on the happy path).
+      $client = New-Object System.Net.Http.HttpClient
+      $client.AllowAutoRedirect = $false
+      $response = $client.GetAsync('https://dl.mtty.dev/releases/latest').Result
+      $location = $response.Headers.Location
+      if ($location) {
+        $Version = ($location.AbsoluteUri -split '/')[-1] -replace '^v', ''
+      } else {
+        $release = Invoke-RestMethod -UseBasicParsing -Headers @{ "User-Agent" = "miao-installer" } `
+          -Uri "https://api.github.com/repos/$repo/releases/latest"
+        $Version = $release.tag_name -replace "^v", ""
+      }
       if (-not $Version) { throw "Could not determine the latest miao version." }
     }
 
@@ -239,16 +259,26 @@ function Install-Miao {
       if ($installed) { Write-Host "Installed version: $installed" -ForegroundColor DarkGray }
     }
 
-    $url = "https://github.com/$repo/releases/download/v$Version/miao-windows-x64.zip"
+    # dl.mtty.dev mirrors the repository's GitHub release paths; GitHub
+    # itself stays as the fallback for a mirror that is unreachable.
+    $bases = @('https://dl.mtty.dev', "https://github.com/$repo")
+    $url = "$($bases[0])/releases/download/v$Version/miao-windows-x64.zip"
     Write-Host "Installing miao version $Version"
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ("miao_install_" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
       $zip = Join-Path $tmp "miao-windows-x64.zip"
-      try {
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+      $downloaded = $false
+      foreach ($base in $bases) {
+        try {
+          Invoke-WebRequest -UseBasicParsing -Uri "$base/releases/download/v$Version/miao-windows-x64.zip" -OutFile $zip
+          $downloaded = $true
+          break
+        } catch {
+          $url = "$base/releases/download/v$Version/miao-windows-x64.zip"
+        }
       }
-      catch {
+      if (-not $downloaded) {
         throw "Download failed for miao $Version ($url). Available releases: https://github.com/$repo/releases"
       }
       Expand-Archive -Force -Path $zip -DestinationPath $tmp
