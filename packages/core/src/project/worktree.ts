@@ -275,13 +275,31 @@ const layer = Layer.effect(
       // with a dead cwd: tools, snapshots, and every later resume fail. Move
       // every anchored Session back to the checkout — where exit_worktree would
       // have returned it — before the tree goes away, even when git has already
-      // forgotten the worktree registration.
-      const anchored = yield* db
+      // forgotten the worktree registration. On Windows canonical() lowercases
+      // the directory while the stored rows keep the drive's original case, so
+      // the fetch is a broad case-insensitive prefix probe and the exact
+      // anchored filter runs here, case-normalized.
+      const anchoredRows = yield* db
         .select({ id: SessionTable.id, directory: SessionTable.directory })
         .from(SessionTable)
-        .where(or(eq(SessionTable.directory, directory), like(SessionTable.directory, `${directory}/%`)))
+        .where(
+          or(
+            // SQLite LIKE is case-insensitive for ASCII: the bare form catches
+            // a session sitting exactly on the worktree directory whose case
+            // differs from canonical()'s lowercase form.
+            like(SessionTable.directory, directory),
+            like(SessionTable.directory, `${directory}/%`),
+            like(SessionTable.directory, `${directory}\\%`),
+            eq(SessionTable.directory, directory),
+          ),
+        )
         .all()
         .pipe(Effect.orDie)
+      const anchored = anchoredRows.filter((session) => {
+        const stored =
+          globalThis.process.platform === "win32" ? session.directory.toLowerCase() : session.directory
+        return stored === directory || stored.startsWith(`${directory}/`) || stored.startsWith(`${directory}\\`)
+      })
       for (const session of anchored) {
         yield* events.publish(SessionEvent.Moved, {
           sessionID: session.id,
