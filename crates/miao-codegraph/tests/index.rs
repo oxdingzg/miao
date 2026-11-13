@@ -467,3 +467,135 @@ fn an_astro_frontmatter_is_indexed_and_the_template_is_not() {
     );
     assert!(!answer.content.contains("<h1>"), "{}", answer.content);
 }
+
+#[test]
+fn the_second_language_batch_contributes_its_definitions() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    let cases: &[(&str, &str, &str)] = &[
+        (
+            "scripts/build.sh",
+            "source ./lib.sh\nbuildShell() {\n  echo hi\n}\n",
+            "buildShell",
+        ),
+        (
+            "web/index.html",
+            "<html><body><script>\nfunction bootHtml() { run(); }\n</script></body></html>\n",
+            "bootHtml",
+        ),
+        (
+            "db/schema.sql",
+            "CREATE TABLE users_sql (id int);\nCREATE FUNCTION add_one_sql(x int) RETURNS int AS $$ SELECT x; $$ LANGUAGE sql;\n",
+            "add_one_sql",
+        ),
+        (
+            "ios/App.m",
+            "@implementation FooObjc\n- (void)barObjc { [self baz]; }\n@end\n",
+            "barObjc",
+        ),
+        (
+            "lib/app.ex",
+            "defmodule FooElixir do\n  def barElixir(x) do\n    x\n  end\nend\n",
+            "barElixir",
+        ),
+        (
+            "src/app.erl",
+            "-module(foo_erlang).\nbarErlang(X) -> X.\n",
+            "barErlang",
+        ),
+        (
+            "src/App.hs",
+            "module FooHaskell where\nbarHaskell :: Int -> Int\nbarHaskell x = x\n",
+            "barHaskell",
+        ),
+        (
+            "src/app.ml",
+            "let barOcaml x = x\n",
+            "barOcaml",
+        ),
+        (
+            "src/App.fs",
+            "module FooFsharp\nlet barFsharp x = x\n",
+            "barFsharp",
+        ),
+        (
+            "src/app.jl",
+            "module FooJulia\nfunction barJulia(x)\n  x\nend\nend\n",
+            "barJulia",
+        ),
+        (
+            "src/app.zig",
+            "fn barZig(x: i32) i32 {\n    return x;\n}\n",
+            "barZig",
+        ),
+        (
+            "src/App.sol",
+            "contract FooSolidity {\n  function barSolidity() public {}\n}\n",
+            "barSolidity",
+        ),
+        (
+            "proto/api.proto",
+            "syntax = \"proto3\";\nmessage UserProto { string name = 1; }\n",
+            "UserProto",
+        ),
+        (
+            "api/schema.graphql",
+            "type UserGraphql {\n  id: ID!\n}\n",
+            "UserGraphql",
+        ),
+        (
+            "infra/main.tf",
+            "resource \"aws_instance\" \"web_hcl\" {\n  ami = \"abc\"\n}\n",
+            "aws_instance.web_hcl",
+        ),
+        (
+            "scripts/Deploy.ps1",
+            "function Get-ThingPowershell {\n  Write-Host 'x'\n}\n",
+            "Get-ThingPowershell",
+        ),
+        ("src/app.nim", "proc barNim(x: int): int =\n  x\n", "barNim"),
+        (
+            "src/App.elm",
+            "module FooElm exposing (barElm)\n\nbarElm : Int -> Int\nbarElm x =\n    x\n",
+            "barElm",
+        ),
+        (
+            "game/player.gd",
+            "class_name FooGdscript\nfunc barGdscript():\n\tpass\n",
+            "barGdscript",
+        ),
+        (
+            "src/app.cr",
+            "class FooCrystal\n  def barCrystal\n  end\nend\n",
+            "barCrystal",
+        ),
+    ];
+    for (path, body, _) in cases {
+        write(root, path, body);
+    }
+    let mut index = index(root);
+    for (path, _, symbol) in cases {
+        let answer = index.explore(symbol, None, None).expect("explore");
+        assert!(
+            answer.content.contains(path),
+            "{path}: {symbol} not indexed: {}",
+            answer.content
+        );
+    }
+}
+
+#[test]
+fn a_shell_source_resolves_a_cross_file_function() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    write(root, "scripts/lib.sh", "helperShell() {\n  echo hi\n}\n");
+    write(root, "scripts/build.sh", "source ./lib.sh\nhelperShell\n");
+    let mut index = index(root);
+    index.explore("helperShell", None, None).expect("explore");
+    let callers = index.callers("helperShell", None).expect("callers");
+    assert!(
+        callers.content.contains("build.sh") || callers.content.contains("none"),
+        "{}",
+        callers.content
+    );
+}

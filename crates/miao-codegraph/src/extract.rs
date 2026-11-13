@@ -63,7 +63,7 @@ pub fn extract(path: &str, source: &str) -> Option<Extracted> {
     // line numbers still match the file the model will read.
     let masked;
     let source = match language {
-        "vue" | "svelte" | "astro" => {
+        "vue" | "svelte" | "astro" | "html" => {
             masked = masked_source(language, source);
             masked.as_str()
         }

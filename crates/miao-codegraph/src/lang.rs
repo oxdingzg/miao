@@ -44,6 +44,39 @@ const EXTENSIONS: &[(&str, &str)] = &[
     ("swift", "swift"),
     ("dart", "dart"),
     ("lua", "lua"),
+    ("sh", "bash"),
+    ("bash", "bash"),
+    ("zsh", "bash"),
+    ("ksh", "bash"),
+    ("html", "html"),
+    ("htm", "html"),
+    ("sql", "sql"),
+    ("m", "objc"),
+    ("mm", "objc"),
+    ("ex", "elixir"),
+    ("exs", "elixir"),
+    ("erl", "erlang"),
+    ("hrl", "erlang"),
+    ("hs", "haskell"),
+    ("ml", "ocaml"),
+    ("mli", "ocaml"),
+    ("fs", "fsharp"),
+    ("fsi", "fsharp"),
+    ("fsx", "fsharp"),
+    ("jl", "julia"),
+    ("zig", "zig"),
+    ("sol", "solidity"),
+    ("proto", "proto"),
+    ("graphql", "graphql"),
+    ("gql", "graphql"),
+    ("tf", "hcl"),
+    ("hcl", "hcl"),
+    ("ps1", "powershell"),
+    ("psm1", "powershell"),
+    ("nim", "nim"),
+    ("elm", "elm"),
+    ("gd", "gdscript"),
+    ("cr", "crystal"),
     ("r", "r"),
 ];
 
@@ -68,6 +101,26 @@ pub const LANGUAGES: &[&str] = &[
     "swift",
     "dart",
     "lua",
+    "bash",
+    "html",
+    "sql",
+    "objc",
+    "elixir",
+    "erlang",
+    "haskell",
+    "ocaml",
+    "fsharp",
+    "julia",
+    "zig",
+    "solidity",
+    "proto",
+    "graphql",
+    "hcl",
+    "powershell",
+    "nim",
+    "elm",
+    "gdscript",
+    "crystal",
     "r",
 ];
 
@@ -76,6 +129,7 @@ pub const LANGUAGES: &[&str] = &[
 /// TypeScript grammar, because the surrounding template is not JavaScript.
 pub fn grammar(id: &str) -> &str {
     match id {
+        "html" => "javascript",
         "vue" | "svelte" | "astro" => "typescript",
         other => other,
     }
@@ -100,6 +154,25 @@ pub fn language(id: &str) -> Option<Language> {
         "swift" => tree_sitter_swift::LANGUAGE.into(),
         "dart" => tree_sitter_dart::LANGUAGE.into(),
         "lua" => tree_sitter_lua::LANGUAGE.into(),
+        "bash" => tree_sitter_bash::LANGUAGE.into(),
+        "sql" => tree_sitter_sequel::LANGUAGE.into(),
+        "objc" => tree_sitter_objc::LANGUAGE.into(),
+        "elixir" => tree_sitter_elixir::LANGUAGE.into(),
+        "erlang" => tree_sitter_erlang::LANGUAGE.into(),
+        "haskell" => tree_sitter_haskell::LANGUAGE.into(),
+        "ocaml" => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+        "fsharp" => tree_sitter_fsharp::LANGUAGE_FSHARP.into(),
+        "julia" => tree_sitter_julia::LANGUAGE.into(),
+        "zig" => tree_sitter_zig::LANGUAGE.into(),
+        "solidity" => tree_sitter_solidity::LANGUAGE.into(),
+        "proto" => tree_sitter_proto::LANGUAGE.into(),
+        "graphql" => tree_sitter_graphql::LANGUAGE.into(),
+        "hcl" => tree_sitter_hcl::LANGUAGE.into(),
+        "powershell" => tree_sitter_powershell::LANGUAGE.into(),
+        "nim" => tree_sitter_nim::LANGUAGE.into(),
+        "elm" => tree_sitter_elm::LANGUAGE.into(),
+        "gdscript" => tree_sitter_gdscript::LANGUAGE.into(),
+        "crystal" => tree_sitter_crystal::LANGUAGE.into(),
         "r" => tree_sitter_r::LANGUAGE.into(),
         _ => return None,
     })
@@ -174,6 +247,14 @@ fn is_name_kind(kind: &str) -> bool {
             | "namespace_identifier"
             | "constant"
             | "name"
+            | "atom"
+            | "word"
+            | "value_name"
+            | "module_name"
+            | "command_name"
+            | "lower_case_identifier"
+            | "upper_case_identifier"
+            | "function_name"
     )
 }
 
@@ -319,6 +400,65 @@ pub fn definition(language: &str, node: Node, source: &[u8]) -> Option<(&'static
             }
             ("function", text(node.child_by_field_name("lhs")?, source)?)
         }
+        ("bash", "function_definition") => ("function", name("name")?),
+        ("sql", "create_table") => ("table", declarator_name(node, source, 0)?),
+        ("sql", "create_function" | "create_procedure") => {
+            ("function", declarator_name(node, source, 0)?)
+        }
+        ("sql", "create_view") => ("view", declarator_name(node, source, 0)?),
+        ("objc", "class_interface" | "class_implementation") => {
+            ("class", declarator_name(node, source, 0)?)
+        }
+        ("objc", "method_definition" | "method_declaration") => {
+            ("method", declarator_name(node, source, 0)?)
+        }
+        ("objc", "function_definition") => ("function", declarator_name(node, source, 0)?),
+        ("elixir", "call") => elixir_definition(node, source)?,
+        ("erlang", "fun_decl") => ("function", declarator_name(node, source, 0)?),
+        ("erlang", "module_attribute") => ("module", declarator_name(node, source, 0)?),
+        ("haskell", "function") => ("function", name("name")?),
+        ("haskell", "data_type" | "class_declaration" | "newtype") => {
+            ("type", declarator_name(node, source, 0)?)
+        }
+        ("ocaml", "let_binding") => ("function", name("pattern")?),
+        ("ocaml", "module_binding") => ("module", declarator_name(node, source, 0)?),
+        ("fsharp", "function_or_value_defn") => ("function", declarator_name(node, source, 0)?),
+        ("julia", "module_definition") => ("module", name("name")?),
+        ("julia", "function_definition") => ("function", declarator_name(node, source, 0)?),
+        ("zig", "function_declaration") => ("function", name("name")?),
+        ("zig", "container_declaration") => ("struct", declarator_name(node, source, 0)?),
+        ("solidity", "contract_declaration" | "interface_declaration" | "library_declaration") => {
+            ("class", name("name")?)
+        }
+        ("solidity", "function_definition" | "modifier_definition" | "event_definition") => {
+            ("function", name("name")?)
+        }
+        ("solidity", "struct_declaration" | "enum_declaration") => ("struct", name("name")?),
+        ("proto", "message" | "service") => ("class", declarator_name(node, source, 0)?),
+        ("proto", "rpc") => ("function", declarator_name(node, source, 0)?),
+        ("proto", "enum") => ("enum", declarator_name(node, source, 0)?),
+        (
+            "graphql",
+            "object_type_definition" | "interface_type_definition" | "input_object_type_definition",
+        ) => ("class", declarator_name(node, source, 0)?),
+        ("graphql", "enum_type_definition") => ("enum", declarator_name(node, source, 0)?),
+        ("graphql", "field_definition") => ("method", declarator_name(node, source, 0)?),
+        ("hcl", "block") => ("block", block_name(node, source)?),
+        ("powershell", "function_statement") => ("function", first_child_name(node, source)?),
+        ("nim", "proc_declaration" | "func_declaration" | "method_declaration") => {
+            ("function", name("name")?)
+        }
+        ("nim", "template_declaration" | "macro_declaration") => ("function", name("name")?),
+        ("nim", "type_declaration") => ("type", name("name")?),
+        ("elm", "value_declaration") => ("function", declarator_name(node, source, 0)?),
+        ("elm", "module_declaration") => ("module", declarator_name(node, source, 0)?),
+        ("elm", "type_declaration" | "type_alias_declaration") => {
+            ("type", declarator_name(node, source, 0)?)
+        }
+        ("gdscript", "function_definition") => ("function", name("name")?),
+        ("gdscript", "class_name_statement") => ("class", name("name")?),
+        ("crystal", "method_definition") => ("method", name("name")?),
+        ("crystal", "class_declaration" | "module_declaration") => ("class", name("name")?),
         _ => return None,
     })
 }
@@ -384,6 +524,28 @@ pub fn callee(language: &str, node: Node, source: &[u8]) -> Option<String> {
         ("dart", "member_call_expression") => tail_name(node, source)?,
         ("lua", "function_call") => tail_name(node, source)?,
         ("r", "call") => field(node, "function", source)?,
+        ("bash", "command") => field(node, "name", source)?,
+        ("sql", "invocation") => declarator_name(node, source, 0)?,
+        ("objc", "message_expression") => field(node, "method", source)?,
+        ("objc", "call_expression") => field(node, "function", source)?,
+        ("elixir", "call") => field(node, "target", source)?,
+        ("erlang", "call") => field(node, "expr", source)?,
+        ("haskell", "apply") => field(node, "function", source)?,
+        ("ocaml", "application_expression") => field(node, "function", source)?,
+        ("fsharp", "application_expression") => declarator_name(node, source, 0)?,
+        ("julia", "call_expression") => declarator_name(node, source, 0)?,
+        ("zig", "call_expression") => field(node, "function", source)?,
+        ("solidity", "call_expression") => {
+            declarator_name(node.child_by_field_name("function")?, source, 0)?
+        }
+        ("proto", "rpc") => declarator_name(node, source, 0)?,
+        ("graphql", "field") => declarator_name(node, source, 0)?,
+        ("hcl", "function_call") => declarator_name(node, source, 0)?,
+        ("powershell", "command") => field(node, "command_name", source)?,
+        ("nim", "call") => field(node, "name", source)?,
+        ("elm", "function_call_expr") => declarator_name(node, source, 0)?,
+        ("gdscript", "call") => declarator_name(node, source, 0)?,
+        ("crystal", "call") => field(node, "method", source)?,
         _ => return None,
     };
     let value = raw
@@ -470,6 +632,31 @@ fn collect_imports(language: &str, node: Node, source: &[u8], found: &mut Vec<Im
         }
         ("ruby", "call") | ("lua", "function_call") | ("r", "call") => {
             if let Some(spec) = required_module(language, node, source) {
+                found.push(spec);
+            }
+        }
+        ("bash", "command") => {
+            if let Some(spec) = bash_source(node, source) {
+                found.push(spec);
+            }
+        }
+        ("objc", "preproc_include") => {
+            if let Some(spec) = include(node, source) {
+                found.push(spec);
+            }
+            return;
+        }
+        ("elixir", "call") => {
+            if let Some(spec) = elixir_import(node, source) {
+                found.push(spec);
+            }
+        }
+        (
+            "haskell" | "fsharp" | "ocaml" | "julia" | "nim" | "elm" | "proto" | "solidity",
+            "import" | "open_statement" | "import_statement" | "using_statement" | "import_clause"
+            | "import_directive",
+        ) => {
+            if let Some(spec) = keyword_import(node, source) {
                 found.push(spec);
             }
         }
@@ -763,6 +950,141 @@ fn required_module(language: &str, node: Node, source: &[u8]) -> Option<ImportSp
     Some(ImportSpec {
         source: format!("module::{target}"),
         names,
+        line: node.start_position().row as u32 + 1,
+    })
+}
+
+/// Elixir spells every definition as a call to a macro, so the shape of the
+/// arguments decides whether a `call` node is a definition and what it names.
+fn elixir_definition(node: Node, source: &[u8]) -> Option<(&'static str, String)> {
+    let target = field(node, "target", source)?;
+    let arguments = elixir_arguments(node)?;
+    match target.as_str() {
+        "defmodule" => Some(("module", declarator_name(arguments, source, 0)?)),
+        "defstruct" => Some(("struct", declarator_name(arguments, source, 0)?)),
+        "def" | "defp" | "defmacro" | "defmacrop" | "defguard" | "defguardp" => {
+            let head = arguments.named_child(0)?;
+            if head.kind() != "call" {
+                return None;
+            }
+            Some(("function", field(head, "target", source)?))
+        }
+        _ => None,
+    }
+}
+
+/// Elixir's grammar spells `arguments` positionally rather than as a field, so
+/// a field lookup alone would miss every definition.
+fn elixir_arguments(node: Node) -> Option<Node> {
+    if let Some(arguments) = node.child_by_field_name("arguments") {
+        return Some(arguments);
+    }
+    (0..node.named_child_count()).find_map(|index| {
+        let index = u32::try_from(index).ok()?;
+        node.named_child(index)
+            .filter(|child| child.kind() == "arguments")
+    })
+}
+
+/// HCL keeps a block's name in its label: `resource "aws_instance" "web"`.
+fn block_name(node: Node, source: &[u8]) -> Option<String> {
+    let kind = text(node.named_child(0)?, source)?;
+    let mut cursor = node.walk();
+    let label = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "string_lit")
+        .and_then(|child| text(child, source))
+        .map(|value| unquote(&value));
+    Some(match label {
+        Some(label) => format!("{kind}.{label}"),
+        None => kind,
+    })
+}
+
+/// The first child's text with no identifier filter: PowerShell function names
+/// are hyphenated (`Get-Thing`) and would fail an identifier check.
+fn first_child_name(node: Node, source: &[u8]) -> Option<String> {
+    let name = text(node.named_child(0)?, source)?;
+    let name = name.trim().to_owned();
+    let starts = name
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_alphanumeric() || first == '_');
+    (starts && !name.is_empty()).then_some(name)
+}
+
+fn bash_source(node: Node, source: &[u8]) -> Option<ImportSpec> {
+    let name = field(node, "name", source)?;
+    if !matches!(name.trim(), "source" | ".") {
+        return None;
+    }
+    let whole = text(node, source)?;
+    let target = whole.split_whitespace().nth(1)?.trim_matches(['"', '\'']);
+    let target = target.trim_start_matches("./");
+    if target.is_empty() {
+        return None;
+    }
+    let names = vec![target
+        .rsplit('/')
+        .next()
+        .unwrap_or(target)
+        .trim_end_matches(".sh")
+        .to_owned()];
+    Some(ImportSpec {
+        source: format!("module::{target}"),
+        names,
+        line: node.start_position().row as u32 + 1,
+    })
+}
+
+fn elixir_import(node: Node, source: &[u8]) -> Option<ImportSpec> {
+    let target = field(node, "target", source)?;
+    if !matches!(target.as_str(), "import" | "alias" | "require" | "use") {
+        return None;
+    }
+    let arguments = elixir_arguments(node)?;
+    let module = text(arguments.named_child(0)?, source)?;
+    let name = module.rsplit('.').next()?.to_owned();
+    Some(ImportSpec {
+        source: format!("path::{module}"),
+        names: vec![name],
+        line: node.start_position().row as u32 + 1,
+    })
+}
+
+/// Imports written as a keyword followed by a module path, which covers
+/// Haskell, F#, OCaml, Julia, Nim, Elm, Protobuf and Solidity. A path may be
+/// bare (`Data.List`) or quoted (`import "api.proto"`).
+fn keyword_import(node: Node, source: &[u8]) -> Option<ImportSpec> {
+    let whole = text(node, source)?;
+    let body = whole
+        .trim()
+        .trim_start_matches("import")
+        .trim_start_matches("open")
+        .trim_start_matches("using")
+        .trim_end_matches(';')
+        .trim();
+    let module = if body.starts_with(['"', '\'']) {
+        unquote(body.split(['"', '\'']).nth(1)?)
+    } else {
+        body.split(|character: char| {
+            character.is_whitespace() || character == ',' || character == ';'
+        })
+        .next()?
+        .trim_matches(['(', ')'])
+        .to_owned()
+    };
+    if module.is_empty() {
+        return None;
+    }
+    let name = module
+        .rsplit(['.', '/', ':'])
+        .next()
+        .unwrap_or(module.as_str())
+        .to_owned();
+    Some(ImportSpec {
+        source: format!("path::{module}"),
+        names: vec![name],
         line: node.start_position().row as u32 + 1,
     })
 }
