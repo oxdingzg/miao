@@ -381,8 +381,28 @@ impl Provider for Fetcher {
     }
 }
 
-#[tokio::test]
-async fn runtime_fetch_waits_for_bound_controller_approval_before_any_http_request() {
+/// The turn chain inside this test (runtime drain -> approval resume -> tool ->
+/// web client) needs more stack than libtest's 2 MiB default on Windows; the
+/// production workers get the same headroom from `TURN_STACK` in the engine
+/// (#2926). Running the body on its own thread keeps the test independent of
+/// `RUST_MIN_STACK`.
+#[test]
+fn runtime_fetch_waits_for_bound_controller_approval_before_any_http_request() {
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+                .block_on(runtime_fetch_waits_body())
+        })
+        .expect("thread")
+        .join()
+        .expect("join");
+}
+
+async fn runtime_fetch_waits_body() {
     let (address, mut seen, task) = server(vec![("/ok", page("text/plain", "network-ok"))]).await;
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();

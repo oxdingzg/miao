@@ -40,9 +40,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        // A turn's future chain (drain -> approval resume -> tool -> client)
+        // needs more than the 2 MiB worker default: on Windows it overflowed
+        // the test thread before the request left (#2926). The same chain runs
+        // on these workers, so the headroom is part of the engine, not a test
+        // detail.
+        .thread_stack_size(TURN_STACK)
         .build()?
         .block_on(run())
 }
+
+/// 8 MiB: four times the measured requirement of the turn chain, which is the
+/// largest stack user the engine has.
+const TURN_STACK: usize = 8 * 1024 * 1024;
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
