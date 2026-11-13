@@ -206,7 +206,7 @@ describe("Git batched diffs", () => {
       // there (#2873). Keep the rest of the name set on both platforms.
       const names = [
         "space name.txt",
-        ...(process.platform === "win32" ? [] : ["tab\tname.txt", "line\nname.txt"]),
+        ...((process.platform as string) === "win32" ? [] : ["tab\tname.txt", "line\nname.txt"]),
         'quote"name.txt',
         "中文.txt",
         "[literal].txt",
