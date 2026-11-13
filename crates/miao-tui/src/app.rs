@@ -6721,8 +6721,10 @@ mod tests {
         // guard is about the prompt itself.
         let sent = control_requests(&mut requests);
         assert!(
-            sent.iter().all(|request| !matches!(request, engine::Request::Prompt { .. })),
-            "an orphan marker must not send: {} request(s)", sent.len()
+            sent.iter()
+                .all(|request| !matches!(request, engine::Request::Prompt { .. })),
+            "an orphan marker must not send: {} request(s)",
+            sent.len()
         );
         assert!(app.held_prompt.is_some());
         app.handle(AppEvent::Clipboard(Some(clipboard::Content::Image {
@@ -6753,8 +6755,10 @@ mod tests {
         app.handle(AppEvent::Clipboard(None));
         let sent = control_requests(&mut requests);
         assert!(
-            sent.iter().all(|request| !matches!(request, engine::Request::Prompt { .. })),
-            "no picture, no send: {} request(s)", sent.len()
+            sent.iter()
+                .all(|request| !matches!(request, engine::Request::Prompt { .. })),
+            "no picture, no send: {} request(s)",
+            sent.len()
         );
         assert!(app.held_prompt.is_none());
         assert!(app
