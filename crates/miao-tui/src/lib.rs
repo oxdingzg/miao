@@ -67,6 +67,10 @@ pub struct Launch {
     pub auto: bool,
 }
 
+/// 8 MiB: the engine's turn chain needs about 4 MiB on Windows, where the
+/// default worker stack is 2 MiB (#2926).
+const TURN_STACK: usize = 8 * 1024 * 1024;
+
 pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
     platform::job_control::foreground()?;
     let workspace = launch.workspace.clone();
@@ -114,6 +118,9 @@ pub fn run(launch: Launch) -> Result<(), Box<dyn Error>> {
     // those tasks and the landing screen spun on its loader for minutes.
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        // The engine's turn chain runs here too, and needs more than the 2 MiB
+        // worker default on Windows (#2926).
+        .thread_stack_size(TURN_STACK)
         .build()?;
     let termination = {
         let _entered = runtime.enter();
