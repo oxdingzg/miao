@@ -3253,14 +3253,6 @@ fn notification_input(input_id: &str) -> bool {
         .any(|prefix| input_id.starts_with(prefix))
 }
 
-/// A short, stable key for one todo-list signature, used as the operation id of
-/// the state write and of the pause notice so a replayed turn repeats neither.
-fn signature_key(signature: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    signature.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
 
 /// The live no-progress block for exactly this todo list, if nothing re-armed
 /// it since. A changed list carries a different signature and releases the gate
@@ -5579,7 +5571,7 @@ command: None,
                     0 => None,
                     _ => goal_stalled_since.or_else(|| Some(std::time::Instant::now())),
                 };
-                goal_signature = Some(signature);
+                goal_signature = Some(signature.clone());
                 // A text-only reply while background jobs or background
                 // subagent tasks are still pending is a yield, not a stall:
                 // the model subscribed to that work and has nothing to do
