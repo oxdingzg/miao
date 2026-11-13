@@ -1608,11 +1608,21 @@ mod call_metadata_tests {
     #[test]
     fn metadata_interpolation_is_bounded_and_fails_closed() {
         assert_eq!(expand_call_meta("literal").unwrap(), "literal");
-        let path = std::env::var("PATH").unwrap();
+        // The doubling fixture must be a variable the test owns: the ambient
+        // PATH's length belongs to the host's profile, and a Windows machine
+        // with a few installed toolchains carries a PATH past half of the
+        // 8192 budget, where doubling it fails closed before the assertion
+        // can say anything. 4000 characters double under the budget, 4200
+        // double past it.
+        const FIXTURE: &str = "MIAO_MCP_META_VALUE_FIXTURE";
+        std::env::set_var(FIXTURE, "u".repeat(4000));
         assert_eq!(
-            expand_call_meta("prefix-{env:PATH}-{env:PATH}").unwrap(),
-            format!("prefix-{path}-{path}")
+            expand_call_meta(&format!("prefix-{{env:{FIXTURE}}}-{{env:{FIXTURE}}}")).unwrap(),
+            format!("prefix-{}-{}", "u".repeat(4000), "u".repeat(4000))
         );
+        std::env::set_var(FIXTURE, "o".repeat(4200));
+        assert!(expand_call_meta(&format!("prefix-{{env:{FIXTURE}}}-{{env:{FIXTURE}}}")).is_err());
+        std::env::remove_var(FIXTURE);
         for value in [
             "{env:}",
             "{env:PATH",
