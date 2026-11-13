@@ -458,6 +458,9 @@ pub struct App {
     /// Sessions this client has already named, so a snapshot arriving before the
     /// rename lands does not name them again.
     named_sessions: std::collections::HashSet<String>,
+    /// The installed build's version when it is newer than this one, so the
+    /// strip can say an upgrade is waiting for a restart.
+    pending_update: Option<String>,
     dialog: Option<Dialog>,
     permission_generation: u64,
     workspace_changes_generation: u64,
@@ -694,6 +697,7 @@ impl App {
             // pick a Session, so the arrows move the selection instead of
             // walking the prompt's history. Tab hands the keys to the prompt.
             named_sessions: std::collections::HashSet::new(),
+            pending_update: None,
             dialog: None,
             permission_generation: 0,
             workspace_changes_generation: 0,
@@ -3404,6 +3408,13 @@ impl App {
         self.notice_until = Some(Instant::now() + NOTICE_LIFETIME);
     }
 
+    /// Record that a newer build is installed but not running. The strip keeps
+    /// saying so until the operator restarts, because the footer's version is the
+    /// running build and would otherwise read as "already upgraded".
+    pub fn set_pending_update(&mut self, version: Option<String>) {
+        self.pending_update = version;
+    }
+
     /// Drop a notice once its moment has passed, so the line goes back to saying
     /// nothing rather than repeating an event from minutes ago.
     fn expire_notice(&mut self) {
@@ -4655,6 +4666,12 @@ impl App {
             .to_string(),
             warning: false,
         }];
+        if let Some(installed) = &self.pending_update {
+            hints.push(StatusHint {
+                text: format!("{installed} installed · restart to apply"),
+                warning: true,
+            });
+        }
         // Scrolled away from the newest row: the transcript keeps filling below
         // the window, so without this the operator cannot tell a stalled run
         // from output that has scrolled out of sight.
