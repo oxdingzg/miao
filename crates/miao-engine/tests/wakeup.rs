@@ -106,8 +106,11 @@ async fn setup(
         )
         .await
         .unwrap();
+    // 3 s flaked on hosted CI under load (the runner took longer than the cap
+    // to reach the first submitted admission, #2932); the wait is event-driven,
+    // so the larger cap only bounds a broken run.
     tokio::time::timeout(
-        std::time::Duration::from_secs(3),
+        std::time::Duration::from_secs(30),
         provider.submitted.notified(),
     )
     .await
@@ -132,7 +135,7 @@ async fn timer_survives_turn_cancel_and_fires_one_atomic_admission() {
     tokio::time::pause();
     tokio::time::advance(std::time::Duration::from_secs(61)).await;
     tokio::time::resume();
-    tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
+    tokio::time::timeout(std::time::Duration::from_secs(30), provider.fired.notified())
         .await
         .unwrap();
     assert_eq!(store.wakeups("s").await.unwrap()[0]["state"], "fired");
@@ -278,7 +281,7 @@ async fn a_finished_timer_handle_does_not_keep_the_runtime_alive() {
     let id = timers[0]["timer_id"].as_str().unwrap();
     assert!(runtime.has_live_work().await.unwrap());
     runtime.cancel_wakeup("s", id).await.unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         while runtime.has_live_work().await.unwrap() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
@@ -309,7 +312,7 @@ async fn edit_moves_the_due_time_and_keeps_identity() {
     tokio::time::pause();
     tokio::time::advance(std::time::Duration::from_secs(3610)).await;
     tokio::time::resume();
-    tokio::time::timeout(std::time::Duration::from_secs(3), provider.fired.notified())
+    tokio::time::timeout(std::time::Duration::from_secs(30), provider.fired.notified())
         .await
         .unwrap();
     runtime.shutdown().await;
