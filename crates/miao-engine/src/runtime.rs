@@ -3187,15 +3187,6 @@ async fn note_interruption(inner: &Arc<Inner>, session: &str, run: &str) {
 }
 
 /// Emit one UserPromptSubmit per input promoted into visible history.
-/// A short, stable key for one todo-list signature: the operation id of the
-/// goal writes and of the pause notice, so a replayed turn repeats neither.
-fn signature_key(signature: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    signature.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
 async fn record_promotions(
     inner: &Inner,
     session: &str,
@@ -5579,7 +5570,7 @@ command: None,
                     0 => None,
                     _ => goal_stalled_since.or_else(|| Some(std::time::Instant::now())),
                 };
-                goal_signature = Some(signature);
+                goal_signature = Some(signature.clone());
                 // A text-only reply while background jobs or background
                 // subagent tasks are still pending is a yield, not a stall:
                 // the model subscribed to that work and has nothing to do
