@@ -56,13 +56,25 @@ impl Extracted {
 
 pub fn extract(path: &str, source: &str) -> Option<Extracted> {
     let language = lang::detect(path)?;
+    let grammar_id = lang::grammar(language);
     let grammar = lang::language(language)?;
+    // A single-file component carries its code inside `<script>` (or, for
+    // Astro, its frontmatter). Parse a byte-for-byte mask of that region so
+    // line numbers still match the file the model will read.
+    let masked;
+    let source = match language {
+        "vue" | "svelte" | "astro" => {
+            masked = masked_source(language, source);
+            masked.as_str()
+        }
+        _ => source,
+    };
     let mut parser = Parser::new();
     parser.set_language(&grammar).ok()?;
     let bytes = source.as_bytes();
     let tree = parser.parse(bytes, None)?;
     let mut walker = Walker {
-        language,
+        language: grammar_id,
         source: bytes,
         lines: source.lines().collect(),
         defs: Vec::new(),
@@ -70,12 +82,57 @@ pub fn extract(path: &str, source: &str) -> Option<Extracted> {
         stack: Vec::new(),
     };
     walker.visit(tree.root_node());
-    let imports = lang::imports(language, tree.root_node(), bytes);
+    let imports = lang::imports(grammar_id, tree.root_node(), bytes);
     Some(Extracted {
         defs: walker.defs,
         calls: walker.calls,
         imports,
     })
+}
+
+/// Blank out everything outside the code a component actually exports, keeping
+/// every byte offset and line break in place. The template around it is not
+/// JavaScript, so parsing it would only produce error nodes.
+fn masked_source(language: &str, source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut output = bytes
+        .iter()
+        .map(|byte| if *byte == b'\n' { b'\n' } else { b' ' })
+        .collect::<Vec<u8>>();
+    let lowered = source.to_ascii_lowercase();
+    let mut ranges = Vec::new();
+    if language == "astro" {
+        if let Some(rest) = source.strip_prefix("---") {
+            match rest.find("\n---") {
+                // Keep the frontmatter body but mask its `---` fences: the
+                // TypeScript grammar would read them as an error node and drop
+                // everything inside.
+                Some(end) => ranges.push((4usize, 3 + end)),
+                None => ranges.push((0usize, bytes.len())),
+            }
+        }
+    }
+    let mut cursor = 0;
+    while let Some(offset) = lowered[cursor..].find("<script") {
+        let start = cursor + offset;
+        let Some(open) = lowered[start..].find('>') else {
+            break;
+        };
+        let body = start + open + 1;
+        let end = lowered[body..]
+            .find("</script>")
+            .map(|offset| body + offset)
+            .unwrap_or(bytes.len());
+        ranges.push((body, end));
+        if end >= bytes.len() {
+            break;
+        }
+        cursor = end + 1;
+    }
+    for (start, end) in ranges {
+        output[start..end].copy_from_slice(&bytes[start..end]);
+    }
+    String::from_utf8(output).unwrap_or_default()
 }
 
 struct Walker<'a> {
