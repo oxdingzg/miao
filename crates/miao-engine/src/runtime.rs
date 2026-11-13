@@ -3187,6 +3187,15 @@ async fn note_interruption(inner: &Arc<Inner>, session: &str, run: &str) {
 }
 
 /// Emit one UserPromptSubmit per input promoted into visible history.
+/// A short, stable key for one todo-list signature: the operation id of the
+/// goal writes and of the pause notice, so a replayed turn repeats neither.
+fn signature_key(signature: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    signature.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 async fn record_promotions(
     inner: &Inner,
     session: &str,
@@ -5341,11 +5350,54 @@ command: None,
             // operator. A recorded goal that is not active is the operator's
             // off switch; completion notifications arrive as promoted inputs
             // either way.
-            let loop_allowed = goal["status"].is_null() || goal["status"] == "active";
             // A pause only the operator can end: the message a pause injected
             // started the next drain, and without this the loop resumed with
             // fresh counters and repeated itself (a bound of 24 reached 48).
             let paused_for_operator = inner.store.loop_paused_for_operator(session).await?;
+            // A block the engine wrote is a gate, not an off switch. Once an
+            // arriving event has re-opened it, the goal says so again: the
+            // Session resumes on its own, and the operator is not left with a
+            // goal that still reads blocked while the work moves.
+            let mut rearmed = false;
+            if !paused_for_operator
+                && goal["status"] == "blocked"
+                && goal["evidence"]
+                    .as_str()
+                    .is_some_and(|text| text.starts_with("loop: "))
+            {
+                if let Some(blocked) = inner.store.latest_event(session, "loop.blocked").await? {
+                    let key = signature_key(blocked.data["signature"].as_str().unwrap_or_default());
+                    let round = blocked.data["round"].as_u64().unwrap_or(0);
+                    inner
+                        .store
+                        .record(
+                            session,
+                            "loop.armed",
+                            json!({"run_id":run,"block":key,"round":blocked.data["round"]}),
+                        )
+                        .await?;
+                    let mut next = goal.clone();
+                    next["status"] = json!("active");
+                    next["evidence"] = json!(
+                        "loop: re-armed by an arriving event; the block only holds while this todo list stays unchanged."
+                    );
+                    if let Ok(mutation) = crate::state::Mutation::parse("goal", next) {
+                        inner
+                            .store
+                            .update_state(session, &format!("loop-armed-{key}-{round}"), mutation)
+                            .await?;
+                        rearmed = true;
+                    }
+                }
+            }
+            // The status this turn acts on: a block the engine just re-armed is
+            // already active, even though the state read above predates it.
+            let goal_status = if rearmed {
+                json!("active")
+            } else {
+                goal["status"].clone()
+            };
+            let loop_allowed = goal_status.is_null() || goal_status == "active";
             if loop_allowed
                 && !paused_for_operator
                 && !crate::state::runnable_state(&state)?.is_empty()
@@ -5361,7 +5413,7 @@ command: None,
                 } else {
                     0
                 };
-                goal_flat_signature = Some(flat);
+                goal_flat_signature = Some(flat.clone());
                 // Tool calls are real work *for the turn that dispatched
                 // them*: a model that ran bash, read a file, or called any tool
                 // between two text-only replies is not stalled, and that turn
@@ -5462,6 +5514,52 @@ command: None,
                             json!({"run_id":run,"reason":reason}),
                         )
                         .await?;
+                    // The pause outlives the run that raised it: it is keyed on
+                    // the todo list's signature, so a later wake-up cannot start
+                    // the same unchanged drain from fresh counters. A changed
+                    // list releases it on its own.
+                    let blocked_round = if matches!(reason, "flat" | "no-progress") {
+                        let previous = inner.store.latest_event(session, "loop.blocked").await?;
+                        let round = match previous {
+                            Some(event)
+                                if event.data["signature"].as_str() == Some(flat.as_str()) =>
+                            {
+                                event.data["round"].as_u64().unwrap_or(0) + 1
+                            }
+                            _ => 1,
+                        };
+                        inner
+                            .store
+                            .record(
+                                session,
+                                "loop.blocked",
+                                json!({"run_id":run,"signature":&flat,"round":round,"reason":reason,"stalls":goal_stalls,"worked":goal_flat}),
+                            )
+                            .await?;
+                        // Say it where the operator looks for state, with the
+                        // evidence a blocked goal owes: it reads as a classified
+                        // stop, and the next real event clears it.
+                        if goal_status.is_null() || goal_status == "active" {
+                            let mut next = goal.clone();
+                            next["status"] = json!("blocked");
+                            next["evidence"] = json!(format!(
+                                "loop: no todo changed state for {goal_flat} continuation turns (round {round} of this list). It re-arms on its own with the next operator message, the next background notice, or a changed todo list."
+                            ));
+                            if let Ok(mutation) = crate::state::Mutation::parse("goal", next) {
+                                inner
+                                    .store
+                                    .update_state(
+                                        session,
+                                        &format!("loop-blocked-{}-{round}", signature_key(&flat)),
+                                        mutation,
+                                    )
+                                    .await?;
+                            }
+                        }
+                        round
+                    } else {
+                        0
+                    };
                     // Say what happened, that nothing is running now, and what
                     // the operator can do. A pause that only says "send a
                     // message" reads like the Session is still waiting on them.
@@ -5502,10 +5600,10 @@ command: None,
                         // any todo's state, is not progress, and this is where
                         // the loop stops re-prompting itself for it.
                         "flat" => format!(
-                            "Task paused: {goal_flat} continuation turns ran without any todo changing state, so the loop stopped repeating itself. Nothing is running now and it will not resume on its own. Change a todo's state or send a message with the next step."
+                            "Task paused: {goal_flat} continuation turns ran without any todo changing state, so the loop stopped repeating itself (round {blocked_round} of this list). Nothing is running now. It re-arms on its own with your next message, the next background notice, or a change to a todo's state."
                         ),
                         _ => format!(
-                            "Task paused: the todo list stayed unchanged for {goal_stalls} continuation turns over {waited}s, so the loop stopped waiting for it to move: another continuation would repeat the same work. Nothing is running now and it will not resume on its own. Add or update a todo, then send a message with the next step."
+                            "Task paused: the todo list stayed unchanged for {goal_stalls} continuation turns over {waited}s, so the loop stopped waiting for it to move (round {blocked_round} of this list). Nothing is running now. It re-arms on its own with your next message, the next background notice, or a change to a todo's state."
                         ),
                     };
                     inner
