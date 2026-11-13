@@ -7,10 +7,18 @@ import { Effect, Layer } from "effect"
 import { SqlClient } from "effect/unstable/sql/SqlClient"
 import { layer } from "@miao/core/database/sqlite.bun"
 import { Sqlite, sqliteReason } from "@miao/core/database/sqlite"
+import { remove } from "./fixture/tmpdir"
 
 const dir = await fs.realpath(await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "miao-sqlite-busy-")))
 const file = path.join(dir, "busy.db")
-afterAll(() => fs.rm(dir, { recursive: true, force: true }))
+// Windows holds a SQLite handle for a few hundred milliseconds after close,
+// and the busy-retry describe keeps a second connection (`lock`) open for
+// its statements — both must be released before the tree can go, or the rm
+// reports an EBUSY failure for tests that already passed.
+afterAll(() => {
+  lock?.close()
+  return remove(dir)
+})
 
 const runWith = <A, E>(effect: Effect.Effect<A, E, SqlClient | Sqlite.Native>) =>
   Effect.runPromise(effect.pipe(Effect.provide(layer({ filename: file })), Effect.scoped))
@@ -33,7 +41,7 @@ describe("sqlite WAL open", () => {
     expect(check.query("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" })
     check.close()
     writer.close()
-    await fs.rm(dir, { recursive: true, force: true })
+    await remove(dir)
   })
 })
 

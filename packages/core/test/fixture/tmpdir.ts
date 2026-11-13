@@ -12,7 +12,11 @@ export const tmpdir = async () => {
   }
 }
 
-async function remove(dir: string, retries = 30): Promise<void> {
+/// Remove a test tree, tolerating the Windows file-lock windows (EBUSY,
+/// EPERM, ENOTEMPTY) that outlive a closed SQLite handle for a few hundred
+/// milliseconds. Exported for tests that build their own temp directories
+/// instead of taking `tmpdir`.
+export async function remove(dir: string, retries = 30): Promise<void> {
   try {
     await fs.rm(dir, { recursive: true, force: true })
   } catch (error) {
