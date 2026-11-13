@@ -987,8 +987,8 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
             Some(_) => return Err("--lsp-diagnostics must be on or off".into()),
         })
         .with_codegraph(match options.get("--codegraph").map(String::as_str) {
-            None | Some("off") => false,
-            Some("on") => true,
+            None | Some("on") => true,
+            Some("off") => false,
             Some(_) => return Err("--codegraph must be on or off".into()),
         });
     let mut route_limits = miao_engine::model_routes::RouteLimits::default();
