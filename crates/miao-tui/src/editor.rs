@@ -1349,16 +1349,6 @@ impl Composer {
         self.refresh_completion();
     }
 
-    /// The draft text, for submit-time guards that must read it verbatim.
-    pub(crate) fn draft(&self) -> &str {
-        &self.draft
-    }
-
-    /// How many media attachments ride with the draft right now.
-    pub(crate) fn attachments_len(&self) -> usize {
-        self.attachments.len()
-    }
-
     /// The attachments riding with the draft, for resubmitting a held prompt.
     pub(crate) fn attachments(&self) -> &[Value] {
         &self.attachments
