@@ -35,6 +35,7 @@ sha2 = "0.10"
 libc = "0.2"
 miao-sandbox = { path = "../miao-sandbox" }
 miao-credential = { path = "../miao-credential" }
+miao-codegraph = { path = "../miao-codegraph" }
 tempfile = "3"
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "charset", "gzip", "brotli"] }

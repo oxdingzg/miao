@@ -1993,6 +1993,29 @@ fn mcp_servers(layers: &[PathBuf]) -> Result<Vec<serde_json::Value>, String> {
     Ok(servers)
 }
 
+/// Whether the built-in code index is on for this start. The workspace
+/// configuration decides; `MIAO_CODEGRAPH` overrides it for one run, which is
+/// what an A/B measurement needs. Absent configuration means off: the index
+/// writes a store, and indexing a workspace is the operator's decision.
+fn codegraph_enabled(layers: &[PathBuf], env: &impl Fn(&str) -> Option<String>) -> bool {
+    if let Some(value) = env("MIAO_CODEGRAPH") {
+        return matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "on" | "true" | "yes"
+        );
+    }
+    let Some(parsed) = merged_config(layers) else {
+        return false;
+    };
+    match parsed.get("codegraph") {
+        Some(serde_json::Value::Bool(enabled)) => *enabled,
+        Some(serde_json::Value::Object(section)) => {
+            section.get("enabled").and_then(|value| value.as_bool()) == Some(true)
+        }
+        _ => false,
+    }
+}
+
 /// The model the product configuration names as its default. Rust commands
 /// honour it the way the product does, so a machine with one configured model
 /// needs no flags at all.
@@ -4272,6 +4295,10 @@ fn engine_argv_with(
                 }
             }
         }
+    }
+    if codegraph_enabled(&layers, &env) {
+        argv.push("--codegraph".into());
+        argv.push("on".into());
     }
     if let Ok(servers) = lsp_servers(&layers) {
         if !servers.is_empty() {
@@ -7312,6 +7339,40 @@ mod tests {
             text.contains("retention plan · 2 event(s) across 1 session(s) · "),
             "{text}"
         );
+    }
+
+    #[test]
+    fn the_code_index_is_switched_on_by_configuration_or_environment() {
+        let (root, global, workspace) = layered_fixture("codegraph-switch");
+        let db = root.join("miao.db");
+        let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
+        assert!(
+            !argv.iter().any(|arg| arg == "--codegraph"),
+            "off unless asked for: {argv:?}"
+        );
+        std::fs::write(
+            global.join("miao.json"),
+            r#"{ "model": "deepseek", "codegraph": { "enabled": true }, "providers": { "vendor": { "api": { "type": "openai", "url": "https://global.test/v1" }, "models": { "deepseek": {} } } } }"#,
+        )
+        .expect("global config");
+        let argv = engine_argv_with(&db, &workspace, "", None, fixture_env(&root));
+        let position = argv
+            .iter()
+            .position(|arg| arg == "--codegraph")
+            .expect("configuration switches the index on");
+        assert_eq!(argv.get(position + 1).map(String::as_str), Some("on"));
+        let env = |name: &str| -> Option<String> {
+            match name {
+                "MIAO_CODEGRAPH" => Some("0".into()),
+                other => fixture_env(&root)(other),
+            }
+        };
+        let argv = engine_argv_with(&db, &workspace, "", None, env);
+        assert!(
+            !argv.iter().any(|arg| arg == "--codegraph"),
+            "the environment overrides configuration: {argv:?}"
+        );
+        std::fs::remove_dir_all(&root).ok();
     }
 }
 

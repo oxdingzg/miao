@@ -284,6 +284,7 @@ pub struct Tools {
     short_anchors: bool,
     batch_edit: bool,
     lsp_diagnostics: bool,
+    codegraph: bool,
     compact_disclosure: bool,
     mcp_disclosure: crate::mcp::Disclosure,
     mcp_disclosure_allowlist: std::collections::BTreeSet<String>,
@@ -380,6 +381,7 @@ impl Tools {
             short_anchors: true,
             batch_edit: true,
             lsp_diagnostics: true,
+            codegraph: false,
             compact_disclosure: false,
             mcp_disclosure: crate::mcp::Disclosure::default(),
             mcp_disclosure_allowlist: std::collections::BTreeSet::new(),
@@ -1228,6 +1230,27 @@ impl Tools {
         self
     }
 
+    /// The built-in code index. Off unless the host asks for it: its tool
+    /// definitions cost tokens on every turn, and indexing a workspace is the
+    /// operator's decision.
+    pub(crate) fn with_codegraph(mut self, enabled: bool) -> Self {
+        self.codegraph = enabled;
+        self
+    }
+
+    /// Where this workspace's index lives: beside the engine store, one file
+    /// per workspace. Without a store there is nowhere to put it, and the tools
+    /// stay unadvertised rather than unbacked.
+    fn codegraph_path(&self) -> Option<PathBuf> {
+        let store = self.private_store.as_ref()?;
+        let directory = store.parent()?.join(crate::codegraph::DIRECTORY);
+        crate::placement::database_for(&directory, &self.root)
+    }
+
+    fn codegraph_enabled(&self) -> bool {
+        self.codegraph && self.codegraph_path().is_some()
+    }
+
     /// The LSP registry when startup attached one. `None` means no server was
     /// configured, and a reload cannot attach one without rebuilding `Tools`.
     pub(crate) fn lsp_registry(&self) -> Option<&Arc<crate::lsp::Registry>> {
@@ -1445,6 +1468,9 @@ impl Tools {
             return Err(ToolError::Unsupported);
         }
         let path = match name {
+            name if crate::codegraph::is_codegraph(name) && self.codegraph_enabled() => {
+                crate::codegraph::parse(name, &input)?
+            }
             "knowledge" => {
                 let query = crate::knowledge::Query::parse(input.clone())?;
                 if query.writes() && !self.writes() {
@@ -2329,6 +2355,13 @@ impl Tools {
         }).collect()
     }
 
+    fn codegraph_definitions(&self) -> Vec<ToolDefinition> {
+        if !self.codegraph_enabled() {
+            return Vec::new();
+        }
+        crate::codegraph::definitions()
+    }
+
     fn all_definitions(&self) -> Vec<ToolDefinition> {
         let mut definitions=vec![ToolDefinition {
             name:"read_file".into(),
@@ -2378,6 +2411,7 @@ impl Tools {
         }
         definitions.extend(self.delegation_definitions());
         definitions.extend(self.lsp_definitions());
+        definitions.extend(self.codegraph_definitions());
         if self.background_enabled() && crate::terminal::supported() {
             definitions.push(ToolDefinition {
                 name: "terminal_start".into(),
@@ -2575,6 +2609,14 @@ impl Tools {
                         "directory":skill.directory,
                         "files":skill.files,
                     }))
+                }
+                name if crate::codegraph::is_codegraph(name) => {
+                    let database = self.codegraph_path().ok_or_else(|| {
+                        ToolError::External(
+                            "the code index needs an engine store to live in".into(),
+                        )
+                    })?;
+                    crate::codegraph::execute(name, input, self.root.clone(), database).await
                 }
                 "worktree_list" => Ok(json!(crate::worktree::list(&self.root)
                     .map_err(|error| ToolError::External(error.to_string()))?)),
@@ -3261,5 +3303,89 @@ mod worktree_tool_tests {
             .await
             .expect("remove");
         assert!(!tree.exists());
+    }
+}
+
+#[cfg(test)]
+mod codegraph_tool_tests {
+    use super::Tools;
+    use serde_json::json;
+    use tokio_util::sync::CancellationToken;
+
+    fn workspace() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir_all(directory.path().join("src")).expect("src");
+        std::fs::write(
+            directory.path().join("src/lib.rs"),
+            "pub fn alpha() {\n    beta();\n}\nfn beta() {}\n",
+        )
+        .expect("source");
+        directory
+    }
+
+    #[tokio::test]
+    async fn the_index_tools_are_advertised_and_read_source() {
+        let directory = workspace();
+        let store = directory.path().join("engine.db");
+        let tools = Tools::new(directory.path())
+            .await
+            .expect("tools")
+            .protect_store(&store)
+            .with_codegraph(true);
+        let names = tools
+            .definitions()
+            .into_iter()
+            .map(|definition| definition.name)
+            .collect::<Vec<_>>();
+        for expected in [
+            "codegraph_explore",
+            "codegraph_node",
+            "codegraph_callers",
+            "codegraph_status",
+        ] {
+            assert!(names.iter().any(|name| name == expected), "{names:?}");
+        }
+        let prepared = tools
+            .prepare("codegraph_explore", json!({ "query": "beta" }))
+            .await
+            .expect("prepare");
+        let output = tools
+            .execute(
+                prepared.name(),
+                prepared.input().clone(),
+                CancellationToken::new(),
+            )
+            .await
+            .expect("execute");
+        let content = output["content"].as_str().expect("content");
+        assert!(content.contains("fn beta"), "{content}");
+        assert!(content.contains("src/lib.rs"), "{content}");
+        assert_eq!(output["index"]["files"], json!(1));
+    }
+
+    #[tokio::test]
+    async fn the_index_tools_stay_hidden_without_consent_or_a_store() {
+        let directory = workspace();
+        let store = directory.path().join("engine.db");
+        let switched_off = Tools::new(directory.path())
+            .await
+            .expect("tools")
+            .protect_store(&store);
+        assert!(!switched_off
+            .definitions()
+            .iter()
+            .any(|definition| definition.name.starts_with("codegraph_")));
+        assert!(switched_off
+            .prepare("codegraph_explore", json!({ "query": "alpha" }))
+            .await
+            .is_err());
+        let without_store = Tools::new(directory.path())
+            .await
+            .expect("tools")
+            .with_codegraph(true);
+        assert!(!without_store
+            .definitions()
+            .iter()
+            .any(|definition| definition.name.starts_with("codegraph_")));
     }
 }

@@ -15,6 +15,7 @@ pub mod budget;
 mod cache_affinity;
 pub mod children;
 pub mod cli;
+pub mod codegraph;
 pub mod config_derive;
 pub mod config_explain;
 pub mod config_scope;
