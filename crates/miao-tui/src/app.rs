@@ -4719,11 +4719,23 @@ impl App {
                 .state
                 .todos
                 .iter()
-                .find(|todo| matches!(todo.status.as_str(), "pending" | "in_progress"))
+                .find(|todo| {
+                    matches!(todo.status.as_str(), "pending" | "in_progress")
+                        && !Self::is_question(todo.content.trim())
+                })
                 .map(|todo| todo.content.trim().to_string())
                 .filter(|content| !content.is_empty()),
         };
         self.shell.composer.set_suggestion(next);
+    }
+
+    /// A checklist entry is work this Session will do next, so a question is
+    /// not one: offering it would put the operator's answer into the composer,
+    /// which is the one thing a todo list must not ask for. The test is on the
+    /// terminator because that is what makes it a question in both of the
+    /// languages this UI renders.
+    fn is_question(content: &str) -> bool {
+        content.ends_with('?') || content.ends_with('？')
     }
 
     /// `--continue` opens the Session with the newest `updated_at_ms`. The list
@@ -7253,6 +7265,50 @@ mod tests {
             .iter()
             .map(|hint| hint.text.as_str())
             .collect()
+    }
+
+    /// A todo phrased as a question is not work this Session will do next, so
+    /// the composer must not offer it: the operator's answer would then look
+    /// like the next task instead of a reply to the model.
+    #[test]
+    fn a_question_todo_is_never_offered_as_the_next_prompt() {
+        let mut app = session_app();
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                todos: vec![
+                    crate::session::TodoView {
+                        content: "待你定：是否把这套后处理接成正式步骤？".into(),
+                        status: "pending".into(),
+                    },
+                    crate::session::TodoView {
+                        content: "build the map dump".into(),
+                        status: "pending".into(),
+                    },
+                ],
+                ..SessionState::default()
+            }),
+        });
+        assert_eq!(
+            app.shell.composer.suggestion.as_deref(),
+            Some("build the map dump"),
+            "the question is skipped, not offered"
+        );
+
+        // Nothing actionable left: no offer at all beats an offer that asks.
+        app.handle(AppEvent::SessionOpened {
+            summary: None,
+            transcript: Box::new(Transcript::default()),
+            state: Box::new(SessionState {
+                todos: vec![crate::session::TodoView {
+                    content: "confirm the port?".into(),
+                    status: "pending".into(),
+                }],
+                ..SessionState::default()
+            }),
+        });
+        assert_eq!(app.shell.composer.suggestion, None);
     }
 
     /// The settled Session offers its next runnable todo in the composer, and
