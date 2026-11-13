@@ -189,11 +189,22 @@ describe("ProjectWorktree", () => {
 
       expect(yield* worktrees.remove(target, { directory: info.directory })).toBe(true)
       expect(yield* Effect.promise(() => Bun.file(path.join(info.directory, "README.md")).exists())).toBe(false)
-      const moved = yield* db
-        .select({ id: SessionTable.id, directory: SessionTable.directory })
-        .from(SessionTable)
-        .all()
-        .pipe(Effect.orDie)
+      // The Moved events update this table through the projector's own fiber,
+      // so the rows settle a beat behind remove() — give them a bounded wait
+      // instead of reading mid-projection.
+      const moved = yield* Effect.gen(function* () {
+        const deadline = Date.now() + 4000
+        for (;;) {
+          const rows = yield* db
+            .select({ id: SessionTable.id, directory: SessionTable.directory })
+            .from(SessionTable)
+            .all()
+            .pipe(Effect.orDie)
+          if (rows.length === 2 && rows.every((row) => row.directory === target.checkout)) return rows
+          if (Date.now() > deadline) return rows
+          yield* Effect.sleep("100 millis")
+        }
+      }).pipe(Effect.orDie)
       expect(new Set(moved.map((row) => row.id))).toEqual(new Set([sessionID, nestedID]))
       for (const row of moved) expect(row.directory).toBe(target.checkout)
     }),
