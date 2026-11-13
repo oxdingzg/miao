@@ -207,9 +207,12 @@ else
         # Read the tag from the release redirect: the REST API allows only 60
         # unauthenticated requests an hour per IP. The mirror answers the
         # same redirect with a mirror URL, so the parse is identical there.
-        specific_version=$(curl -sI "$MIRROR_BASE/releases/latest" | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r')
+        # Every probe is failure-tolerant: under `set -e` an unguarded
+        # failing curl would abort the whole install instead of falling
+        # through to GitHub, which is exactly what a blocked mirror must do.
+        specific_version=$(curl -sI "$MIRROR_BASE/releases/latest" | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r' || true)
         if [[ -z "$specific_version" ]]; then
-            specific_version=$(curl -sI "$GITHUB_BASE/releases/latest" | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r')
+            specific_version=$(curl -sI "$GITHUB_BASE/releases/latest" | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r' || true)
         fi
 
         if [[ -z "$specific_version" ]]; then
@@ -223,10 +226,11 @@ else
         specific_version=$requested_version
         url="$MIRROR_BASE/releases/download/v${requested_version}/$filename"
 
-        # Verify the release exists before downloading
-        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "$MIRROR_BASE/releases/tag/v${requested_version}")
+        # Verify the release exists before downloading; a probe that cannot
+        # connect reads as "not found here" and moves on to GitHub.
+        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "$MIRROR_BASE/releases/tag/v${requested_version}" || true)
         if [ "$http_status" != "200" ]; then
-            http_status=$(curl -sI -o /dev/null -w "%{http_code}" "$GITHUB_BASE/releases/tag/v${requested_version}")
+            http_status=$(curl -sI -o /dev/null -w "%{http_code}" "$GITHUB_BASE/releases/tag/v${requested_version}" || true)
             if [ "$http_status" = "404" ]; then
                 echo -e "${RED}Error: Release v${requested_version} not found${NC}"
                 echo -e "${MUTED}Available releases: https://github.com/oxdingzg/miao/releases${NC}"
@@ -320,7 +324,7 @@ download_with_progress() {
     trap "trap - RETURN; rm -f \"$tracefile\"; printf '\033[?25h' >&4; exec 4>&-" RETURN
 
     (
-        curl --trace-ascii "$tracefile" -f -s -L -o "$output" "$url"
+        curl --trace-ascii "$tracefile" -f -s -L --retry 4 --retry-delay 2 --retry-all-errors -o "$output" "$url"
     ) &
     local curl_pid=$!
 
@@ -366,13 +370,17 @@ download_and_install() {
     # unreachable or half-served mid-install.
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
         # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        curl -f -# -L -o "$tmp_dir/$filename" "$url" || rm -f "$tmp_dir/$filename"
+        curl -f --retry 4 --retry-delay 2 --retry-all-errors -# -L -o "$tmp_dir/$filename" "$url" || rm -f "$tmp_dir/$filename"
     fi
     if [[ ! -s "$tmp_dir/$filename" ]]; then
         github_url="${url/$MIRROR_BASE/$GITHUB_BASE}"
         if [ "$github_url" != "$url" ]; then
             print_message info "Mirror unavailable; falling back to GitHub"
-            curl -f -# -L -o "$tmp_dir/$filename" "$github_url"
+            curl -f --retry 4 --retry-delay 2 --retry-all-errors -# -L -o "$tmp_dir/$filename" "$github_url" || {
+                rm -f "$tmp_dir/$filename"
+                echo -e "${RED}Error: download failed from both the mirror and GitHub${NC}"
+                exit 1
+            }
         fi
     fi
 
