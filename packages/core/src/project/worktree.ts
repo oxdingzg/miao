@@ -279,6 +279,10 @@ const layer = Layer.effect(
       // the directory while the stored rows keep the drive's original case, so
       // the fetch is a broad case-insensitive prefix probe and the exact
       // anchored filter runs here, case-normalized.
+      // directoryColumn stores paths with forward slashes on Windows, so the
+      // fetch patterns must use that storage form; the exact anchored filter
+      // below keeps working on the platform form canonical() produces.
+      const storage = globalThis.process.platform === "win32" ? directory.replaceAll("\\", "/") : directory
       const anchoredRows = yield* db
         .select({ id: SessionTable.id, directory: SessionTable.directory })
         .from(SessionTable)
@@ -287,10 +291,9 @@ const layer = Layer.effect(
             // SQLite LIKE is case-insensitive for ASCII: the bare form catches
             // a session sitting exactly on the worktree directory whose case
             // differs from canonical()'s lowercase form.
-            like(SessionTable.directory, directory),
-            like(SessionTable.directory, `${directory}/%`),
-            like(SessionTable.directory, `${directory}\\%`),
-            eq(SessionTable.directory, directory),
+            like(SessionTable.directory, storage),
+            like(SessionTable.directory, `${storage}/%`),
+            eq(SessionTable.directory, storage),
           ),
         )
         .all()
