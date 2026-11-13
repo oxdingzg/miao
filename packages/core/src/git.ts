@@ -292,16 +292,18 @@ const layer = Layer.effect(
     }
 
     const untrackedStat = Effect.fnUntraced(function* (repository: Repository, file: string) {
-      const result = yield* run(
-        repository.worktree,
-        proc,
-      )(["diff", "--no-ext-diff", "--no-renames", "--numstat", "--", "/dev/null", file])
-      const [additions, deletions] = result.text.split("\t")
-      if (additions === undefined || deletions === undefined) return undefined
-      return {
-        additions: additions === "-" ? 0 : Number.parseInt(additions || "0", 10) || 0,
-        deletions: deletions === "-" ? 0 : Number.parseInt(deletions || "0", 10) || 0,
-      }
+      // An untracked file has no HEAD side: its numstat is the file's own
+      // line count (0 additions for binary content, which git also reports
+      // as "-"). The `git diff --no-index -- /dev/null <file>` trick only
+      // works where /dev/null exists — from a Windows process the literal
+      // pathspec resolves to nothing and the probe comes back empty.
+      const full = path.join(repository.worktree, file)
+      const bytes = yield* fs.readFile(full).pipe(Effect.option)
+      if (bytes._tag === "None") return undefined
+      if (bytes.value.slice(0, 8000).includes(0)) return { additions: 0, deletions: 0 }
+      const lines = new TextDecoder().decode(bytes.value).split("\n")
+      if (lines.at(-1) === "") lines.pop()
+      return { additions: lines.length, deletions: 0 }
     })
 
     const statusEntriesTs = Effect.fn("Git.status.entries.ts")(function* (repository: Repository) {
@@ -332,6 +334,7 @@ const layer = Layer.effect(
       return yield* Effect.forEach(items, (item) =>
         Effect.gen(function* () {
           const stat = stats.get(item.file) ?? (yield* untrackedStat(repository, item.file))
+          if (item.file === "added.txt" || item.file.includes("added")) console.log("PROBE", JSON.stringify({ file: item.file, stat }))
           return new StatusEntry({
             path: RelativePath.make(item.file),
             status: item.status,
