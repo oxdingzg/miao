@@ -42,10 +42,44 @@ MIAO_CODEGRAPH=1 miao run "..."   # 单次运行覆盖配置，用于 A/B 对比
 
 ## 语言
 
-TypeScript、TSX、JavaScript、Rust、Python、Go。混合仓库可用，`codegraph_status` 会按语言报告覆盖；
+按扩展名逐文件判定，一份索引同时容纳多种语言；`codegraph_status` 会按语言报告文件数。
+
+| 语言 | 扩展名 |
+|---|---|
+| TypeScript / TSX / JavaScript | `.ts .mts .cts .tsx .js .mjs .cjs .jsx`（`.d.ts` 归 TypeScript） |
+| 单文件组件 | `.vue .svelte`（取 `<script>` 块）、`.astro`（取 frontmatter） |
+| Rust | `.rs` |
+| Python | `.py .pyi` |
+| Go | `.go` |
+| Java | `.java` |
+| Kotlin | `.kt .kts` |
+| Scala | `.scala .sc` |
+| C# | `.cs` |
+| C / C++ | `.c .h` / `.cpp .cc .cxx .hpp .hh .hxx` |
+| PHP | `.php` |
+| Ruby | `.rb` |
+| Swift | `.swift` |
+| Dart | `.dart` |
+| Lua | `.lua` |
+| R | `.r`（扩展名大小写不敏感） |
+
+`.vue`/`.svelte`/`.astro` 不是 JavaScript 文件：索引会按字节遮罩出 `<script>` 块（Astro 为
+`---` 之间的 frontmatter，围栏本身也被遮掉），再用 TypeScript 语法解析。遮罩保持字节偏移与换行不变，
+所以返回的行号与模型读到的文件完全一致，模板部分不会被当成代码。
+
+跨文件解析按各语言的导入机制：TS/JS 相对路径与 `/index.*` 探测；Rust `use crate::/self::/super::`；
+Python 点分模块；Go 包目录；Java/Kotlin/Scala/C# 的 `import a.b.Type`、C/C++ 的 `#include`、
+PHP 的 `use`、Dart 的 `import '…'`、Ruby/Lua/R 的 `require`/`library` 都按「末段名字 → 文件主名」
+匹配到工作区文件，并回退到同目录兄弟文件（Go 包、barrel 模块）。
+
 跨语言调用（例如 TS 经 N-API 调 Rust）不建边。未覆盖语言的文件不进索引，仍走原有
 grep/glob/read/lsp 工具。
 
+新增一门语言约 80–150 行：扩展名映射、`definition`/`callee`/`imports` 的节点分支、一条测试。
+代价是真实存在的：从 6 门语言扩到 21 个语法/组件格式后，arm64 release 二进制约从 85 MB 增到
+111 MB（+26 MB），全新构建时间从约 1 分钟增到约 2.5 分钟（构建只在 CI 与发版时发生，日常增量构建不受影响）。
+
+## 已知边界
 ## 已知边界
 
 - 不跟随 `tsconfig` 的 `paths` 别名、workspace 包名导入、`build.rs` 生成代码与生成文件。

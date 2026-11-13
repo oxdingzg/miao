@@ -31,6 +31,7 @@ pub(crate) struct Symbols {
     by_name: HashMap<String, Vec<Symbol>>,
     paths: HashSet<String>,
     directories: HashMap<String, Vec<String>>,
+    stems: HashMap<String, Vec<String>>,
 }
 
 pub fn run(connection: &mut Connection, max_refs: usize) -> Result<usize, Error> {
@@ -102,9 +103,22 @@ pub(crate) fn load(connection: &Connection) -> Result<Symbols, Error> {
                 id: id.clone(),
                 qualified,
             });
-        symbols.paths.insert(path.clone());
         let directory = directory_of(&path).to_owned();
-        symbols.directories.entry(directory).or_default().push(path);
+        symbols
+            .directories
+            .entry(directory)
+            .or_default()
+            .push(path.clone());
+        let stem = path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&path)
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        symbols.stems.entry(stem).or_default().push(path.clone());
+        symbols.paths.insert(path);
     }
     Ok(symbols)
 }
@@ -171,6 +185,16 @@ pub(crate) fn import_target(symbols: &Symbols, source: &str, from: &str) -> Opti
         python_target(symbols, module, from)
     } else if let Some(module) = source.strip_prefix("go::") {
         go_target(symbols, module)
+    } else if let Some(module) = source.strip_prefix("path::") {
+        stem_target(symbols, module, '.')
+    } else if let Some(module) = source.strip_prefix("include::") {
+        stem_target(symbols, module, '/')
+    } else if let Some(module) = source.strip_prefix("php::") {
+        stem_target(symbols, module, '\\')
+    } else if let Some(module) = source.strip_prefix("dart::") {
+        stem_target(symbols, module, '/')
+    } else if let Some(module) = source.strip_prefix("module::") {
+        stem_target(symbols, module, '/')
     } else {
         script_target(symbols, source, from)
     }?;
@@ -287,4 +311,24 @@ fn directory_of(path: &str) -> &str {
     path.rsplit_once('/')
         .map(|(directory, _)| directory)
         .unwrap_or("")
+}
+
+/// A module named by package rather than by path: `com.x.Helper`, `sys/util.h`,
+/// `App\\Models\\User`, `package:app/user.dart`. The file is found by the stem of
+/// its last segment, which is how these languages name the file after the type.
+fn stem_target(symbols: &Symbols, module: &str, separator: char) -> Option<String> {
+    let tail = module.split(separator).rfind(|part| !part.is_empty())?;
+    let stem = tail.split('.').next().unwrap_or(tail);
+    let candidates = symbols.stems.get(stem)?;
+    if module.contains('/') {
+        let needle = module
+            .trim_start_matches("package:")
+            .trim_end_matches(".dart");
+        if let Some(exact) = candidates.iter().find(|path| path.ends_with(needle)) {
+            return Some(exact.clone());
+        }
+    }
+    let mut sorted = candidates.clone();
+    sorted.sort();
+    sorted.into_iter().next()
 }

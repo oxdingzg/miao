@@ -288,3 +288,182 @@ fn a_go_package_resolves_symbols_declared_in_a_sibling_file() {
         callers.content
     );
 }
+
+#[test]
+fn every_new_language_contributes_its_definitions() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    let cases: &[(&str, &str, &str)] = &[
+        (
+            "src/Main.java",
+            "class Foo {\n  void barJava() {\n    baz();\n  }\n}\n",
+            "barJava",
+        ),
+        ("src/lib.c", "int helperC(int a) {\n  return a;\n}\n", "helperC"),
+        (
+            "src/lib.cpp",
+            "class Widget {\n public:\n  void drawCpp();\n};\nvoid Widget::drawCpp() {\n  paint();\n}\n",
+            "drawCpp",
+        ),
+        (
+            "src/App.cs",
+            "namespace N {\n  class Foo {\n    void BarCs() {\n      Baz();\n    }\n  }\n}\n",
+            "BarCs",
+        ),
+        (
+            "src/app.php",
+            "<?php\nclass Foo {\n  public function barPhp() {\n    baz();\n  }\n}\n",
+            "barPhp",
+        ),
+        (
+            "src/app.rb",
+            "class Foo\n  def barRuby\n    baz()\n  end\nend\n",
+            "barRuby",
+        ),
+        (
+            "src/App.swift",
+            "class Foo {\n  func barSwift() {\n    baz()\n  }\n}\n",
+            "barSwift",
+        ),
+        (
+            "src/Main.kt",
+            "class Foo {\n  fun barKotlin() {\n    baz()\n  }\n}\n",
+            "barKotlin",
+        ),
+        (
+            "src/Main.scala",
+            "object Foo {\n  def barScala(): Unit = {\n    baz()\n  }\n}\n",
+            "barScala",
+        ),
+        (
+            "src/main.dart",
+            "class Foo {\n  void barDart() {\n    baz();\n  }\n}\n",
+            "barDart",
+        ),
+        ("src/init.lua", "function barLua()\n  baz()\nend\n", "barLua"),
+        (
+            "src/analysis.R",
+            "barR <- function(x) {\n  baz(x)\n}\n",
+            "barR",
+        ),
+    ];
+    for (path, body, _) in cases {
+        write(root, path, body);
+    }
+    let mut index = index(root);
+    let status = index.status().expect("status");
+    for language in [
+        "java", "c", "cpp", "csharp", "php", "ruby", "swift", "kotlin", "scala", "dart", "lua", "r",
+    ] {
+        assert!(
+            status.content.contains(&format!("{language} 1")),
+            "{language} missing from {}",
+            status.content
+        );
+    }
+    for (path, _, symbol) in cases {
+        let answer = index.explore(symbol, None, None).expect("explore");
+        assert!(
+            answer.content.contains(symbol),
+            "{path}: {symbol} not indexed: {}",
+            answer.content
+        );
+        assert!(
+            answer.content.contains(path),
+            "{path}: source not rendered: {}",
+            answer.content
+        );
+    }
+}
+
+#[test]
+fn a_java_import_resolves_a_cross_file_call() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    write(
+        root,
+        "src/com/x/Helper.java",
+        "package com.x;\npublic class Helper {\n  public static void help() {}\n}\n",
+    );
+    write(
+        root,
+        "src/com/x/Use.java",
+        "package com.x;\nimport com.x.Helper;\npublic class Use {\n  void run() {\n    Helper.help();\n  }\n}\n",
+    );
+    let mut index = index(root);
+    index.explore("help", None, None).expect("explore");
+    let callers = index.callers("help", None).expect("callers");
+    assert!(
+        callers.content.contains("run"),
+        "java import must resolve: {}",
+        callers.content
+    );
+}
+
+#[test]
+fn a_c_include_resolves_a_cross_file_call() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    write(root, "src/util.c", "int helper(void) {\n  return 0;\n}\n");
+    write(
+        root,
+        "src/main.c",
+        "#include \"util.h\"\nint run(void) {\n  return helper();\n}\n",
+    );
+    let mut index = index(root);
+    index.explore("helper", None, None).expect("explore");
+    let callers = index.callers("helper", None).expect("callers");
+    assert!(
+        callers.content.contains("run"),
+        "c include must resolve: {}",
+        callers.content
+    );
+}
+
+#[test]
+fn a_vue_component_indexes_the_code_in_its_script_block() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    write(
+        root,
+        "src/App.vue",
+        "<template>\n  <div>{{ label }}</div>\n</template>\n\n<script setup lang=\"ts\">\nexport function label(): string {\n  return \"hi\";\n}\n</script>\n",
+    );
+    let mut index = index(root);
+    let answer = index.explore("label", None, None).expect("explore");
+    assert!(answer.content.contains("src/App.vue"), "{}", answer.content);
+    assert!(
+        answer.content.contains("export function label"),
+        "{}",
+        answer.content
+    );
+    assert!(
+        answer.content.contains("     6\texport function label"),
+        "line numbers must match the component file: {}",
+        answer.content
+    );
+    assert!(
+        !answer.content.contains("<div>"),
+        "template markup must not be indexed as code: {}",
+        answer.content
+    );
+}
+
+#[test]
+fn an_astro_frontmatter_is_indexed_and_the_template_is_not() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    write(
+        root,
+        "src/page.astro",
+        "---\nexport function title() {\n  return 1;\n}\n---\n<h1>Hello</h1>\n",
+    );
+    let mut index = index(root);
+    let answer = index.explore("title", None, None).expect("explore");
+    assert!(
+        answer.content.contains("export function title"),
+        "{}",
+        answer.content
+    );
+    assert!(!answer.content.contains("<h1>"), "{}", answer.content);
+}
