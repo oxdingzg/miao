@@ -135,9 +135,12 @@ async fn timer_survives_turn_cancel_and_fires_one_atomic_admission() {
     tokio::time::pause();
     tokio::time::advance(std::time::Duration::from_secs(61)).await;
     tokio::time::resume();
-    tokio::time::timeout(std::time::Duration::from_secs(30), provider.fired.notified())
-        .await
-        .unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.fired.notified(),
+    )
+    .await
+    .unwrap();
     assert_eq!(store.wakeups("s").await.unwrap()[0]["state"], "fired");
     assert!(!runtime.cancel_wakeup("s", id).await.unwrap());
     tokio::time::pause();
@@ -312,9 +315,12 @@ async fn edit_moves_the_due_time_and_keeps_identity() {
     tokio::time::pause();
     tokio::time::advance(std::time::Duration::from_secs(3610)).await;
     tokio::time::resume();
-    tokio::time::timeout(std::time::Duration::from_secs(30), provider.fired.notified())
-        .await
-        .unwrap();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        provider.fired.notified(),
+    )
+    .await
+    .unwrap();
     runtime.shutdown().await;
     let events = store.events("s", 0, 100).await.unwrap();
     let fired = events
