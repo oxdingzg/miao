@@ -77,7 +77,10 @@ struct Candidate {
 pub fn sync(connection: &mut Connection, root: &Path, budget: Budget) -> Result<Report, Error> {
     let started = Instant::now();
     let (candidates, complete) = walk(root);
-    let seen: HashSet<String> = candidates.iter().map(|item| item.relative.clone()).collect();
+    let seen: HashSet<String> = candidates
+        .iter()
+        .map(|item| item.relative.clone())
+        .collect();
     let (mut indexed, mut unchanged, mut pending) = (0, 0, 0);
     for candidate in &candidates {
         if indexed >= budget.files || started.elapsed().as_millis() >= budget.millis {
@@ -287,7 +290,8 @@ fn walk(root: &Path) -> (Vec<Candidate>, bool) {
                 continue;
             }
             if kind.is_dir() {
-                if depth >= MAX_DEPTH || SKIP_DIRS.contains(&name.as_str()) || name.starts_with('.') {
+                if depth >= MAX_DEPTH || SKIP_DIRS.contains(&name.as_str()) || name.starts_with('.')
+                {
                     continue;
                 }
                 stack.push((entry.path(), relative, depth + 1));
@@ -330,10 +334,11 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Imports keyed by file, for the resolver.
-pub fn load_imports(
-    connection: &Connection,
-) -> Result<HashMap<String, Vec<(String, Vec<String>)>>, Error> {
+/// Imports keyed by file: each entry is the module a statement names and the
+/// bindings it introduced.
+pub type Imports = HashMap<String, Vec<(String, Vec<String>)>>;
+
+pub fn load_imports(connection: &Connection) -> Result<Imports, Error> {
     let mut statement = connection.prepare("SELECT path, source, names FROM imports")?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -342,7 +347,7 @@ pub fn load_imports(
             row.get::<_, String>(2)?,
         ))
     })?;
-    let mut map: HashMap<String, Vec<(String, Vec<String>)>> = HashMap::new();
+    let mut map = Imports::new();
     for row in rows {
         let (path, source, names) = row?;
         map.entry(path).or_default().push((

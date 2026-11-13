@@ -86,24 +86,111 @@ fn identifier_like(value: &str) -> bool {
 pub fn builtin(language: &str) -> &'static [&'static str] {
     match language {
         "rust" => &[
-            "println", "print", "eprintln", "eprint", "format", "write", "writeln", "vec", "panic",
-            "assert", "assert_eq", "assert_ne", "debug_assert", "debug_assert_eq", "unreachable",
-            "todo", "unimplemented", "matches", "concat", "include_str", "include_bytes", "env",
-            "stringify", "dbg", "unwrap", "expect", "clone", "to_string", "to_owned", "as_str",
-            "as_ref", "as_mut", "len", "is_empty", "iter", "iter_mut", "into_iter", "collect",
-            "and_then", "ok_or", "ok_or_else", "unwrap_or", "unwrap_or_else", "unwrap_or_default",
+            "println",
+            "print",
+            "eprintln",
+            "eprint",
+            "format",
+            "write",
+            "writeln",
+            "vec",
+            "panic",
+            "assert",
+            "assert_eq",
+            "assert_ne",
+            "debug_assert",
+            "debug_assert_eq",
+            "unreachable",
+            "todo",
+            "unimplemented",
+            "matches",
+            "concat",
+            "include_str",
+            "include_bytes",
+            "env",
+            "stringify",
+            "dbg",
+            "unwrap",
+            "expect",
+            "clone",
+            "to_string",
+            "to_owned",
+            "as_str",
+            "as_ref",
+            "as_mut",
+            "len",
+            "is_empty",
+            "iter",
+            "iter_mut",
+            "into_iter",
+            "collect",
+            "and_then",
+            "ok_or",
+            "ok_or_else",
+            "unwrap_or",
+            "unwrap_or_else",
+            "unwrap_or_default",
             "default",
         ],
         "typescript" | "tsx" | "javascript" => &[
-            "log", "error", "warn", "info", "debug", "stringify", "parse", "keys", "values",
-            "entries", "assign", "then", "catch", "finally", "map", "filter", "reduce", "forEach",
-            "push", "pop", "slice", "splice", "join", "split", "trim", "toLowerCase",
-            "toUpperCase", "replace", "includes", "indexOf", "sort", "require", "resolve",
+            "log",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "stringify",
+            "parse",
+            "keys",
+            "values",
+            "entries",
+            "assign",
+            "then",
+            "catch",
+            "finally",
+            "map",
+            "filter",
+            "reduce",
+            "forEach",
+            "push",
+            "pop",
+            "slice",
+            "splice",
+            "join",
+            "split",
+            "trim",
+            "toLowerCase",
+            "toUpperCase",
+            "replace",
+            "includes",
+            "indexOf",
+            "sort",
+            "require",
+            "resolve",
         ],
         "python" => &[
-            "print", "len", "range", "str", "int", "float", "bool", "dict", "list", "set",
-            "append", "extend", "items", "format", "join", "split", "strip", "startswith",
-            "endswith", "lower", "upper", "replace", "super",
+            "print",
+            "len",
+            "range",
+            "str",
+            "int",
+            "float",
+            "bool",
+            "dict",
+            "list",
+            "set",
+            "append",
+            "extend",
+            "items",
+            "format",
+            "join",
+            "split",
+            "strip",
+            "startswith",
+            "endswith",
+            "lower",
+            "upper",
+            "replace",
+            "super",
         ],
         "go" => &[
             "len", "cap", "make", "append", "copy", "delete", "panic", "recover", "print",
@@ -118,7 +205,9 @@ pub fn builtin(language: &str) -> &'static [&'static str] {
 pub fn definition(language: &str, node: Node, source: &[u8]) -> Option<(&'static str, String)> {
     let name = |field_name: &str| field(node, field_name, source);
     Some(match (language, node.kind()) {
-        ("typescript" | "tsx" | "javascript", "function_declaration") => ("function", name("name")?),
+        ("typescript" | "tsx" | "javascript", "function_declaration") => {
+            ("function", name("name")?)
+        }
         ("typescript" | "tsx" | "javascript", "generator_function_declaration") => {
             ("function", name("name")?)
         }
@@ -129,7 +218,10 @@ pub fn definition(language: &str, node: Node, source: &[u8]) -> Option<(&'static
         ("typescript" | "tsx" | "javascript", "enum_declaration") => ("enum", name("name")?),
         ("typescript" | "tsx" | "javascript", "variable_declarator") => {
             let value = node.child_by_field_name("value")?;
-            if !matches!(value.kind(), "arrow_function" | "function_expression" | "function") {
+            if !matches!(
+                value.kind(),
+                "arrow_function" | "function_expression" | "function"
+            ) {
                 return None;
             }
             ("function", name("name")?)
@@ -140,7 +232,9 @@ pub fn definition(language: &str, node: Node, source: &[u8]) -> Option<(&'static
         ("rust", "trait_item") => ("trait", name("name")?),
         ("rust", "union_item") => ("struct", name("name")?),
         ("rust", "impl_item") => {
-            let kind = node.child_by_field_name("type").or_else(|| node.child_by_field_name("trait"))?;
+            let kind = node
+                .child_by_field_name("type")
+                .or_else(|| node.child_by_field_name("trait"))?;
             ("impl", text(kind, source)?)
         }
         ("rust", "mod_item") => ("module", name("name")?),
@@ -160,8 +254,12 @@ pub fn definition(language: &str, node: Node, source: &[u8]) -> Option<(&'static
 /// segment, which is what a same-file or imported-name lookup can match.
 pub fn callee(language: &str, node: Node, source: &[u8]) -> Option<String> {
     let callee = match (language, node.kind()) {
-        ("typescript" | "tsx" | "javascript", "call_expression") => node.child_by_field_name("function")?,
-        ("typescript" | "tsx" | "javascript", "new_expression") => node.child_by_field_name("constructor")?,
+        ("typescript" | "tsx" | "javascript", "call_expression") => {
+            node.child_by_field_name("function")?
+        }
+        ("typescript" | "tsx" | "javascript", "new_expression") => {
+            node.child_by_field_name("constructor")?
+        }
         ("rust", "call_expression") => node.child_by_field_name("function")?,
         ("rust", "macro_invocation") => node.child_by_field_name("macro")?,
         ("python", "call") => node.child_by_field_name("function")?,
@@ -186,7 +284,9 @@ pub fn callee(language: &str, node: Node, source: &[u8]) -> Option<String> {
 
 fn identifiers(value: &str) -> Vec<String> {
     value
-        .split(|character: char| !(character.is_alphanumeric() || character == '_' || character == '$'))
+        .split(|character: char| {
+            !(character.is_alphanumeric() || character == '_' || character == '$')
+        })
         .filter(|part| !part.is_empty())
         .filter(|part| identifier_like(part))
         .map(str::to_owned)
@@ -265,7 +365,10 @@ fn script_import(_language: &str, node: Node, source: &[u8]) -> Option<ImportSpe
 
 fn rust_use(node: Node, source: &[u8]) -> Option<ImportSpec> {
     let whole = text(node, source)?;
-    let body = whole.trim_start_matches("use ").trim_end_matches(';').trim();
+    let body = whole
+        .trim_start_matches("use ")
+        .trim_end_matches(';')
+        .trim();
     let (prefix, names) = match body.split_once('{') {
         Some((prefix, rest)) => {
             let inner = rest.trim_end_matches(['}', ';']);
@@ -280,7 +383,12 @@ fn rust_use(node: Node, source: &[u8]) -> Option<ImportSpec> {
                         Some((_, alias)) => alias.trim().to_owned(),
                         None => entry.to_owned(),
                     };
-                    entry.rsplit("::").next().map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned)
+                    entry
+                        .rsplit("::")
+                        .next()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned)
                 })
                 .collect();
             (prefix.trim_end_matches("::").to_owned(), names)
@@ -291,7 +399,10 @@ fn rust_use(node: Node, source: &[u8]) -> Option<ImportSpec> {
                 None => (body, None),
             };
             let name = alias.or_else(|| path.rsplit("::").next().map(str::to_owned))?;
-            let prefix = path.rsplit_once("::").map(|(prefix, _)| prefix.to_owned()).unwrap_or_default();
+            let prefix = path
+                .rsplit_once("::")
+                .map(|(prefix, _)| prefix.to_owned())
+                .unwrap_or_default();
             (prefix, vec![name])
         }
     };
@@ -343,10 +454,17 @@ fn go_import(node: Node, source: &[u8]) -> Option<ImportSpec> {
             .map(|value| value.trim_start_matches('"').trim_start_matches('\''))
             .unwrap_or(trimmed),
     );
-    let alias = trimmed.split_whitespace().next().filter(|value| *value != "\"");
+    let alias = trimmed
+        .split_whitespace()
+        .next()
+        .filter(|value| *value != "\"");
     let names = match alias {
         Some(alias) if !alias.starts_with('"') => vec![alias.to_owned()],
-        _ => target.rsplit('/').next().map(|name| vec![name.to_owned()]).unwrap_or_default(),
+        _ => target
+            .rsplit('/')
+            .next()
+            .map(|name| vec![name.to_owned()])
+            .unwrap_or_default(),
     };
     Some(ImportSpec {
         source: format!("go::{target}"),

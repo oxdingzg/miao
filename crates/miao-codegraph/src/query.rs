@@ -19,11 +19,61 @@ const MAX_LINE_CHARS: usize = 400;
 const FAN_IN_BONUS_CAP: i64 = 8;
 
 const STOPWORDS: &[&str] = &[
-    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "from", "into", "by",
-    "how", "what", "where", "which", "when", "why", "does", "do", "is", "are", "was", "were", "be",
-    "this", "that", "these", "those", "it", "its", "we", "you", "i", "can", "should", "would",
-    "code", "file", "files", "function", "functions", "line", "lines", "used", "use", "using",
-    "work", "works", "find", "explain", "trace", "happens",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "of",
+    "to",
+    "in",
+    "on",
+    "for",
+    "with",
+    "from",
+    "into",
+    "by",
+    "how",
+    "what",
+    "where",
+    "which",
+    "when",
+    "why",
+    "does",
+    "do",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "we",
+    "you",
+    "i",
+    "can",
+    "should",
+    "would",
+    "code",
+    "file",
+    "files",
+    "function",
+    "functions",
+    "line",
+    "lines",
+    "used",
+    "use",
+    "using",
+    "work",
+    "works",
+    "find",
+    "explain",
+    "trace",
+    "happens",
 ];
 
 struct Symbol {
@@ -60,7 +110,11 @@ pub fn explore(
                 (true, _) => 100,
                 (false, true) => 70,
                 (false, false) => 45,
-            } + fan_in.get(&symbol.id).copied().unwrap_or(0).min(FAN_IN_BONUS_CAP)
+            } + fan_in
+                .get(&symbol.id)
+                .copied()
+                .unwrap_or(0)
+                .min(FAN_IN_BONUS_CAP)
                 + i64::from(symbol.kind != "impl");
             keep(&mut scored, symbol, points);
         }
@@ -88,10 +142,16 @@ pub fn explore(
         "Found {} symbol(s) for `{}`{}\n",
         picked.len(),
         query.trim(),
-        if ranges.is_empty() { "" } else { " plus the requested ranges" }
+        if ranges.is_empty() {
+            ""
+        } else {
+            " plus the requested ranges"
+        }
     ));
     if !picked.is_empty() {
-        text.push_str("> The source below is complete and verbatim — treat these files as already read.\n");
+        text.push_str(
+            "> The source below is complete and verbatim — treat these files as already read.\n",
+        );
     }
     for (path, start, end) in &ranges {
         render_range(&mut text, root, &mut cache, path, *start, *end, budget);
@@ -99,7 +159,10 @@ pub fn explore(
     let mut not_shown = Vec::new();
     let mut grouped: HashMap<&str, Vec<&Symbol>> = HashMap::new();
     for symbol in &picked {
-        grouped.entry(symbol.path.as_str()).or_default().push(symbol);
+        grouped
+            .entry(symbol.path.as_str())
+            .or_default()
+            .push(symbol);
     }
     let mut files = grouped.keys().copied().collect::<Vec<_>>();
     files.sort();
@@ -150,7 +213,9 @@ pub fn explore(
         }
     }
     if tokens.is_empty() && ranges.is_empty() {
-        text.push_str("\nNo searchable token in the query. Name a symbol, a file, or `path:line-line`.\n");
+        text.push_str(
+            "\nNo searchable token in the query. Name a symbol, a file, or `path:line-line`.\n",
+        );
     }
     Ok(text)
 }
@@ -241,7 +306,10 @@ pub fn callers(
     for row in rows {
         let (qualified, path, line, call_line) = row?;
         count += 1;
-        text.push_str(&format!("- {qualified} ({path}:{})\n", call_line.unwrap_or(line)));
+        text.push_str(&format!(
+            "- {qualified} ({path}:{})\n",
+            call_line.unwrap_or(line)
+        ));
     }
     if count == 0 {
         text.push_str("- none in the index: either it is an entry point, or its callers resolve by a spelling this index does not follow\n");
@@ -272,8 +340,8 @@ pub fn status(connection: &Connection, database: &Path) -> Result<String, Error>
         crate::extract::VERSION,
         crate::lang::LANGUAGES.join(", ")
     ));
-    let mut statement =
-        connection.prepare("SELECT language, COUNT(*) FROM files GROUP BY language ORDER BY COUNT(*) DESC")?;
+    let mut statement = connection
+        .prepare("SELECT language, COUNT(*) FROM files GROUP BY language ORDER BY COUNT(*) DESC")?;
     let rows = statement.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
@@ -286,7 +354,9 @@ pub fn status(connection: &Connection, database: &Path) -> Result<String, Error>
     if !languages.is_empty() {
         text.push_str(&format!("languages: {languages}\n"));
     }
-    let size = std::fs::metadata(database).map(|meta| meta.len()).unwrap_or(0);
+    let size = std::fs::metadata(database)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
     text.push_str(&format!(
         "store: {} ({:.1} MB)\n",
         database.display(),
@@ -347,7 +417,11 @@ fn ranges(query: &str) -> Vec<(String, usize, usize)> {
         if start == 0 || end < start {
             continue;
         }
-        found.push((path.trim_start_matches("./").to_owned(), start, end.min(start + 400)));
+        found.push((
+            path.trim_start_matches("./").to_owned(),
+            start,
+            end.min(start + 400),
+        ));
     }
     found
 }
@@ -394,8 +468,8 @@ fn symbol_row(row: &rusqlite::Row) -> rusqlite::Result<Symbol> {
 }
 
 fn fan_in(connection: &Connection) -> Result<HashMap<String, i64>, Error> {
-    let mut statement =
-        connection.prepare("SELECT target, COUNT(*) FROM edges WHERE kind='calls' GROUP BY target")?;
+    let mut statement = connection
+        .prepare("SELECT target, COUNT(*) FROM edges WHERE kind='calls' GROUP BY target")?;
     let rows = statement.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?;
@@ -454,7 +528,9 @@ fn render_lines(
 ) {
     let lines = file_lines(root, cache, path);
     if lines.is_empty() {
-        text.push_str(&format!("> {path} is not readable — the index row is stale\n"));
+        text.push_str(&format!(
+            "> {path} is not readable — the index row is stale\n"
+        ));
         return;
     }
     let end = end.min(lines.len());

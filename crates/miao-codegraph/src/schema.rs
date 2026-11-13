@@ -66,7 +66,15 @@ CREATE INDEX IF NOT EXISTS imports_path ON imports(path);
 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(id UNINDEXED, name, qualified, signature, docstring);
 "#;
 
-const TABLES: &[&str] = &["files", "nodes", "edges", "refs", "imports", "nodes_fts", "meta"];
+const TABLES: &[&str] = &[
+    "files",
+    "nodes",
+    "edges",
+    "refs",
+    "imports",
+    "nodes_fts",
+    "meta",
+];
 
 pub fn open(path: &Path) -> Result<Connection, Error> {
     let connection = Connection::open(path)?;
@@ -82,7 +90,11 @@ pub fn open(path: &Path) -> Result<Connection, Error> {
 /// tree, so dropping it costs one re-index and no correctness risk.
 fn migrate(connection: &Connection) -> Result<(), Error> {
     let recorded: Option<String> = connection
-        .query_row("SELECT value FROM meta WHERE key='extract_version'", [], |row| row.get(0))
+        .query_row(
+            "SELECT value FROM meta WHERE key='extract_version'",
+            [],
+            |row| row.get(0),
+        )
         .ok();
     let wanted = crate::extract::VERSION.to_string();
     if recorded.as_deref() == Some(wanted.as_str()) {
@@ -101,7 +113,9 @@ fn migrate(connection: &Connection) -> Result<(), Error> {
 
 pub fn meta(connection: &Connection, key: &str) -> Option<String> {
     connection
-        .query_row("SELECT value FROM meta WHERE key=?1", [key], |row| row.get(0))
+        .query_row("SELECT value FROM meta WHERE key=?1", [key], |row| {
+            row.get(0)
+        })
         .ok()
 }
 

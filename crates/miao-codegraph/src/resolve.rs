@@ -11,6 +11,15 @@ use std::collections::{HashMap, HashSet};
 
 const MAX_ATTEMPTS: i64 = 3;
 
+/// One unresolved call site waiting for the resolver.
+struct Pending {
+    id: i64,
+    from: String,
+    name: String,
+    path: String,
+    line: i64,
+}
+
 pub(crate) struct Symbol {
     id: String,
     qualified: String,
@@ -29,20 +38,20 @@ pub fn run(connection: &mut Connection, max_refs: usize) -> Result<usize, Error>
     let imports = sync::load_imports(connection)?;
     let refs = pending(connection, max_refs)?;
     let mut unresolved = 0;
-    for (id, from, name, path, line) in refs {
-        match resolve(&symbols, &imports, &name, &path) {
+    for pending in refs {
+        match resolve(&symbols, &imports, &pending.name, &pending.path) {
             Some(target) => {
-                connection.execute("DELETE FROM refs WHERE id=?1", params![id])?;
+                connection.execute("DELETE FROM refs WHERE id=?1", params![pending.id])?;
                 connection.execute(
                     "INSERT INTO edges(source,target,kind,line,provenance) VALUES(?1,?2,'calls',?3,'resolve')",
-                    params![from, target, line],
+                    params![pending.from, target, pending.line],
                 )?;
             }
             None => {
                 unresolved += 1;
                 connection.execute(
                     "UPDATE refs SET attempts=attempts+1, status=CASE WHEN attempts+1>=?2 THEN 'failed' ELSE 'pending' END WHERE id=?1",
-                    params![id, MAX_ATTEMPTS],
+                    params![pending.id, MAX_ATTEMPTS],
                 )?;
             }
         }
@@ -50,21 +59,18 @@ pub fn run(connection: &mut Connection, max_refs: usize) -> Result<usize, Error>
     Ok(unresolved)
 }
 
-fn pending(
-    connection: &Connection,
-    limit: usize,
-) -> Result<Vec<(i64, String, String, String, i64)>, Error> {
+fn pending(connection: &Connection, limit: usize) -> Result<Vec<Pending>, Error> {
     let mut statement = connection.prepare(
         "SELECT id, from_node, name, path, line FROM refs WHERE status='pending' ORDER BY attempts, id LIMIT ?1",
     )?;
     let rows = statement.query_map([limit as i64], |row| {
-        Ok((
-            row.get(0)?,
-            row.get(1)?,
-            row.get(2)?,
-            row.get(3)?,
-            row.get(4)?,
-        ))
+        Ok(Pending {
+            id: row.get(0)?,
+            from: row.get(1)?,
+            name: row.get(2)?,
+            path: row.get(3)?,
+            line: row.get(4)?,
+        })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
@@ -105,7 +111,7 @@ pub(crate) fn load(connection: &Connection) -> Result<Symbols, Error> {
 
 fn resolve(
     symbols: &Symbols,
-    imports: &HashMap<String, Vec<(String, Vec<String>)>>,
+    imports: &crate::sync::Imports,
     name: &str,
     path: &str,
 ) -> Option<String> {

@@ -124,7 +124,12 @@ impl Walker<'_> {
         let Some((kind, name)) = lang::definition(self.language, node, self.source) else {
             return false;
         };
-        if name.is_empty() || !name.chars().next().is_some_and(|first| first.is_alphanumeric() || first == '_') {
+        if name.is_empty()
+            || !name
+                .chars()
+                .next()
+                .is_some_and(|first| first.is_alphanumeric() || first == '_')
+        {
             return false;
         }
         let start = node.start_position();
@@ -217,7 +222,11 @@ mod tests {
             "pub fn run() {\n    self.render();\n    println!(\"hi\");\n    value.clone();\n}\n",
         )
         .expect("extract");
-        let names = found.calls.iter().map(|call| call.name.as_str()).collect::<Vec<_>>();
+        let names = found
+            .calls
+            .iter()
+            .map(|call| call.name.as_str())
+            .collect::<Vec<_>>();
         assert!(names.contains(&"render"), "{names:?}");
         assert!(!names.contains(&"println"), "{names:?}");
         assert!(!names.contains(&"clone"), "{names:?}");
