@@ -117,7 +117,9 @@ describe("SessionHeal", () => {
         (steer) => steer.delivery === "steer" && JSON.stringify(steer.prompt).includes("system-reminder"),
       )
       expect(notices.length).toBe(1)
-      expect(JSON.stringify(notices[0].prompt)).toContain(env.checkout)
+      // Assert on the notice's own text: JSON.stringify would double every
+      // backslash, and a Windows checkout path never appears in that form.
+      expect(notices[0].prompt.text).toContain(env.checkout)
     }),
   )
 
