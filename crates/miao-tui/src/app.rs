@@ -1026,7 +1026,18 @@ impl App {
                 Ok(None) => {}
                 Err(message) => self.notice(&message),
             },
-            AppEvent::Resize { .. } => {}
+            AppEvent::Resize { .. } => {
+                // The console host may have reflowed its buffer between two
+                // size changes this process never observed (a rapid down-up
+                // pair delivers both events before the next frame, so
+                // autoresize sees no size difference). Every later diff then
+                // paints onto rearranged cells, and conhost re-encodes wide
+                // glyphs with filler spaces once its buffer was reflowed,
+                // which wraps lines and cascades the whole screen. Resetting
+                // the backing buffers repaints everything from the intact
+                // model, the same heal a manual resize produced.
+                self.redraw_requested = true;
+            }
             AppEvent::Sessions(rows) => {
                 self.sync_open_session(&rows);
                 self.home.set_notice(None);
@@ -6399,6 +6410,20 @@ mod tests {
         app.run_builtin(Builtin::from_name("redraw").unwrap());
         assert!(app.take_redraw_request());
         assert_eq!(app.shell.composer.editor.text(), "keep this draft");
+    }
+
+    #[test]
+    fn resize_events_schedule_a_full_repaint() {
+        // A resize event can be the only witness to a console-host reflow the
+        // autoresize path never saw, so it must request the same full repaint
+        // the manual redraw keybind does.
+        let mut app = session_app();
+        app.handle(AppEvent::Resize {
+            width: 120,
+            height: 32,
+        });
+        assert!(app.take_redraw_request());
+        assert!(!app.take_redraw_request());
     }
 
     #[test]
