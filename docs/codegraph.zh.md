@@ -43,42 +43,47 @@ MIAO_CODEGRAPH=1 miao run "..."   # 单次运行覆盖配置，用于 A/B 对比
 ## 语言
 
 按扩展名逐文件判定，一份索引同时容纳多种语言；`codegraph_status` 会按语言报告文件数。
+共 41 种语法/组件格式：
 
-| 语言 | 扩展名 |
+| 家族 | 语言与扩展名 |
 |---|---|
-| TypeScript / TSX / JavaScript | `.ts .mts .cts .tsx .js .mjs .cjs .jsx`（`.d.ts` 归 TypeScript） |
-| 单文件组件 | `.vue .svelte`（取 `<script>` 块）、`.astro`（取 frontmatter） |
-| Rust | `.rs` |
-| Python | `.py .pyi` |
-| Go | `.go` |
-| Java | `.java` |
-| Kotlin | `.kt .kts` |
-| Scala | `.scala .sc` |
-| C# | `.cs` |
-| C / C++ | `.c .h` / `.cpp .cc .cxx .hpp .hh .hxx` |
-| PHP | `.php` |
-| Ruby | `.rb` |
-| Swift | `.swift` |
-| Dart | `.dart` |
-| Lua | `.lua` |
-| R | `.r`（扩展名大小写不敏感） |
+| JavaScript 系 | TypeScript `.ts .mts .cts`（含 `.d.ts`）、TSX `.tsx`、JavaScript `.js .mjs .cjs .jsx` |
+| 单文件组件与标记 | Vue `.vue`、Svelte `.svelte`（取 `<script>`）、Astro `.astro`（取 frontmatter）、HTML `.html .htm`（取内联 `<script>`） |
+| 系统语言 | Rust `.rs`、C `.c .h`、C++ `.cpp .cc .cxx .hpp .hh .hxx`、Zig `.zig`、Objective-C `.m .mm` |
+| JVM 与 .NET | Java `.java`、Kotlin `.kt .kts`、Scala `.scala .sc`、C# `.cs`、F# `.fs .fsi .fsx` |
+| 脚本语言 | Python `.py .pyi`、Ruby `.rb`、PHP `.php`、Lua `.lua`、Perl（未支持）、PowerShell `.ps1 .psm1`、Shell `.sh .bash .zsh .ksh` |
+| 函数式 | Elixir `.ex .exs`、Erlang `.erl .hrl`、Haskell `.hs`、OCaml `.ml .mli`、Clojure（未支持） |
+| 数据与科学 | Go `.go`、Julia `.jl`、R `.r`（大小写不敏感） |
+| 接口与基础设施 | Protobuf `.proto`、GraphQL `.graphql .gql`、Terraform/HCL `.tf .hcl`、Solidity `.sol` |
+| 其他 | Dart `.dart`、Swift `.swift`、Elm `.elm`、Nim `.nim`、GDScript `.gd`、Crystal `.cr` |
 
-`.vue`/`.svelte`/`.astro` 不是 JavaScript 文件：索引会按字节遮罩出 `<script>` 块（Astro 为
-`---` 之间的 frontmatter，围栏本身也被遮掉），再用 TypeScript 语法解析。遮罩保持字节偏移与换行不变，
+CSS/SCSS、YAML/TOML/JSON、Markdown、Dockerfile、Makefile、汇编**不索引**：它们没有函数级符号结构，
+硬塞进符号图只会制造噪声（这些文件仍由 read_file/grep 等工具读取）。SCSS、Clojure、Perl 的语法
+crate 依赖具体 `tree-sitter` 版本，会链接第二份 C 运行时，因此暂不引入。
+
+单文件组件与 HTML 不是 JavaScript 文件：索引会按字节遮罩出 `<script>` 块（Astro 为 `---` 之间的
+frontmatter，围栏本身也被遮掉），再用 TypeScript/JavaScript 语法解析。遮罩保持字节偏移与换行不变，
 所以返回的行号与模型读到的文件完全一致，模板部分不会被当成代码。
 
 跨文件解析按各语言的导入机制：TS/JS 相对路径与 `/index.*` 探测；Rust `use crate::/self::/super::`；
-Python 点分模块；Go 包目录；Java/Kotlin/Scala/C# 的 `import a.b.Type`、C/C++ 的 `#include`、
-PHP 的 `use`、Dart 的 `import '…'`、Ruby/Lua/R 的 `require`/`library` 都按「末段名字 → 文件主名」
-匹配到工作区文件，并回退到同目录兄弟文件（Go 包、barrel 模块）。
+Python 点分模块；Go 包目录；Java/Kotlin/Scala/C# 的 `import a.b.Type`、C/C++/Objective-C 的
+`#include`、PHP 的 `use`、Dart 的 `import`、Swift 的 `import`、Shell 的 `source`、Elixir 的
+`alias/import/use`、Haskell 的 `import`、F#/OCaml 的 `open`、Julia 的 `using`、Nim 的 `import`、
+Elm 的 `import`、Protobuf 的 `import`、Solidity 的 `import` 都按「末段名字 → 文件主名」匹配到工作区
+文件，并回退到同目录兄弟文件（Go 包、barrel 模块）。
 
 跨语言调用（例如 TS 经 N-API 调 Rust）不建边。未覆盖语言的文件不进索引，仍走原有
 grep/glob/read/lsp 工具。
 
-新增一门语言约 80–150 行：扩展名映射、`definition`/`callee`/`imports` 的节点分支、一条测试。
-代价是真实存在的：从 6 门语言扩到 21 个语法/组件格式后，arm64 release 二进制约从 85 MB 增到
-111 MB（+26 MB），全新构建时间从约 1 分钟增到约 2.5 分钟（构建只在 CI 与发版时发生，日常增量构建不受影响）。
+新增一门语言约 80–150 行：扩展名映射、`definition`/`callee`/`imports` 的节点分支、一条测试；节点
+形态必须对着真实语法树核对——这些语法的差异很大（C 系函数名要剥两层 declarator、Swift/Kotlin/Dart
+的调用名是无字段子节点、R 的定义在 `<-` 右侧、Elixir 用嵌套 `call` 表示定义、HCL 的名字在块标签里）。
 
+代价是真实的：arm64 release 二进制从 6 种语言的 85 MB 增到 41 种格式的 **159 MB**，全新 release
+构建约 1 分钟增到 2 分半左右。构建只在 CI 与发版时发生，日常增量构建不受影响；如果体积不可接受，
+后续可以按语言族加编译特性开关（默认仍全量）。
+
+## 已知边界
 ## 已知边界
 ## 已知边界
 
