@@ -2,6 +2,12 @@
 set -euo pipefail
 APP=miao
 
+# dl.mtty.dev is a Cloudflare Worker mirroring this repository's GitHub
+# release paths (/releases/*, /raw/main/*) for networks that cannot reach
+# GitHub; GitHub itself stays as the fallback for every request.
+MIRROR_BASE="https://dl.mtty.dev"
+GITHUB_BASE="https://github.com/oxdingzg/miao"
+
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) EXE=".exe" ;;
     *) EXE="" ;;
@@ -198,27 +204,36 @@ else
     fi
 
     if [ -z "$requested_version" ]; then
-        url="https://github.com/oxdingzg/miao/releases/latest/download/$filename"
         # Read the tag from the release redirect: the REST API allows only 60
-        # unauthenticated requests an hour per IP.
-        specific_version=$(curl -sI https://github.com/oxdingzg/miao/releases/latest | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r')
+        # unauthenticated requests an hour per IP. The mirror answers the
+        # same redirect with a mirror URL, so the parse is identical there.
+        specific_version=$(curl -sI "$MIRROR_BASE/releases/latest" | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r')
+        if [[ -z "$specific_version" ]]; then
+            specific_version=$(curl -sI "$GITHUB_BASE/releases/latest" | sed -n 's|^[Ll]ocation: .*/releases/tag/v\{0,1\}\([^[:space:]]*\).*|\1|p' | tr -d '\r')
+        fi
 
-        if [[ $? -ne 0 || -z "$specific_version" ]]; then
+        if [[ -z "$specific_version" ]]; then
             echo -e "${RED}Failed to fetch version information${NC}"
             exit 1
         fi
+        url="$MIRROR_BASE/releases/latest/download/$filename"
     else
         # Strip leading 'v' if present
         requested_version="${requested_version#v}"
-        url="https://github.com/oxdingzg/miao/releases/download/v${requested_version}/$filename"
         specific_version=$requested_version
+        url="$MIRROR_BASE/releases/download/v${requested_version}/$filename"
 
         # Verify the release exists before downloading
-        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "https://github.com/oxdingzg/miao/releases/tag/v${requested_version}")
-        if [ "$http_status" = "404" ]; then
-            echo -e "${RED}Error: Release v${requested_version} not found${NC}"
-            echo -e "${MUTED}Available releases: https://github.com/oxdingzg/miao/releases${NC}"
-            exit 1
+        http_status=$(curl -sI -o /dev/null -w "%{http_code}" "$MIRROR_BASE/releases/tag/v${requested_version}")
+        if [ "$http_status" != "200" ]; then
+            http_status=$(curl -sI -o /dev/null -w "%{http_code}" "$GITHUB_BASE/releases/tag/v${requested_version}")
+            if [ "$http_status" = "404" ]; then
+                echo -e "${RED}Error: Release v${requested_version} not found${NC}"
+                echo -e "${MUTED}Available releases: https://github.com/oxdingzg/miao/releases${NC}"
+                exit 1
+            fi
+            # The mirror could not serve the tag page either; download from GitHub.
+            url="$GITHUB_BASE/releases/download/v${requested_version}/$filename"
         fi
     fi
 fi
@@ -347,9 +362,18 @@ download_and_install() {
     local tmp_dir="${TMPDIR:-/tmp}/miao_install_$$"
     mkdir -p "$tmp_dir"
 
+    # The mirror answers first; GitHub is the fallback for a mirror that is
+    # unreachable or half-served mid-install.
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
         # Fallback to standard curl on Windows, non-TTY environments, or if custom progress fails
-        curl -f -# -L -o "$tmp_dir/$filename" "$url"
+        curl -f -# -L -o "$tmp_dir/$filename" "$url" || rm -f "$tmp_dir/$filename"
+    fi
+    if [[ ! -s "$tmp_dir/$filename" ]]; then
+        github_url="${url/$MIRROR_BASE/$GITHUB_BASE}"
+        if [ "$github_url" != "$url" ]; then
+            print_message info "Mirror unavailable; falling back to GitHub"
+            curl -f -# -L -o "$tmp_dir/$filename" "$github_url"
+        fi
     fi
 
     if [ "$os" = "linux" ]; then
@@ -367,9 +391,15 @@ publish_binary() {
     if [[ "$EXE" == ".exe" ]]; then
         # PowerShell uses NTFS hard links and File.Replace without requiring
         # symlink privileges, including when the old executable is running.
+        # The mirror serves the same script at /raw/main/install.ps1; GitHub
+        # stays as the fallback for a mirror that is unreachable.
         MIAO_BINARY="$(cygpath -w "$source")" MIAO_INSTALL_DIR="$(cygpath -w "$INSTALL_DIR")" powershell.exe -NoProfile -NonInteractive -Command '
           $ErrorActionPreference = "Stop"
-          $script = (Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1").Content
+          try {
+            $script = (Invoke-WebRequest -UseBasicParsing -Uri "https://dl.mtty.dev/raw/main/install.ps1").Content
+          } catch {
+            $script = (Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/oxdingzg/miao/main/install.ps1").Content
+          }
           & ([scriptblock]::Create($script)) -Binary $env:MIAO_BINARY -NoModifyPath
         '
         return

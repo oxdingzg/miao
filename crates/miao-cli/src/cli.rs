@@ -432,9 +432,26 @@ fn upgrade(rest: &[String]) -> Result<(), String> {
 /// update check must not spend. `feed` overrides the host for installations
 /// that track an internal mirror.
 fn latest_version(feed: Option<&str>) -> Result<String, String> {
-    let base = feed
-        .unwrap_or("https://github.com/oxdingzg/miao")
-        .trim_end_matches('/');
+    // dl.mtty.dev mirrors the release feed for networks that cannot reach
+    // github.com; GitHub itself is the fallback. An explicit feed is honored
+    // alone — the operator pinned it, so falling back to a stranger would
+    // defeat the pin.
+    let bases: &[&str] = match feed {
+        Some(feed) => &[feed],
+        None => &["https://dl.mtty.dev", "https://github.com/oxdingzg/miao"],
+    };
+    let mut last_error = None;
+    for base in bases {
+        match latest_version_from(base) {
+            Ok(version) => return Ok(version),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "no release feed configured".to_string()))
+}
+
+fn latest_version_from(base: &str) -> Result<String, String> {
+    let base = base.trim_end_matches('/');
     // curl.exe on Windows resolves `/dev/null` against the current drive
     // (`D:\dev\null` from `D:\`), and every write of the redirect body fails
     // with curl 23. The null device is spelled `NUL` there.
@@ -493,36 +510,50 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 
 /// Run the published installer, which replaces this installation in place.
 fn run_installer(feed: Option<&str>) -> Result<(), String> {
-    let base = feed.unwrap_or("https://github.com/oxdingzg/miao");
     // The `/raw/` path is the one GitHub answers: `/main/install` without it
     // is a 404 on every request, which is what every upgrade since this
     // command learned to download has died on. `-L` follows the redirect to
     // the raw host, and the retries absorb the transient failures a proxied
-    // link throws off mid-TLS.
-    let script = format!("{}/raw/main/install", base.trim_end_matches('/'));
+    // link throws off mid-TLS. dl.mtty.dev mirrors the same path for networks
+    // that cannot reach GitHub; GitHub itself is the fallback. An explicit
+    // feed is honored alone, matching the update check above.
+    let bases: &[&str] = match feed {
+        Some(feed) => &[feed],
+        None => &["https://dl.mtty.dev", "https://github.com/oxdingzg/miao"],
+    };
     // Download first, then run: a `curl | bash` pipe reports the tail's exit
     // code, so a failed download would pipe an empty script into bash, exit 0,
     // and announce an update it never installed.
     let staged = std::env::temp_dir().join("miao-install.sh");
-    let downloaded = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--retry",
-            "4",
-            "--retry-all-errors",
-            "--retry-delay",
-            "2",
-            "-o",
-        ])
-        .arg(&staged)
-        .arg(&script)
-        .status()
-        .map_err(|error| format!("could not run curl: {error}"))?;
-    if !downloaded.success() {
-        let _ = std::fs::remove_file(&staged);
-        return Err(format!(
-            "could not download the installer ({downloaded}); the previous build is still installed"
+    let mut last_error = None;
+    let mut downloaded = false;
+    for base in bases {
+        let script = format!("{}/raw/main/install", base.trim_end_matches('/'));
+        let status = std::process::Command::new("curl")
+            .args([
+                "-fsSL",
+                "--retry",
+                "4",
+                "--retry-all-errors",
+                "--retry-delay",
+                "2",
+                "-o",
+            ])
+            .arg(&staged)
+            .arg(&script)
+            .status()
+            .map_err(|error| format!("could not run curl: {error}"))?;
+        if status.success() {
+            downloaded = true;
+            break;
+        }
+        last_error = Some(format!(
+            "could not download the installer ({status}); the previous build is still installed"
         ));
+    }
+    if !downloaded {
+        let _ = std::fs::remove_file(&staged);
+        return Err(last_error.unwrap_or_else(|| "no release feed configured".to_string()));
     }
     let status = std::process::Command::new("bash")
         .arg(&staged)
