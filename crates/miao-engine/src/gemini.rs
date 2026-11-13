@@ -65,7 +65,7 @@ impl Gemini {
             endpoint.query_pairs_mut().append_pair("alt", "sse");
         }
         Ok(Self {
-            client: reqwest::Client::builder()
+            client: crate::provider::http_client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(15))
                 .build()?,

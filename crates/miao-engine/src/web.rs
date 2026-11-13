@@ -223,7 +223,7 @@ fn search(input: Value) -> Result<Search, ToolError> {
 
 impl Client {
     pub fn new(search: Option<SearchConfig>) -> Result<Self, ToolError> {
-        let http = reqwest::Client::builder()
+        let http = crate::provider::http_client_builder()
             .redirect(redirect::Policy::none())
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(120))
