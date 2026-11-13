@@ -268,3 +268,23 @@ fn python_and_go_definitions_are_indexed_and_resolved() {
         python_helper.content
     );
 }
+
+#[test]
+fn a_go_package_resolves_symbols_declared_in_a_sibling_file() {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    write(
+        root,
+        "svc/server.go",
+        "package svc\n\nfunc Serve() {\n\thelper()\n}\n",
+    );
+    write(root, "svc/helper.go", "package svc\n\nfunc helper() {}\n");
+    let mut index = index(root);
+    index.explore("helper", None, None).expect("explore");
+    let callers = index.callers("helper", None).expect("callers");
+    assert!(
+        callers.content.contains("Serve"),
+        "a symbol declared in a sibling file of the same package must resolve: {}",
+        callers.content
+    );
+}

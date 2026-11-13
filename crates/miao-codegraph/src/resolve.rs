@@ -133,6 +133,18 @@ fn resolve(
             if let Some(id) = same_file(symbols, &target, &lowered) {
                 return Some(id);
             }
+            // A package is a directory, not a file: Go and barrel-style
+            // modules declare their symbols across several files, so a miss
+            // in the import target's own file is not a miss in its package.
+            if let Some(siblings) = symbols.directories.get(directory_of(&target)) {
+                let found = siblings
+                    .iter()
+                    .filter(|sibling| sibling.as_str() != target)
+                    .find_map(|sibling| same_file(symbols, sibling, &lowered));
+                if found.is_some() {
+                    return found;
+                }
+            }
         }
     }
     let candidates = symbols.by_name.get(&lowered)?;
