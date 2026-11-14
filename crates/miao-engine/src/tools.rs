@@ -1705,7 +1705,17 @@ impl Tools {
             // path would be rejected by `permission::assess`'s boundary check, so
             // the resource is `@reference/<path>` and policy can target
             // `@reference/**`.
-            format!("@reference{}", path.to_string_lossy().replace('\\', "/"))
+            //
+            // The path is spelled the way the operator spells it: on Windows
+            // `path` is the canonical form and carries the verbatim prefix, so
+            // a rule written `@reference/**` matched `@reference//?/C:/…`
+            // nowhere and a deny silently did not apply (issue #3016).
+            format!(
+                "@reference{}",
+                canonical_plain(path.clone())
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            )
         } else if name == "cron_create" || name == "cron_list" {
             "@session/cron".into()
         } else if name == "cron_delete" {
