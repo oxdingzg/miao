@@ -17,8 +17,8 @@ Architecture decisions and phasing: `specs/desktop-app.md`.
 No CI workflow builds, packages, or publishes this app yet, and releases carry no desktop
 artifact. `src-tauri/tauri.conf.json` bundles `sidecars/miao-cli-<triple>`; run
 `bun ./scripts/prepare-sidecar.ts` (also wired as `predev`/`prebuild`) after building
-`crates/miao-cli` to populate it. The previous Electron shell in `packages/desktop` is kept only as
-a feature reference until the port reaches parity.
+`crates/miao-cli` to populate it. The previous Electron shell has been retired; this app is the
+only desktop shell.
 
 ## Copy and i18n
 

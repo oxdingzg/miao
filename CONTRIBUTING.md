@@ -91,7 +91,6 @@ Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
   - `packages/tui`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
   - `packages/app`: The shared web UI components, written in SolidJS
   - `apps/desktop`: The desktop app, a Tauri shell around `packages/app` (see `specs/desktop-app.md`)
-  - `packages/desktop`: The previous Electron shell, kept as a feature reference until the Tauri port reaches parity
   - `packages/plugin`: Source for `@miao/plugin`
 
 ### Understanding bun dev vs miao
@@ -159,8 +158,8 @@ bun run --cwd apps/desktop tauri dev
 bun run --cwd apps/desktop tauri build
 ```
 
-The previous Electron shell still lives in `packages/desktop` for feature comparison; it
-is not the shipping desktop app.
+The previous Electron shell was retired once the Tauri port reached parity; see
+`specs/desktop-app.md`.
 
 > [!NOTE]
 > If you make changes to the API or SDK (e.g. `packages/miao/src/server/server.ts`), run `./script/generate.ts` to regenerate the SDK and related files.
