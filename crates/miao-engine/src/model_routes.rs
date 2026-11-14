@@ -170,6 +170,13 @@ impl RouteLimits {
     pub fn context_limit_for(&self, model: &str) -> Option<u64> {
         self.limits.get(model).and_then(|limit| limit.context)
     }
+
+    /// The route's declared output capacity: the endpoint counts input plus
+    /// requested output against the window, so the input budget has to
+    /// reserve this much or a fitting request still overflows.
+    pub fn output_for(&self, model: &str) -> Option<u64> {
+        self.limits.get(model).and_then(|limit| limit.output)
+    }
 }
 
 /// Where startup found the route manifest, plus the base provider it layered
