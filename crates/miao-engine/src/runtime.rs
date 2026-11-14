@@ -8643,127 +8643,152 @@ async fn start_monitor(
     let task_inner = inner.clone();
     let (job_owner, job_token, job_id) = (owner.clone(), token.clone(), id.clone());
     let join = tokio::spawn(async move {
-        let (mut group, stdout, _temp) =
-            match spawn_sandboxed_monitor(&task_inner, &input, timeout).await {
-                Ok(spawned) => spawned,
-                Err(error) => {
-                    let _ = task_inner
-                        .store
-                        .record(
-                            &owner,
-                            "monitor.failed",
-                            json!({"job_id":task_id,"message":error.to_string()}),
+        // The monitor work runs one task down so a panic in it cannot leave
+        // the job's durable record running forever: the outer task settles it
+        // failed through the same durable-input settle a stop would use
+        // (#2984).
+        let work_owner = owner.clone();
+        let work_inner = task_inner.clone();
+        let work_id = task_id.clone();
+        let work = tokio::spawn(async move {
+            let (mut group, stdout, _temp) =
+                match spawn_sandboxed_monitor(&work_inner, &input, timeout).await {
+                    Ok(spawned) => spawned,
+                    Err(error) => {
+                        let _ = work_inner
+                            .store
+                            .record(
+                                &work_owner,
+                                "monitor.failed",
+                                json!({"job_id":work_id,"message":error.to_string()}),
+                            )
+                            .await;
+                        let _ = finish_background_job(
+                            &work_inner,
+                            &work_owner,
+                            &work_id,
+                            "failed",
+                            json!({"error":error.to_string()}),
                         )
                         .await;
-                    let _ = finish_background_job(
-                        &task_inner,
-                        &owner,
-                        &task_id,
-                        "failed",
-                        json!({"error":error.to_string()}),
+                        work_inner.jobs.lock().await.remove(&work_id);
+                        return;
+                    }
+                };
+            if let Err(error) = work_inner.store.start_job(&work_owner, &work_id).await {
+                let _ = work_inner
+                    .store
+                    .record(
+                        &work_owner,
+                        "monitor.failed",
+                        json!({"job_id":work_id,"message":error.to_string()}),
                     )
                     .await;
-                    task_inner.jobs.lock().await.remove(&task_id);
-                    return;
-                }
-            };
-        if let Err(error) = task_inner.store.start_job(&owner, &task_id).await {
-            let _ = task_inner
-                .store
-                .record(
-                    &owner,
-                    "monitor.failed",
-                    json!({"job_id":task_id,"message":error.to_string()}),
-                )
-                .await;
-            task_inner.jobs.lock().await.remove(&task_id);
-            return;
-        }
-        let mut reader = tokio::io::BufReader::new(stdout).lines();
-        let mut batcher = crate::monitor::Batcher::default();
-        let mut window = tokio::time::interval(tokio::time::Duration::from_millis(
-            crate::monitor::BATCH_WINDOW_MS,
-        ));
-        window.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        window.reset();
-        let deadline =
-            tokio::time::Instant::now() + std::time::Duration::from_millis(input.timeout());
-        let mut stdout_open = true;
-        loop {
-            tokio::select! {
-                biased;
-                _ = token.cancelled() => {
-                    group.terminate();
-                    // An explicit cancel_job result already told the model;
-                    // a session stop means nobody is listening. Either way a
-                    // durable "job finished" wake would be pure noise.
-                    let _ = task_inner
-                        .store
-                        .finish_job_quiet(
-                            &owner,
-                            &task_id,
-                            "cancelled",
-                            json!({"reason":"cancelled_by_request"}),
+                work_inner.jobs.lock().await.remove(&work_id);
+                return;
+            }
+            let mut reader = tokio::io::BufReader::new(stdout).lines();
+            let mut batcher = crate::monitor::Batcher::default();
+            let mut window = tokio::time::interval(tokio::time::Duration::from_millis(
+                crate::monitor::BATCH_WINDOW_MS,
+            ));
+            window.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            window.reset();
+            let deadline =
+                tokio::time::Instant::now() + std::time::Duration::from_millis(input.timeout());
+            let mut stdout_open = true;
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => {
+                        group.terminate();
+                        // An explicit cancel_job result already told the model;
+                        // a session stop means nobody is listening. Either way a
+                        // durable "job finished" wake would be pure noise.
+                        let _ = work_inner
+                            .store
+                            .finish_job_quiet(
+                                &work_owner,
+                                &work_id,
+                                "cancelled",
+                                json!({"reason":"cancelled_by_request"}),
+                            )
+                            .await;
+                        work_inner.jobs.lock().await.remove(&work_id);
+                        return;
+                    }
+                    _ = tokio::time::sleep_until(deadline) => {
+                        group.terminate();
+                        let _ = work_inner
+                            .store
+                            .record(&work_owner, "monitor.timeout", json!({"job_id":work_id,"timeout_ms":input.timeout()}))
+                            .await;
+                        let notice = batcher.flush(true, &work_id, description.as_deref());
+                        finish_monitor_job(
+                            &work_inner,
+                            &work_owner,
+                            &work_id,
+                            "failed",
+                            format!("timed out after {} ms (state failed)", input.timeout()),
+                            notice,
+                            json!({"timed_out":true}),
                         )
                         .await;
-                    task_inner.jobs.lock().await.remove(&task_id);
-                    return;
-                }
-                _ = tokio::time::sleep_until(deadline) => {
-                    group.terminate();
-                    let _ = task_inner
-                        .store
-                        .record(&owner, "monitor.timeout", json!({"job_id":task_id,"timeout_ms":input.timeout()}))
+                        break;
+                    }
+                    _ = window.tick() => {
+                        if let Some(notice) = batcher.flush(true, &work_id, description.as_deref()) {
+                            emit_monitor_notice(&work_inner, &work_owner, &work_id, notice).await;
+                        }
+                    }
+                    line = reader.next_line(), if stdout_open => {
+                        match line {
+                            Ok(Some(line)) => { batcher.feed(matcher.as_ref(), &line); }
+                            // Closing stdout is not process exit. Keep polling
+                            // cancellation and timeout while waiting for the child.
+                            _ => { stdout_open = false; }
+                        }
+                    }
+                    // Drain stdout before settling so a short-lived command's last
+                    // matching lines cannot lose a race against process exit.
+                    status = group.child.wait(), if !stdout_open => {
+                        let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
+                        let _ = work_inner.store.record(&work_owner, "monitor.exited", json!({"job_id":work_id,"code":code})).await;
+                        let notice = batcher.flush(true, &work_id, description.as_deref());
+                        let state = if code == 0 { "completed" } else { "failed" };
+                        finish_monitor_job(
+                            &work_inner,
+                            &work_owner,
+                            &work_id,
+                            state,
+                            format!("finished (exit code {code})"),
+                            notice,
+                            json!({"exit_code":code}),
+                        )
                         .await;
-                    let notice = batcher.flush(true, &task_id, description.as_deref());
-                    finish_monitor_job(
-                        &task_inner,
-                        &owner,
-                        &task_id,
-                        "failed",
-                        format!("timed out after {} ms (state failed)", input.timeout()),
-                        notice,
-                        json!({"timed_out":true}),
-                    )
-                    .await;
-                    break;
-                }
-                _ = window.tick() => {
-                    if let Some(notice) = batcher.flush(true, &task_id, description.as_deref()) {
-                        emit_monitor_notice(&task_inner, &owner, &task_id, notice).await;
+                        break;
                     }
-                }
-                line = reader.next_line(), if stdout_open => {
-                    match line {
-                        Ok(Some(line)) => { batcher.feed(matcher.as_ref(), &line); }
-                        // Closing stdout is not process exit. Keep polling
-                        // cancellation and timeout while waiting for the child.
-                        _ => { stdout_open = false; }
-                    }
-                }
-                // Drain stdout before settling so a short-lived command's last
-                // matching lines cannot lose a race against process exit.
-                status = group.child.wait(), if !stdout_open => {
-                    let code = status.map(|status| status.code().unwrap_or(-1)).unwrap_or(-1);
-                    let _ = task_inner.store.record(&owner, "monitor.exited", json!({"job_id":task_id,"code":code})).await;
-                    let notice = batcher.flush(true, &task_id, description.as_deref());
-                    let state = if code == 0 { "completed" } else { "failed" };
-                    finish_monitor_job(
-                        &task_inner,
-                        &owner,
-                        &task_id,
-                        state,
-                        format!("finished (exit code {code})"),
-                        notice,
-                        json!({"exit_code":code}),
-                    )
-                    .await;
-                    break;
                 }
             }
+            group.terminate();
+            work_inner.jobs.lock().await.remove(&work_id);
+        });
+        if work.await.is_err() {
+            // The task died mid-flight: settle through the same durable input
+            // a stop would admit, so the Session learns the watch ended and
+            // the job's record is terminal (#2984).
+            finish_monitor_job(
+                &task_inner,
+                &owner,
+                &task_id,
+                "failed",
+                "the monitor task panicked (state failed)".to_string(),
+                None,
+                json!({"error":"job execution task panicked"}),
+            )
+            .await;
+            task_inner.jobs.lock().await.remove(&task_id);
         }
-        group.terminate();
-        task_inner.jobs.lock().await.remove(&task_id);
     });
     jobs.insert(
         job_id,
@@ -9032,11 +9057,13 @@ async fn start_background(
         let result = match work.await {
             Ok(result) => result,
             Err(_) => {
+                // A panic is a defect, not an open question: the durable
+                // record settles failed instead of an unknowable limbo.
                 finish_background_job(
                     &task_inner,
                     &task_owner,
                     &task_id,
-                    "unknown",
+                    "failed",
                     json!({"error":"job execution task panicked"}),
                 )
                 .await
