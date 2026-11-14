@@ -3867,6 +3867,10 @@ async fn execute(
             .lock()
             .await
             .context_limit_for(model.as_deref().unwrap_or_default());
+        // The endpoint counts input + requested output against the window: the
+        // input budget is the window minus the route's declared output
+        // capacity, or a request that fits the window alone still overflows
+        // once the model's own output reservation is added (#2926 family).
         // The same effective limits the compaction trigger plans against, so
         // bounding and compaction cannot disagree about what fits. A window of
         // zero states nothing and falls through to the next source.
@@ -3889,7 +3893,17 @@ async fn execute(
         // spends a billing allowance prints it beside the window's own figures, so
         // that tally cannot be read as context occupancy (#2870).
         let mut compaction_threshold = None;
-        let bound = match resolve_limits(configured, declared, learned) {
+        let output_reserve = inner
+            .route_limits
+            .lock()
+            .await
+            .output_for(model.as_deref().unwrap_or_default())
+            .unwrap_or(0);
+        let bound = match resolve_limits(configured, declared, learned).map(|limits| {
+            let mut limits = limits;
+            limits.window = limits.window.saturating_sub(output_reserve);
+            limits
+        }) {
             Some(limits) => {
                 let counted = match inner.store.context_anchor(session).await? {
                     Some((counted, through)) => {
