@@ -64,7 +64,6 @@ const appLocales = [
   "tk",
   "uz",
 ] as const
-const desktopLocales = appLocales
 const pluralCategories = new Map(
   appLocales.map(
     (locale) =>
@@ -87,12 +86,6 @@ const domains = [
     source: "../../../ui/src/i18n/en.ts",
     target: (locale: string) => `../../../ui/src/i18n/${locale}.ts`,
     locales: appLocales,
-  },
-  {
-    name: "desktop",
-    source: "../../../desktop/src/renderer/i18n/en.ts",
-    target: (locale: string) => `../../../desktop/src/renderer/i18n/${locale}.ts`,
-    locales: desktopLocales,
   },
 ] as const
 
