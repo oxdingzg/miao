@@ -3104,7 +3104,7 @@ fn hourly_lines(
         let hours_ago = now_ms.saturating_sub(start_ms) / 3_600_000;
         money.push(Span::styled(
             format!(
-                " · peak {}  {}",
+                " · peak {} · {}",
                 match hours_ago {
                     0 => "now".to_string(),
                     hours => format!("-{hours}h"),
