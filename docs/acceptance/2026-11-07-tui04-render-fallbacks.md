@@ -58,6 +58,35 @@ not only the new tests:
 - Versions: applies from the release that first ships the merged tree; stamped per
   the repository convention when that release cuts.
 
-**Recorded open, not hidden:** a real-client visual pass (a live TUI in tmux, SSH,
-and an image-less terminal confirming the same fallbacks) is not covered by these
-offline pins and stays open.
+## SSH leg — observed (2026-11-14)
+
+The Windows build host is itself a remote machine reached over SSH, so the live leg
+ran there: `miao-tui.exe` (0.3.68) launched through an SSH session's console,
+rendering into the SSH client's terminal through Windows ConPTY. The transcript
+carried the record's own fallback content — a markdown heading, a table, a list, a
+link, a fenced code block, a `read_image` result, and a long `run_command` result —
+driven through the real engine by a canned wire provider (the same pattern as the
+TOOL-06 wire fixtures), so every frame below is the renderer's own output over the
+SSH channel, not a mock.
+
+Observed live:
+
+- The markdown block keeps its structure: `Findings` as a styled heading, the table
+  drawn with a rule between the columns (`name │ count` / `─────┼──────` /
+  `rows │ 3`), the list bullets colored, the link text underlined, and the fenced
+  block in a bordered frame with syntax highlighting.
+- The image result names the media instead of painting bytes: `✓ read  logo.png` /
+  `⎿ Read image`, with no pixel bytes anywhere in the frame.
+- The long tool output collapses behind the fold: `✓ bash  cmd /c 'for /L %i in
+  (1,1,12) do @echo line %i'` / `│ line 1` / `│ … 12 more lines · ctrl+x u expand`.
+- The approval dialog renders live, with the call's argv and the decision
+  vocabulary (`1 allow once · 2 always allow · 3 deny`), and a denied call settles
+  a readable error row without disturbing the transcript.
+
+Recorded open, not hidden: the expansion keystroke itself was not exercised in
+this capture — the leader chord renders (the footer names `ctrl+x u` and the
+leader menu lists `u session toggle generic tool output`), but the SSH/ConPTY
+harness did not deliver the second stroke of the chord reliably, so no expanded
+frame was captured live. The host runs Windows ConPTY rather than the POSIX
+terminal the item originally framed, and there is no tmux leg on this host; the
+fallbacks are terminal-agnostic by design and rendered identically here.
