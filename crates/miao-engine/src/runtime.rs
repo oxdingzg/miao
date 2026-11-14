@@ -8974,7 +8974,12 @@ async fn finish_monitor_job(
             agent_references: Default::default(),
             command: None,
             session_id: session.to_owned(),
-            input_id: format!("monitor:{job}:finished"),
+            // Per-admission identity: the finish text varies with the notice and
+            // state snapshot, so a fixed "monitor:{job}:finished" collides with
+            // itself on a second delivery and surfaces as Error::Conflict
+            // ("input id conflicts with an existing admission"). The notice path
+            // above already appends a uuid for the same reason.
+            input_id: format!("monitor:{job}:finished:{}", uuid::Uuid::new_v4()),
             prompt,
             delivery: Delivery::Steer,
         })
