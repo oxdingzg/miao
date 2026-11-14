@@ -30,6 +30,89 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 - **tui**: re-encode oversized clipboard screenshots before attaching (#2988) (`294d59ebc4`)
 - **engine**: compile the goal gate after #2975 (#2976) (`40315878f9`)
 
+## [0.3.68] - 2026-11-13
+
+### Added
+- **codegraph**: turn the built-in index on by default (#2955) (`b8a4434973`)
+- **install**: mirror release downloads at dl.mtty.dev (#2946) (`3a384d883b`)
+
+### Fixed
+- **engine**: give the turn chain the stack depth it needs (#2971) (`20432510bc`)
+- **core**: probe session directories in their storage form when relocating (#2972) (`d5354b593e`)
+- **core**: recognize anchored sessions whose case differs from canonical (#2967) (`14ac0fb008`)
+- **core**: capture untracked files through NUL on Windows (#2965) (`bba9ba9277`)
+- **tui**: stop offering a decision question as the next prompt (#2962) (`0768f5e8f7`)
+- **tui**: never send an [Image N] marker without its picture (#2963) (`284042c421`)
+- **engine**: a background notice re-opens a paused loop once, not every time (#2951) (`96023f5380`)
+- **tui**: stop the command lookup tripping needless_bool on Windows (#2960) (`a5d01b3a7e`)
+- **engine**: unblock the fmt and clippy gates in provider.rs (#2956) (`7fdd3a7d5f`)
+- **core**: count an untracked file's lines for its status additions (#2954) (`e3a04e1a0f`)
+- **install**: survive a failed mirror probe under set -e (#2950) (`e9f39608e8`)
+- **engine**: reach loopback directly even under a global proxy (#2947) (`02974261b0`)
+
+## [0.3.67] - 2026-11-13
+
+### Added
+- **codegraph**: cover the remaining common languages (#2941) (`a90a39102e`)
+
+### Fixed
+- **tui**: resync the screen when the console host reports a resize (#2942) (`11e7ba5e77`)
+- **engine**: own the metadata-budget fixture instead of the ambient PATH (#2943) (`020c6f07e9`)
+
+## [0.3.66] - 2026-11-13
+
+### Added
+- **codegraph**: index 21 languages and single-file components (#2940) (`1aec016c5e`)
+- **engine**: add a built-in code index with explore tools (#2937) (`520a3b566d`)
+
+### Fixed
+- **engine**: auto-compact at 88%, and gate the Windows-only TS tests (#2938) (`8931cd4882`)
+- **tui**: prefill and locally validate the schedule edit (#2934) (`d911722737`)
+
+## [0.3.65] - 2026-11-12
+
+### Fixed
+- **engine**: accept the account slot in a derived route id (#2931) (`ae0e6bbc0b`)
+- **tui**: the jobs list answer is the only source of a row's detail (#2930) (`33cd31859a`)
+- **release**: ship the darwin-x64 archive again (#2929) (`23d4ce0cbb`)
+
+## [0.3.64] - 2026-11-12
+
+### Added
+- **sandbox**: default the engine sandbox off and add /sandbox (#2927) (`0b4b9966ac`)
+- **engine**: answer what a running job is saying (#2925) (`f006ad639c`)
+- **engine**: keep the reason a pass was rejected, and make folding opt-in (#2921) (`25fabaac08`)
+- **tui**: add the everyday slash commands an operator expects (#2911) (`4deccfb2eb`)
+
+### Fixed
+- **tui**: preview a job's output instead of its result envelope (#2923) (`92659bd41f`)
+- **engine**: plan a compaction pass by size, not by message count (#2920) (`e1abbf129e`)
+- **core**: classify a protected path whatever separator it arrives with (#2917) (`982c40a105`)
+- **release**: insert the 简体中文 link only when the notes lack it (#2918) (`24f09296ce`)
+- **ci**: stop skipping permission_source at the Windows release gate (#2916) (`94e7043d94`)
+- **engine**: spell a frozen workspace the way a Location is spelled (#2915) (`a30d5f4110`)
+- **tui**: report a compaction pass that stopped, and one that cannot start (#2912) (`ac0bd982bc`)
+
+## [0.3.63] - 2026-11-12
+
+### Added
+- **tui**: manage a provider's keys from the model picker (#2906) (`98eef65c9d`)
+- **engine**: ablate each optimization mechanism behind explicit toggles (VAL-04) (#2901) (`afca405c29`)
+- **engine**: a side question forks the mainline (AGT-06) (#2891) (`7ae9259205`)
+- **engine**: make the delegation depth cap tunable and keep it a cap (#2893) (`3b98da7b56`)
+- **engine**: a running child row carries its age (#2862) (#2888) (`7f13b8130d`)
+
+### Fixed
+- **ci**: let a release PR carry every workspace manifest (#2910) (`be9798ec35`)
+- **engine**: close a re-dispatched child that died without its stop (#2908) (`ec576c15a1`)
+- **engine**: stop a compaction pass when the turn is interrupted (#2907) (`1ca3b584f0`)
+- **tui**: name compaction on the status strip instead of a model wait (#2905) (`6d8533cff3`)
+- **engine**: scope the waiting pause to this Session's own background work (#2904) (`b1fd11b21c`)
+- **engine**: drop the context-pressure note; compaction needs no announcement (#2898) (`18460b61e7`)
+- **engine**: bound a continuation loop that never moves the todo list (#2895) (`e1ff3ce067`)
+- **engine**: warn once, at the compaction boundary, instead of at 60% and 80% (#2889) (`f483710fe9`)
+- **engine**: a failed background child tells its delegating Session (#2862) (#2883) (`0ff2239251`)
+
 ## [0.3.62] - 2026-11-11
 
 ### Added
