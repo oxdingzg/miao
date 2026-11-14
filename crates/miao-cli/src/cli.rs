@@ -393,8 +393,9 @@ fn pr(rest: &[String]) -> Result<(), String> {
 /// Upgrade this installation to the newest release.
 ///
 /// The download, the platform asset name, the checksum check and the rollback
-/// all live in the published `install` script, and that is the only path CI
-/// exercises. Re-implementing them here would be a second copy that can drift,
+/// all live in the published installer (`install` on POSIX, `install.ps1` on
+/// Windows), and those are the only paths CI exercises. Re-implementing them
+/// here would be a second copy that can drift,
 /// so this command reads the newest version, decides whether an update is
 /// needed, and then runs that script the same way a person would.
 ///
@@ -416,7 +417,7 @@ fn upgrade(rest: &[String]) -> Result<(), String> {
         return Ok(());
     }
     println!("Updating to {latest}…");
-    run_installer(feed.as_deref())?;
+    run_installer(feed.as_deref(), &latest)?;
     // The installer repoints `~/.miao/bin/miao` at a new build; this process
     // keeps running the old image, so the operator has to start it again.
     println!("Updated: {VERSION} → {latest}");
@@ -509,7 +510,12 @@ fn is_newer(candidate: &str, current: &str) -> bool {
 }
 
 /// Run the published installer, which replaces this installation in place.
-fn run_installer(feed: Option<&str>) -> Result<(), String> {
+fn run_installer(feed: Option<&str>, latest: &str) -> Result<(), String> {
+    // Windows runs the PowerShell installer: `bash` on its PATH resolves to
+    // `C:\Windows\System32\bash.exe`, the WSL launcher, which fails with "no
+    // installed distribution" on every machine without a WSL image. `-Version`
+    // reuses the version this command already resolved.
+    let windows = cfg!(windows);
     // The `/raw/` path is the one GitHub answers: `/main/install` without it
     // is a 404 on every request, which is what every upgrade since this
     // command learned to download has died on. `-L` follows the redirect to
@@ -524,11 +530,19 @@ fn run_installer(feed: Option<&str>) -> Result<(), String> {
     // Download first, then run: a `curl | bash` pipe reports the tail's exit
     // code, so a failed download would pipe an empty script into bash, exit 0,
     // and announce an update it never installed.
-    let staged = std::env::temp_dir().join("miao-install.sh");
+    let staged = std::env::temp_dir().join(if windows {
+        "miao-install.ps1"
+    } else {
+        "miao-install.sh"
+    });
     let mut last_error = None;
     let mut downloaded = false;
     for base in bases {
-        let script = format!("{}/raw/main/install", base.trim_end_matches('/'));
+        let script = format!(
+            "{}/raw/main/{}",
+            base.trim_end_matches('/'),
+            if windows { "install.ps1" } else { "install" }
+        );
         let status = std::process::Command::new("curl")
             .args([
                 "-fsSL",
@@ -555,10 +569,17 @@ fn run_installer(feed: Option<&str>) -> Result<(), String> {
         let _ = std::fs::remove_file(&staged);
         return Err(last_error.unwrap_or_else(|| "no release feed configured".to_string()));
     }
-    let status = std::process::Command::new("bash")
-        .arg(&staged)
-        .status()
-        .map_err(|error| format!("could not run the installer: {error}"));
+    let status = if windows {
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&staged)
+            .arg("-Version")
+            .arg(latest)
+            .status()
+    } else {
+        std::process::Command::new("bash").arg(&staged).status()
+    }
+    .map_err(|error| format!("could not run the installer: {error}"));
     let _ = std::fs::remove_file(&staged);
     let status = status?;
     if !status.success() {
