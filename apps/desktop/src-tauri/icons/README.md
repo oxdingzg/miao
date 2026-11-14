@@ -2,8 +2,8 @@
 
 Here's the process I've been using to create icons:
 
-- Save source image as `app-icon.png` in `packages/desktop`
-- `cd` to `packages/desktop`
+- Save source image as `app-icon.png` in `apps/desktop`
+- `cd` to `apps/desktop`
 - Run `bun tauri icon -o src-tauri/icons/{environment}`
 - Use [Image2Icon](https://img2icnsapp.com/)'s 'Big Sur Icon' preset to generate an `icon.icns` file and place it in the appropriate icons folder
 

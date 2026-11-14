@@ -39,7 +39,6 @@ jobs:
 
           SYSTEMS="x86_64-linux aarch64-linux x86_64-darwin aarch64-darwin"
           PACKAGES="miao"
-          OPTIONAL_PACKAGES="miao-desktop"
 
           echo ""
           echo "=== Evaluating packages for all systems ==="
@@ -55,23 +54,6 @@ jobs:
                 echo "::error::Evaluation failed for packages.$system.$pkg"
                 echo "$output"
                 exit 1
-              fi
-            done
-          done
-
-          echo ""
-          echo "=== Evaluating optional packages ==="
-          for system in $SYSTEMS; do
-            echo ""
-            echo "--- $system ---"
-            for pkg in $OPTIONAL_PACKAGES; do
-              printf "  %s: " "$pkg"
-              if output=$(nix eval ".#packages.$system.$pkg.drvPath" --raw 2>&1); then
-                echo "✓"
-              else
-                echo "✗"
-                echo "::warning::Evaluation failed for packages.$system.$pkg"
-                echo "$output"
               fi
             done
           done
