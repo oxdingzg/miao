@@ -5,7 +5,7 @@ import {
   type EngineSessionSummary,
 } from "@miao/app"
 import { Markdown } from "@miao/session-ui/markdown"
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 
 /**
  * One local engine's Sessions and the conversation on the selected one, with
@@ -68,6 +68,21 @@ const turns = (events: EngineEvent[]): Turn[] => {
     }
   }
   return out
+}
+
+/** Which model and agent the last turn answered with. */
+const identity = (events: EngineEvent[]): { model?: string; agent?: string } => {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq)
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const event = sorted[index]
+    if (event.kind !== "assistant.identity") continue
+    const data = (event.data ?? {}) as {
+      agent?: string
+      provider?: { model?: string }
+    }
+    return { model: data.provider?.model, agent: data.agent }
+  }
+  return {}
 }
 
 /** The streamed answer in flight: deltas after the last committed assistant turn. */
@@ -136,10 +151,51 @@ export function SessionSurface(props: { url: string; token: string }) {
   const [live, setLive] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const [draft, setDraft] = createSignal("")
+  const [attached, setAttached] = createSignal<Array<{ name: string; data: string; mime: string }>>([])
   const [busy, setBusy] = createSignal(false)
 
   let detach: (() => void) | undefined
   let composer: HTMLTextAreaElement | undefined
+  // Questions this window already answered; the effect below must not
+  // re-answer the same question.requested on every repaint.
+  const answered = new Set<string>()
+
+  // Unattended like the TUI's --auto: a question is answered with the first
+  // option of each asked question instead of blocking the conversation.
+  createEffect(() => {
+    const sessionID = selected()
+    if (!sessionID) return
+    for (const event of events()) {
+      if (event.kind !== "question.requested") continue
+      const data = (event.data ?? {}) as {
+        question_id?: string
+        input_hash?: string
+        input?: { questions?: Array<{ options?: Array<{ label?: string }> }> }
+      }
+      const id = data.question_id
+      if (!id || answered.has(id)) continue
+      answered.add(id)
+      const questions = Array.isArray(data.input?.questions) ? data.input.questions : []
+      const answers = questions.map((question) => {
+        const option = question?.options?.[0]
+        return option?.label ? [String(option.label)] : []
+      })
+      void reader.answer(sessionID, { question_id: id, input_hash: String(data.input_hash ?? ""), answers }).catch(fail)
+    }
+  })
+  let scroller: HTMLDivElement | undefined
+
+  // Follow the tail while the reader is already near it; a scrollback the
+  // operator is reading must not be dragged back down by a streamed delta.
+  createEffect(() => {
+    events()
+    const element = scroller
+    if (element && element.scrollHeight - element.scrollTop - element.clientHeight < 160) {
+      queueMicrotask(() => {
+        if (scroller) scroller.scrollTop = scroller.scrollHeight
+      })
+    }
+  })
 
   const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))
 
@@ -190,16 +246,67 @@ export function SessionSurface(props: { url: string; token: string }) {
     composer?.focus()
   }
 
+  const attach = async (files: FileList) => {
+    const next: Array<{ name: string; data: string; mime: string }> = []
+    for (const file of Array.from(files)) {
+      if (!file.type) continue
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "")
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(file)
+      })
+      next.push({ name: file.name, data, mime: file.type })
+    }
+    if (next.length > 0) setAttached((current) => [...current, ...next])
+  }
+
+  const renameSession = async (session: EngineSessionSummary) => {
+    const title = window.prompt("重命名任务", session.title)
+    if (!title || title.trim() === session.title) return
+    try {
+      await reader.rename(session.id, title.trim())
+      const list = await reader.sessions()
+      setSessions(list)
+      if (state()?.title !== undefined && session.id === selected()) {
+        const current = list.find((row) => row.id === session.id)
+        if (current) setState((previous) => (previous ? { ...previous, title: current.title } : previous))
+      }
+    } catch (cause) {
+      fail(cause)
+    }
+  }
+
   const submit = async (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed || busy()) return
+    if ((!trimmed && attached().length === 0) || busy()) return
+    // The two commands a conversation needs on day one, matching the TUI's
+    // spelling. Everything else waits for the full command surface.
+    if (trimmed === "/new") {
+      setDraft("")
+      await newSession()
+      return
+    }
+    if (trimmed === "/clear") {
+      const sessionID = selected()
+      if (!sessionID) return
+      setDraft("")
+      try {
+        await reader.clear(sessionID)
+        setEvents([])
+      } catch (cause) {
+        fail(cause)
+      }
+      return
+    }
     if (!selected()) await newSession()
     const sessionID = selected()
     if (!sessionID) return
     setDraft("")
     setBusy(true)
     try {
-      await reader.admit(sessionID, trimmed)
+      await reader.admit(sessionID, trimmed, attached().map(({ data, mime }) => ({ data, mime })))
+      setAttached([])
     } catch (cause) {
       fail(cause)
     } finally {
@@ -254,6 +361,7 @@ export function SessionSurface(props: { url: string; token: string }) {
                       type="button"
                       class="mx-1 flex w-[calc(100%-0.5rem)] items-center justify-between gap-2 rounded px-3 py-1.5 text-left hover:bg-v2-background-bg-layer-01"
                       classList={{ "bg-v2-background-bg-layer-01": session.id === selected() }}
+                      onDblClick={() => void renameSession(session)}
                       onClick={() => void open(session)}
                     >
                       <span class="min-w-0 flex-1 truncate text-12-regular">{session.title}</span>
@@ -287,6 +395,12 @@ export function SessionSurface(props: { url: string; token: string }) {
                   value={draft()}
                   rows={3}
                   onInput={(event) => setDraft(event.currentTarget.value)}
+                  onPaste={(event) => {
+                    if (event.clipboardData?.files.length) {
+                      event.preventDefault()
+                      void attach(event.clipboardData.files)
+                    }
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Escape") event.currentTarget.blur()
                     if (event.key === "Enter" && !event.shiftKey) {
@@ -330,6 +444,8 @@ export function SessionSurface(props: { url: string; token: string }) {
                 <div class="flex items-baseline gap-3">
                   <h1 class="truncate text-13-medium">{current().title}</h1>
                   <span class="text-11-regular text-v2-text-text-weak">
+                    {identity(events()).model ? `${identity(events()).model} · ` : ""}
+                    {identity(events()).agent ? `${identity(events()).agent} · ` : ""}
                     {current().messageCount} messages
                     {current().pending ? ` · ${current().pending} pending` : ""}
                     {current().approvals ? ` · ${current().approvals} approvals` : ""}
@@ -339,7 +455,7 @@ export function SessionSurface(props: { url: string; token: string }) {
               )}
             </Show>
           </header>
-          <div class="flex-1 overflow-y-auto px-6 py-3">
+          <div ref={scroller} class="flex-1 overflow-y-auto px-6 py-3">
             <For each={conversation()}>
               {(turn) => (
                 <Show

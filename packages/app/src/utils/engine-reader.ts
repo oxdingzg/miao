@@ -63,6 +63,18 @@ export function createEngineReader(input: {
     async approve(sessionID: string, response: unknown) {
       return transport.request("approve", { session_id: sessionID, response })
     },
+    /** Rename a Session (the TUI's /rename). */
+    async rename(sessionID: string, title: string) {
+      return transport.request("rename", { session_id: sessionID, title })
+    },
+    /** Answer one pending question (the TUI's ask flow). */
+    async answer(sessionID: string, answer: { question_id: string; input_hash: string; answers: string[][] }) {
+      return transport.request("answer_question", { session_id: sessionID, answer })
+    },
+    /** Clear the Session's provider context (the TUI's /clear). */
+    async clear(sessionID: string) {
+      return transport.request("session_clear", { session_id: sessionID })
+    },
     /** Stop the Session's active run. Idle is a no-op the engine accepts. */
     async cancel(sessionID: string) {
       return transport.request("cancel", { session_id: sessionID })
@@ -70,7 +82,11 @@ export function createEngineReader(input: {
     /** Admit one durable prompt. The answer arrives as events on the
      * Session's stream; `resume` lets the runner promote it at the next safe
      * boundary, and delivery defaults to steer. */
-    async admit(sessionID: string, prompt: string) {
+    async admit(
+      sessionID: string,
+      prompt: string,
+      attachments: Array<{ data: string; mime: string }> = [],
+    ) {
       return transport.request("admit", {
         input: {
           session_id: sessionID,
@@ -78,7 +94,7 @@ export function createEngineReader(input: {
           prompt,
         },
         resume: true,
-        attachments: [],
+        attachments,
       })
     },
     /** Attach to one Session's committed events, replaying from `after`. */
