@@ -1542,7 +1542,13 @@ impl App {
         }
         // Both screens paint the same composer, so the clipboard keystroke
         // belongs to it on either one: the landing screen used to ignore it.
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('v') {
+        // Alt+V repeats the stroke because every Windows terminal binds
+        // Ctrl+V itself and, with an image-only clipboard, sends the app
+        // nothing — the keystroke never arrives here at all.
+        if key.code == KeyCode::Char('v')
+            && (key.modifiers.contains(KeyModifiers::CONTROL)
+                || key.modifiers.contains(KeyModifiers::ALT))
+        {
             self.read_clipboard();
             return;
         }
