@@ -163,7 +163,7 @@ impl Store {
                 // An empty summary is the operator's explicit clear: the cut
                 // applies, but nothing of the cleared history re-enters.
                 if !summary.is_empty() {
-                    let text=format!("<history-summary>\n{summary}\n</history-summary>\nThis summarizes completed history. Do not repeat completed operations or unknown side effects automatically.");
+                    let text=history_summary_text(&summary);
                     bytes=text.len();selected.push(Message{role:"user".into(),content:json!([{"type":"text","text":text}]),checkpoint:None,recorded_at_ms:None});
                 }
                 through
@@ -208,6 +208,10 @@ impl Store {
 /// the model works from a summary, so it may need to re-read the files the
 /// summary names. Prompt guidance rather than a gate, and request-scoped
 /// rather than durable — mirrored byte-for-byte from the host runner.
+pub(crate) fn history_summary_text(summary: &str) -> String {
+    format!("<history-summary>\n{summary}\n</history-summary>\nThis summarizes completed history. Do not repeat completed operations or unknown side effects automatically.")
+}
+
 pub(crate) fn restore_note() -> String {
     "The conversation was just compacted into a summary, so earlier details may be missing. \
      You have a restore budget of about 50,000 tokens: re-read the files you need to continue \

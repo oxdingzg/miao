@@ -388,6 +388,11 @@ fn window_limits(window: u64) -> ContextLimits {
         prune_chars: None,
         prune_total_chars: None,
         protect_turns: 2,
+        // Counting the carried summary again would charge a pass for the last
+        // one's output, so the default keeps the request whole and the scoped
+        // measurement stays the operator's choice.
+        prefix_scope: crate::context_trigger::PrefixScope::Total,
+        retention: None,
     }
 }
 
@@ -5407,6 +5412,10 @@ command: None,
                 let stop = cancel.clone();
                 let mut snapshot = request.clone();
                 let permissions = permissions.clone();
+                // The retention target is a `String`, so it is cloned for each
+                // call: an `async move` inside an `FnMut` cannot take it out of
+                // the closure's capture.
+                let retention = limits.retention.clone();
                 async move {
                     if !prefix_allowed {
                         return None;
@@ -5435,7 +5444,7 @@ command: None,
                             store:store.clone(),session:session.into(),run:run.into(),step,context_epoch,
                             agent:json!({"name":"native-summary","semantics":"prefix-summary-v1"}),permissions,
                         },
-                        crate::roles::summarize_prefix(&provider,&crate::roles::Settlement { store:&store,session,run },&stop,snapshot),
+                        crate::roles::summarize_prefix(&provider,&crate::roles::Settlement { store:&store,session,run },&stop,snapshot,retention.as_deref()),
                     ).await)
                 }
             };
@@ -5455,6 +5464,8 @@ command: None,
                     forced: requested.is_some(),
                     through: requested.as_ref().and_then(|request| request.through),
                     focus: requested.as_ref().and_then(|request| request.focus.clone()),
+                    retention: limits.retention.as_deref(),
+                    prefix_scope: limits.prefix_scope,
                     budget: &limits.budget(),
                     per_pass: limits.per_pass,
                     segment_chars,

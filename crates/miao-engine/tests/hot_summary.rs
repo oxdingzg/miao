@@ -170,6 +170,8 @@ async fn run_compaction(reject_prefix: bool) {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     runtime

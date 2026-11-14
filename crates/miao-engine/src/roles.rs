@@ -177,11 +177,20 @@ pub(crate) async fn summarize_prefix(
     settlement: &Settlement<'_>,
     stop: &tokio_util::sync::CancellationToken,
     mut request: crate::protocol::ModelRequest,
+    retention: Option<&str>,
 ) -> Result<String, String> {
+    // The configured retention target rides the prompt the exact request is
+    // summarized with, so an operator's standing requirement reaches the
+    // highest-fidelity path instead of only the segment pass.
+    let instruction = match retention {
+        Some(target) => format!("Summarize the conversation above for continuation. Preserve the active objective, constraints, open tasks, verification commands and results, exact file paths and identifiers, decisions, and recall handles for omitted tool output. Also retain specifically: {target} Do not perform any tools or new work. Reply with only the summary text."),
+        None => "Summarize the conversation above for continuation. Preserve the active objective, constraints, open tasks, verification commands and results, exact file paths and identifiers, decisions, and recall handles for omitted tool output. Do not perform any tools or new work. Reply with only the summary text.".to_owned(),
+    };
     request.messages.push(crate::protocol::Message {
-        role:"user".into(),
-        content:json!([{"type":"text","text":"Summarize the conversation above for continuation. Preserve the active objective, constraints, open tasks, verification commands and results, exact file paths and identifiers, decisions, and recall handles for omitted tool output. Do not perform any tools or new work. Reply with only the summary text."}]),
-        checkpoint:None,recorded_at_ms:None,
+        role: "user".into(),
+        content: json!([{"type":"text","text":instruction}]),
+        checkpoint: None,
+        recorded_at_ms: None,
     });
     request_summary(provider, stop, request, true, Some(settlement)).await
 }

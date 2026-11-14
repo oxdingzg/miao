@@ -26,7 +26,7 @@
 - **工具面**：引擎自带目录（`read_file`/`read_image`/`list_files`/`glob`/`grep`/`write_file`/`edit_file`/`apply_patch`/`bash`、`start_job`/`job_status`/`cancel_job`、`task`、`todowrite`、`goal`、`question`、`recall`、`session_state`、`schedule_wakeup`/cron、`lsp_*`、`monitor`、webfetch/websearch、knowledge、skill、session 终端），工具名到产品渲染 id 的映射见 `crates/miao-engine/docs/facade-mapping.md`。
 - **扩展面**：MCP（stdio/HTTP、resources/prompts、OAuth——交互回调带 CIMD client-metadata 阶梯与 RFC 9207 `iss` 校验（#1282）、`list_changed` 刷新、`tool_search` 发现）、生命周期 hooks、ADR-12 worker（`.miao/tool`、`.opencode/tool`、`MIAO_CONFIG_DIR` 下的自定义工具文件）、会话级终端（Unix 与 Windows）、LSP（由产品配置自动生成 manifest）。
 - **模型与路由**：host manifest 生成的路由（Anthropic、OpenAI Chat/Responses、订阅 Responses、Gemini、Bedrock SigV4 或 bearer、Copilot 风格、Azure/Vertex 等声明式路由）、会话级模型绑定与变体、purpose role、prompt cache 与 Responses cache/WebSocket 契约。
-- **上下文**：ambient context（instructions/skills/references 映射为 host manifest）、自动压缩与工具输出裁剪（产品生成路由时自动派生 `context_limits`；显式路由需单独配置，见 §3）、压缩检查点后首个请求附带的 request 级 restore budget 提示（#1280）、recall、context epoch。
+- **上下文**：ambient context（instructions/skills/references 映射为 host manifest）、自动压缩与工具输出裁剪（产品生成路由时自动派生 `context_limits`；显式路由需单独配置，见 §3）、压缩检查点后首个请求附带的 request 级 restore budget 提示（#1280）、recall、context epoch。`context_limits` 另有两个可选键：`prefixScope` 取 `total`（默认，按 provider 计到的整个请求算）或 `bodyAfterPrefix`（折扣检查点携带的摘要，只按检查点之后的增长算，避免刚压缩完就逼近下一次阈值），`retention` 给自动压缩一个常驻保留目标（手动 `/compact` 的 focus 仍然优先）。
 - **观测**：per-run usage 聚合、per-turn 计费 cache 谱系（read/write/nonCached/hitRatio）与 TTFT（写入 `engine_timing` 侧表，不进可重放 payload）。
 - **协议面**：stdio、loopback HTTP（含 SSE）、ACP stdio adapter。
 

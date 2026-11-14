@@ -317,6 +317,8 @@ async fn configured_context_limits_compact_at_the_settled_boundary() {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     runtime

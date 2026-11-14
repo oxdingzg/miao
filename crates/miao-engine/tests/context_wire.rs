@@ -4,7 +4,7 @@
 //! commits through the run-owned checkpoint contract.
 
 use miao_engine::{
-    context_trigger::{maybe_compact, Breaker, Budget, CompactRequest},
+    context_trigger::{maybe_compact, Breaker, Budget, CompactRequest, PrefixScope},
     protocol::{Delivery, Input},
     provider::CountTokens,
     store::Store,
@@ -89,6 +89,8 @@ async fn below_threshold_leaves_the_session_untouched() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 8,
@@ -150,6 +152,8 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 1,
@@ -210,6 +214,104 @@ async fn trigger_summarizes_by_plan_and_commits_the_run_checkpoint() {
 }
 
 #[tokio::test]
+async fn a_scoped_threshold_discounts_the_carried_summary() {
+    // The cross is the same one `trigger_summarizes_by_plan_and_commits_the_run_checkpoint`
+    // makes: anchor 2_000 against a 1_000 threshold. A checkpoint carrying a
+    // summary larger than the whole counted context is the extreme of a pass
+    // paying for its own output, so the scoped measurement reads zero growth and
+    // stays idle, while the unscoped one still compacts.
+    let (_dir, store, boundary, counted) = seeded().await;
+    store
+        .record(
+            "s",
+            "usage",
+            json!({"run_id":"run","step":0,"usage":{"inputTokens":1_900,"outputTokens":100},"context_message_seq":counted}),
+        )
+        .await
+        .unwrap();
+    store
+        .compact_for_run("s", "run", "cut_prior", boundary, "x".repeat(30_000))
+        .await
+        .unwrap();
+    let carried = store.carried_prefix_tokens("s").await.unwrap();
+    assert!(carried >= 2_000, "the carried summary prices at {carried}");
+
+    let mut notices: Vec<Value> = Vec::new();
+    let mut breaker = Breaker::new(2);
+    let mut calls = 0;
+    let committed = maybe_compact(
+        &store,
+        CompactRequest {
+            session: "s",
+            run: "run",
+            boundary,
+            through: None,
+            focus: None,
+            retention: None,
+            prefix_scope: PrefixScope::BodyAfterPrefix,
+            forced: false,
+            budget: &budget(),
+            per_pass: 8,
+            segment_chars: 0,
+            fold_at: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            breaker: &mut breaker,
+            notify: &mut |notice: Value| notices.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
+        },
+        |body| {
+            calls += 1;
+            let _ = body;
+            async { Ok("summary".into()) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        !committed,
+        "the scoped measurement discounts the carried prefix"
+    );
+    assert_eq!(calls, 0, "an idle gate spends no summarizer call");
+    assert!(
+        notices
+            .iter()
+            .any(|notice| notice["reason"] == "under_threshold"
+                && notice["carried_prefix_tokens"].as_u64() == Some(carried)),
+        "{notices:?}"
+    );
+
+    let mut unscoped: Vec<Value> = Vec::new();
+    let committed = maybe_compact(
+        &store,
+        CompactRequest {
+            session: "s",
+            run: "run",
+            boundary,
+            through: None,
+            focus: None,
+            retention: None,
+            prefix_scope: PrefixScope::Total,
+            forced: false,
+            budget: &budget(),
+            per_pass: 8,
+            segment_chars: 0,
+            fold_at: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            breaker: &mut breaker,
+            notify: &mut |notice: Value| unscoped.push(notice),
+            count: &mut |_messages| Box::pin(async { CountTokens::Unsupported }),
+        },
+        |body| {
+            let _ = body;
+            async { Ok("summary".into()) }
+        },
+    )
+    .await
+    .unwrap();
+    assert!(committed, "the unscoped measurement still compacts");
+}
+
+#[tokio::test]
 async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
     let (_dir, store, boundary, counted) = seeded().await;
     store
@@ -230,6 +332,8 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 1,
@@ -262,6 +366,8 @@ async fn a_failing_summarizer_trips_the_breaker_and_keeps_history() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 1,
@@ -314,6 +420,8 @@ async fn gate_two_counts_the_delta_since_the_anchor() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 1,
@@ -370,6 +478,8 @@ async fn a_report_without_the_anchor_marker_prices_the_whole_history() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 1,
@@ -418,6 +528,8 @@ async fn an_unsupported_count_falls_back_to_the_delta_estimate() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: false,
             budget: &budget(),
             per_pass: 1,
@@ -460,6 +572,8 @@ async fn an_interrupt_ends_the_pass_between_segments() {
             boundary,
             through: None,
             focus: None,
+            retention: None,
+            prefix_scope: Default::default(),
             forced: true,
             budget: &budget(),
             per_pass: 1,

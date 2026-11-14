@@ -89,6 +89,8 @@ async fn run(prune_chars: Option<usize>) -> (String, Store) {
             prune_chars,
             prune_total_chars: None,
             protect_turns: 0,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     runtime

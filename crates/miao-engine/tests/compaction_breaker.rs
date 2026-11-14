@@ -122,6 +122,8 @@ async fn an_explicit_compact_restarts_the_tripped_breaker() {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
 
@@ -262,6 +264,8 @@ async fn a_tripped_breaker_stays_with_the_session_whose_summarizer_failed() {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
 
