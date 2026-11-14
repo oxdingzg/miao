@@ -122,6 +122,12 @@ fn sandbox_invocation(profile: &str, command: &[String]) -> (String, Vec<String>
 }
 
 fn main() -> ExitCode {
+    // Standalone here means stderr is the operator's console, so teardown
+    // failures are reported the way they always were; the compiled product
+    // runs the same sandbox in-process and keeps them off its own screen.
+    #[cfg(target_os = "windows")]
+    miao_sandbox::win::set_teardown_reporter(|message| eprintln!("miao-run: {message}"));
+
     let options = match parse(std::env::args().skip(1)) {
         Ok(options) => options,
         Err(message) => {
