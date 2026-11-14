@@ -436,9 +436,12 @@ pub fn command_exists(name: &str) -> bool {
 }
 
 fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COPIES: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos())
+        .map_or(0, |duration| duration.as_nanos());
+    (nanos << 8) | u128::from(COPIES.fetch_add(1, Ordering::Relaxed) % 256)
 }
 
 #[cfg(test)]
