@@ -258,6 +258,7 @@ export function SessionSurface(props: { url: string; token: string }) {
                   rows={3}
                   onInput={(event) => setDraft(event.currentTarget.value)}
                   onKeyDown={(event) => {
+                    if (event.key === "Escape") event.currentTarget.blur()
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault()
                       void submit(draft())
@@ -362,6 +363,12 @@ export function SessionSurface(props: { url: string; token: string }) {
               rows={2}
               onInput={(event) => setDraft(event.currentTarget.value)}
               onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  const sessionID = selected()
+                  if (sessionID && running(events())) void reader.cancel(sessionID).catch(fail)
+                  return
+                }
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault()
                   void submit(draft())
@@ -370,11 +377,22 @@ export function SessionSurface(props: { url: string; token: string }) {
             />
             <button
               type="button"
-              class="rounded-full bg-v2-text-text-base px-4 py-2 text-12-medium text-v2-background-bg-deep disabled:opacity-40"
-              disabled={!draft().trim() || busy()}
-              onClick={() => void submit(draft())}
+              class="rounded-full px-4 py-2 text-12-medium disabled:opacity-40"
+              classList={{
+                "bg-v2-text-text-base text-v2-background-bg-deep": !running(events()),
+                "border border-v2-border-border-weak": running(events()),
+              }}
+              disabled={!draft().trim() && !running(events())}
+              onClick={() => {
+                const sessionID = selected()
+                if (running(events()) && sessionID) {
+                  void reader.cancel(sessionID).catch(fail)
+                  return
+                }
+                void submit(draft())
+              }}
             >
-              {busy() ? "发送中" : "发送"}
+              {running(events()) ? "停止" : busy() ? "发送中" : "发送"}
             </button>
           </div>
           <div class="px-4 pb-2 text-right text-10-regular text-v2-text-text-weak">内容由 AI 生成，请核对重要信息</div>

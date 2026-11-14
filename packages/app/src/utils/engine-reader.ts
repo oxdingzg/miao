@@ -59,6 +59,10 @@ export function createEngineReader(input: {
     async initialize(sessionID: string, title: string) {
       return transport.request("initialize", { session_id: sessionID, title, protocol: 2 })
     },
+    /** Stop the Session's active run. Idle is a no-op the engine accepts. */
+    async cancel(sessionID: string) {
+      return transport.request("cancel", { session_id: sessionID })
+    },
     /** Admit one durable prompt. The answer arrives as events on the
      * Session's stream; `resume` lets the runner promote it at the next safe
      * boundary, and delivery defaults to steer. */
