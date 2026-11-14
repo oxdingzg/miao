@@ -664,7 +664,7 @@ pub(crate) fn same_location(recorded: Option<&str>, current: &str) -> bool {
 
 /// The Windows verbatim path prefix. Written as escapes so the value is the two
 /// backslashes, the question mark and the separator that `canonicalize` emits.
-const VERBATIM: &str = "\\\\?\\";
+pub(crate) const VERBATIM: &str = "\\\\?\\";
 
 /// Whether `path` sits inside the workspace root.
 ///
