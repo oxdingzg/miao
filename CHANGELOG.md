@@ -14,6 +14,7 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 ## [0.3.69] - 2026-11-14
 
 ### Added
+- **tui**: add /clear to start the provider context over (#2997) (`8efae0e4be`)
 - **tui**: say when an upgrade is installed but not running (#2978) (`af59192717`)
 - **tui/engine**: multi-account credentials and per-provider tool gates (#2975) (`37d9a71274`)
 
