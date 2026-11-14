@@ -233,10 +233,24 @@ function Install-Miao {
       # URL names the version the same way the bash installer parses it;
       # api.github.com stays as the fallback (and its 60-requests-an-hour
       # budget stays unspent on the happy path).
-      $client = New-Object System.Net.Http.HttpClient
-      $client.AllowAutoRedirect = $false
-      $response = $client.GetAsync('https://dl.mtty.dev/releases/latest').Result
-      $location = $response.Headers.Location
+      # Windows PowerShell 5.1 does not load System.Net.Http on session start;
+      # `-as [type]` probes the type without throwing when it is already loaded.
+      if (-not ('System.Net.Http.HttpClient' -as [type])) {
+        Add-Type -AssemblyName System.Net.Http
+      }
+      # Redirect suppression lives on the handler, not on HttpClient itself.
+      $handler = New-Object System.Net.Http.HttpClientHandler
+      $handler.AllowAutoRedirect = $false
+      $client = New-Object System.Net.Http.HttpClient($handler)
+      $client.Timeout = [TimeSpan]::FromSeconds(30)
+      $location = $null
+      try {
+        $response = $client.GetAsync('https://dl.mtty.dev/releases/latest').Result
+        $location = $response.Headers.Location
+      } catch {
+        # A dead mirror falls through to api.github.com below, the way the
+        # bash installer survives its probe (#2950).
+      }
       if ($location) {
         $Version = ($location.AbsoluteUri -split '/')[-1] -replace '^v', ''
       } else {
