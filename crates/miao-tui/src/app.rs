@@ -1871,6 +1871,7 @@ impl App {
             Builtin::Context => self.show_context(),
             Builtin::Init => self.write_agents_md(),
             Builtin::Mcp => self.open_mcp(),
+            Builtin::Paste => self.read_clipboard(),
             Builtin::Quit => self.quit = true,
         }
     }
