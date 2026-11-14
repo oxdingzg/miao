@@ -242,6 +242,15 @@ fn report_teardown_failure(message: &str) {
     }
 }
 
+/// Which object a grant or revoke touched, for diagnostics: paths print
+/// themselves, and window objects are the caller's station or desktop.
+fn target_label(target: &AclTarget) -> String {
+    match target {
+        AclTarget::Path(path) | AclTarget::Discovery(path) => path.display().to_string(),
+        AclTarget::Window(_) => "window station/desktop".to_string(),
+    }
+}
+
 fn acl_lock() -> Result<AclLock, WinError> {
     let name = wide("Local\\miao-sandbox-acl");
     let handle = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
@@ -292,6 +301,19 @@ impl Drop for AclGrant {
             if status.0 != 0 {
                 return Err(last_error("read ACL for revocation"));
             }
+            // A NULL DACL means "no restrictions at all": there is nothing of
+            // ours to revoke, and merging a REVOKE into nothing would write an
+            // empty (deny-everyone) ACL onto a shared object like the
+            // interactive desktop — exactly how one refused revoke cascaded
+            // into per-invocation access-denied spam.
+            if current.is_null() {
+                unsafe {
+                    if !descriptor.0.is_null() {
+                        LocalFree(Some(HLOCAL(descriptor.0)));
+                    }
+                }
+                return Ok(());
+            }
             let mut entry = EXPLICIT_ACCESS_W {
                 grfAccessMode: REVOKE_ACCESS,
                 ..Default::default()
@@ -339,7 +361,10 @@ impl Drop for AclGrant {
                 }
             }
             if status.0 != 0 {
-                return Err(last_error("revoke sandbox ACL"));
+                return Err(last_error(&format!(
+                    "revoke sandbox ACL on {}",
+                    target_label(&self.target)
+                )));
             }
             Ok(())
         })();
@@ -406,9 +431,17 @@ fn grant_acl(
         }
     };
     if status.0 != 0 {
-        return Err(WinError::Unavailable(format!(
-            "read sandbox ACL failed: {status:?}"
+        return Err(last_error(&format!(
+            "read ACL for grant on {}",
+            target_label(&target)
         )));
+    }
+    // A NULL DACL means "no restrictions at all": the container SID already
+    // has every access, and merging a grant onto nothing would REPLACE the
+    // allow-everyone state with an allow-only list — on a shared window
+    // station or desktop that strips every other process's access.
+    if old_dacl.is_null() {
+        return Ok(());
     }
     let mut grant = AclGrant {
         target,
