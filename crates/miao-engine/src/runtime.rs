@@ -633,17 +633,51 @@ async fn validate_policy_boundary(
     Ok(())
 }
 
+/// Whether two spellings name the same directory.
+///
+/// Canonicalization answers with the Windows verbatim prefix while a workspace
+/// recorded from configuration keeps the plain form, and Windows paths are
+/// case-insensitive. Comparing the raw strings made the engine see two
+/// directories where there is one: `resume` answered `Conflict`, a saved-rule
+/// reload was refused, and a product host directory was rejected.
+pub(crate) fn same_directory(left: &std::path::Path, right: &std::path::Path) -> bool {
+    fn plain(path: &std::path::Path) -> std::borrow::Cow<'_, str> {
+        let text = path.to_string_lossy();
+        let text = text.strip_prefix(VERBATIM).unwrap_or(&text);
+        if cfg!(windows) {
+            return std::borrow::Cow::Owned(text.to_lowercase());
+        }
+        std::borrow::Cow::Owned(text.to_string())
+    }
+    plain(left) == plain(right)
+}
+
+/// Does a recorded Location name the workspace the runtime runs in?
+pub(crate) fn same_location(recorded: Option<&str>, current: &str) -> bool {
+    recorded.is_some_and(|recorded| {
+        same_directory(
+            std::path::Path::new(recorded),
+            std::path::Path::new(current),
+        )
+    })
+}
+
+/// The Windows verbatim path prefix. Written as escapes so the value is the two
+/// backslashes, the question mark and the separator that `canonicalize` emits.
+const VERBATIM: &str = "\\\\?\\";
+
 /// Whether `path` sits inside the workspace root.
 ///
 /// `Path::starts_with` compares components, and on Windows the two sides are
-/// routinely spelled differently: canonicalization answers `\\?\C:\…` while the
-/// workspace was recorded as `C:\…`, so a direct comparison says "outside" for a
-/// database that is plainly inside the workspace. That let a reload enable
-/// process authority inside the workspace on Windows (it is refused on Unix).
-/// Comparing the de-prefixed paths restores one answer on both platforms.
+/// routinely spelled differently: canonicalization answers with the verbatim
+/// prefix while the workspace was recorded without it, so a direct comparison
+/// says "outside" for a database that is plainly inside the workspace. That let
+/// a reload enable process authority inside the workspace on Windows (it is
+/// refused on Unix). Comparing the de-prefixed paths restores one answer on both
+/// platforms.
 fn within_workspace(path: &std::path::Path, root: &str) -> bool {
     fn plain(path: &std::path::Path) -> std::borrow::Cow<'_, std::path::Path> {
-        match path.to_string_lossy().strip_prefix(r"\\?\") {
+        match path.to_string_lossy().strip_prefix(VERBATIM) {
             Some(rest) => std::borrow::Cow::Owned(std::path::Path::new(rest).to_path_buf()),
             None => std::borrow::Cow::Borrowed(path),
         }
@@ -1011,7 +1045,7 @@ impl Runtime {
         let directory = tokio::fs::canonicalize(&context.directory)
             .await
             .map_err(|_| Error::Invalid("invalid product host directory".into()))?;
-        if directory != std::path::Path::new(self.inner.tools.location()) {
+        if !same_directory(&directory, std::path::Path::new(self.inner.tools.location())) {
             return Err(Error::Invalid(
                 "product host directory does not match Location".into(),
             ));
@@ -1982,7 +2016,7 @@ impl Runtime {
         let workspace = tokio::fs::canonicalize(workspace)
             .await
             .map_err(|_| Error::Invalid("saved permission workspace is unavailable".into()))?;
-        if workspace != std::path::Path::new(self.inner.tools.location()) {
+        if !same_directory(&workspace, std::path::Path::new(self.inner.tools.location())) {
             return Err(Error::Invalid("saved permission Location mismatch".into()));
         }
         self.inner
@@ -2061,8 +2095,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Invalid("question Location mismatch".into()));
         }
         self.inner.store.answer_question(session, answer).await
@@ -2080,8 +2116,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Invalid("question Location mismatch".into()));
         }
         self.inner.store.reject_question(session, rejection).await
@@ -2287,8 +2325,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(parent).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(parent).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         self.inner.store.fork(parent, target, message_seq).await
@@ -2313,8 +2353,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         let receipt = self
@@ -2333,24 +2375,30 @@ impl Runtime {
     }
 
     pub async fn shell_status(&self, session: &str, call: &str) -> Result<Value, Error> {
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         self.inner.store.shell_status(session, call).await
     }
 
     pub async fn wake_pending(&self, session: &str) -> Result<(), Error> {
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         self.wake(session, false).await
     }
 
     pub async fn resume(&self, session: &str) -> Result<(), Error> {
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         if self.inner.store.migration_active(session).await? {
@@ -2457,8 +2505,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         self.inner
@@ -2480,8 +2530,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         if credential_id
@@ -2521,8 +2573,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         let explicit = binding
@@ -2575,8 +2629,10 @@ impl Runtime {
         if self.inner.stop.is_cancelled() {
             return Err(Error::Closed);
         }
-        if self.inner.store.location(session).await?.as_deref() != Some(self.inner.tools.location())
-        {
+        if !same_location(
+            self.inner.store.location(session).await?.as_deref(),
+            self.inner.tools.location(),
+        ) {
             return Err(Error::Conflict);
         }
         let result = self
