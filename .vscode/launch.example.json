@@ -2,10 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "bun",
-      "request": "attach",
-      "name": "opencode (attach)",
-      "url": "ws://localhost:6499/"
+      "type": "lldb",
+      "request": "launch",
+      "name": "miao (debug build)",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path",
+          "crates/miao-cli/Cargo.toml"
+        ],
+        "filter": {
+          "name": "miao",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

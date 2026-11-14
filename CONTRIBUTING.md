@@ -31,85 +31,86 @@ https://github.com/anomalyco/models.dev
 
 ## Developing miao
 
-- Requirements: Bun 1.3+
-- Install dependencies and start the dev server from the repo root:
+- Requirements: Bun 1.4.x (the version `packageManager` pins), a Rust stable
+  toolchain, and `cargo` on `PATH`.
+- Install dependencies once from the repo root:
 
   ```bash
   bun install
-  bun dev
   ```
 
-### Integration tests
+- Run the binary from source:
 
-Run process integration tests from `packages/miao` with a prebuilt engine:
+  ```bash
+  bun dev            # cargo run --manifest-path crates/miao-cli/Cargo.toml
+  bun dev --help
+  bun dev serve      # headless API server
+  bun dev .          # TUI in the current directory
+  ```
+
+  The product is the Rust binary: `crates/miao-cli` links the engine and the TUI
+  in-process, so there is no separate engine process to start. Everything after
+  `bun dev` is passed to the binary unchanged.
+
+### Tests
+
+Tests do not run from the repository root (a guard rejects it); run them in the
+package that owns them:
 
 ```bash
-MIAO_ENGINE_BIN=/absolute/path/to/miao-engine bun run test:integration
+cd packages/engine-ts/core && bun test
+cd packages/app && bun test
 ```
 
-The runner rejects a missing or unusable engine before starting the suite. Build native binaries on a build host as required by the project instructions. For a selected protocol-only file that does not need the native binary, use an explicit non-native run:
+Rust tests run with cargo. Do not compile on the workstation you are editing on:
+send `cargo build`/`cargo test` to a build host and copy the result back.
 
 ```bash
-INTEGRATION_REQUIRE_ENGINE=0 bun run test:integration test/engine/eval-budget.test.ts
+cargo test --manifest-path crates/miao-engine/Cargo.toml
 ```
-
-This selection does not establish native engine acceptance. The full suite always requires an engine.
 
 ### Running against a different directory
 
-By default, `bun dev` runs miao in the `packages/miao` directory. To run it against a different directory or repository:
+`bun dev` starts in the current working directory. Pass a path to start somewhere
+else, or `.` for the repository root:
 
 ```bash
 bun dev <directory>
-```
-
-To run miao in the root of the miao repo itself:
-
-```bash
 bun dev .
 ```
 
-### Building a "localcode"
+### Building a binary
 
-To compile a standalone executable:
-
-```bash
-./packages/miao/script/build.ts --single
-```
-
-Then run it with:
+Build the release binary on a build host, then install that artifact:
 
 ```bash
-./packages/miao/dist/miao-<platform>/bin/miao
+cargo build --release --manifest-path crates/miao-cli/Cargo.toml
+./script/install-local.sh --binary target/release/miao
 ```
 
-Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
+`install-local.sh` smoke-tests `--version`, installs the binary under
+`~/.local/share/miao/bin`, and repoints `~/.local/bin/miao-preview`. The
+release-managed `~/.miao/bin/miao` is left untouched, so a work-in-progress build
+cannot break the command you rely on.
 
-- Core pieces:
-  - `packages/core`: miao core business logic (V2 session engine, tools, providers).
-  - `packages/miao`: CLI shell and server routes.
-  - `packages/tui`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
-  - `packages/app`: The shared web UI components, written in SolidJS
-  - `apps/desktop`: The desktop app, a Tauri shell around `packages/app` (see `specs/desktop-app.md`)
-  - `packages/plugin`: Source for `@miao/plugin`
+### Where things live
 
-### Understanding bun dev vs miao
+`packages/README.md` describes the TypeScript layers; the Rust side is the three
+`crates/miao-*` packages the binary is built from. In short:
 
-During development, `bun dev` is the local equivalent of the built `miao` command. Both run the same CLI interface:
+- `crates/miao-cli`, `crates/miao-engine`, `crates/miao-tui` — the shipped binary
+- `packages/app`, `packages/ui`, `packages/session-ui` — the SolidJS client the desktop shell mounts
+- `apps/desktop` — the Tauri shell around `packages/app`
+- `packages/client`, `packages/protocol`, `packages/schema` — wire vocabulary shared by the client and the engine tests
+- `packages/engine-ts/*` — the earlier TypeScript implementation the Rust engine is validated against; nothing shipped runs it
+- `packages/script`, `packages/http-recorder`, `packages/httpapi-codegen`, `packages/storybook` — tooling
 
-```bash
-# Development (from project root)
-bun dev --help           # Show all available commands
-bun dev serve            # Start headless API server
-bun dev web              # Start server + open web interface
-bun dev <directory>      # Start TUI in specific directory
+### `bun dev` vs `miao`
 
-# Production
-miao --help          # Show all available commands
-miao serve           # Start headless API server
-miao web             # Start server + open web interface
-miao <directory>     # Start TUI in specific directory
-```
+Both are the same program. `bun dev` is `cargo run --manifest-path
+crates/miao-cli/Cargo.toml`, so it compiles your working tree and is the only
+entry point that reflects uncommitted edits. `miao` is a release binary; run
+`bun script/set-version.ts` and cut a release to see a change there.
 
 ### Running the API Server
 
@@ -162,41 +163,35 @@ The previous Electron shell was retired once the Tauri port reached parity; see
 `specs/desktop-app.md`.
 
 > [!NOTE]
-> If you make changes to the API or SDK (e.g. `packages/miao/src/server/server.ts`), run `./script/generate.ts` to regenerate the SDK and related files.
+> After changing the public Protocol or Server `HttpApi`, run `bun run generate`
+> from `packages/client` and commit the regenerated files. Never edit
+> `src/generated` or `src/generated-effect` by hand.
 
 Please try to follow the [style guide](./AGENTS.md)
 
-### Setting up a Debugger
+### Setting up a debugger
 
-Bun debugging is currently rough around the edges. We hope this guide helps you get set up and avoid some pain points.
+The binary is Rust, so attach a native debugger:
 
-The most reliable way to debug miao is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
-your debugger via that URL. Other methods can result in breakpoints being mapped incorrectly, at least in VSCode (YMMV).
+```bash
+cargo build --manifest-path crates/miao-cli/Cargo.toml
+rust-lldb target/debug/miao        # or rust-gdb on Linux
+```
 
-Caveats:
+The TUI and the engine are linked into that one process, so a breakpoint anywhere
+in `crates/miao-engine` or `crates/miao-tui` stops the same program; there is no
+separate server process to attach to. `bun dev` builds and runs the same binary
+when you do not need a debugger.
 
-- If you want to run the miao TUI and have breakpoints triggered in the server code, you might need to run `bun dev spawn` instead of
-  the usual `bun dev`. This is because `bun dev` runs the server in a worker thread and breakpoints might not work there.
-- If `spawn` does not work for you, you can debug the server separately:
-  - Debug server: `bun run --inspect=ws://localhost:6499/ --cwd packages/miao ./src/index.ts serve --port 4096`,
-    then attach TUI with `miao attach http://localhost:4096`
-  - Debug TUI: `bun run --inspect=ws://localhost:6499/ --cwd packages/miao ./src/index.ts`
+Without a debugger, the engine writes structured diagnostics to
+`<data root>/log/miao.log`; set `MIAO_LOG_FILE` to write them somewhere else.
 
-Other tips and tricks:
+#### VSCode setup
 
-- You might want to use `--inspect-wait` or `--inspect-brk` instead of `--inspect`, depending on your workflow
-- Specifying `--inspect=ws://localhost:6499/` on every invocation can be tiresome, you may want to `export BUN_OPTIONS=--inspect=ws://localhost:6499/` instead
-
-#### VSCode Setup
-
-If you use VSCode, you can use our example configurations [.vscode/settings.example.json](.vscode/settings.example.json) and [.vscode/launch.example.json](.vscode/launch.example.json).
-
-Some debug methods that can be problematic:
-
-- Debug configurations with `"request": "launch"` can have breakpoints incorrectly mapped and thus unusable
-- The same problem arises when running miao in the VSCode `JavaScript Debug Terminal`
-
-With that said, you may want to try these methods, as they might work for you.
+[.vscode/launch.example.json](.vscode/launch.example.json) attaches `lldb` to the
+locally built binary, and
+[.vscode/settings.example.json](.vscode/settings.example.json) carries the
+workspace settings.
 
 ## Pull Request Expectations
 
