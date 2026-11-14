@@ -8,14 +8,12 @@ import {
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 
 /**
- * Read-only view of the local engine: its Sessions, one Session's header, and
- * that Session's committed events.
+ * One local engine's Sessions and the conversation on the selected one: new
+ * Session, admitted prompt, and the answer as it commits.
  *
- * This is deliberately not `AppInterface`. The shared renderer speaks the HTTP
- * API, while the shipped binary exposes the engine's own control plane, so the
- * window would otherwise stay empty. The surface stays a thin read model over
- * `createEngineReader`; `AppInterface` returns once the engine answers the API
- * the app reads.
+ * This is deliberately not `AppInterface` yet. The shared renderer speaks the
+ * HTTP API, while the shipped binary exposes the engine's own control plane;
+ * this surface talks that control plane directly through `createEngineReader`.
  */
 export function SessionSurface(props: { url: string; token: string }) {
   const reader = createEngineReader({ url: props.url, token: props.token })
@@ -25,6 +23,8 @@ export function SessionSurface(props: { url: string; token: string }) {
   const [rows, setRows] = createSignal<TranscriptRow[]>([])
   const [live, setLive] = createSignal(false)
   const [error, setError] = createSignal<string>()
+  const [draft, setDraft] = createSignal("")
+  const [busy, setBusy] = createSignal(false)
 
   let detach: (() => void) | undefined
 
@@ -56,6 +56,37 @@ export function SessionSurface(props: { url: string; token: string }) {
     setLive(true)
   }
 
+  const newSession = async () => {
+    const id = `ses_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`
+    await reader.initialize(id, "Desktop session").catch(fail)
+    const list = await reader.sessions().catch(() => sessions())
+    setSessions(list)
+    await open(
+      list.find((session) => session.id === id) ?? {
+        id,
+        title: "Desktop session",
+        updatedAt: 0,
+        pinned: false,
+        archived: false,
+      },
+    )
+  }
+
+  const send = async () => {
+    const sessionID = selected()
+    const text = draft().trim()
+    if (!sessionID || !text || busy()) return
+    setDraft("")
+    setBusy(true)
+    try {
+      await reader.admit(sessionID, text)
+    } catch (cause) {
+      fail(cause)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   onMount(async () => {
     const list = await reader.sessions().catch((cause: unknown) => {
       fail(cause)
@@ -73,7 +104,16 @@ export function SessionSurface(props: { url: string; token: string }) {
   return (
     <div class="flex h-dvh bg-v2-background-bg-deep text-v2-text-text-base">
       <aside class="w-64 shrink-0 border-r border-v2-border-border-weak flex flex-col">
-        <header class="px-3 py-2 text-12-medium text-v2-text-text-weak">Sessions</header>
+        <header class="flex items-center justify-between px-3 py-2">
+          <span class="text-12-medium text-v2-text-text-weak">Sessions</span>
+          <button
+            type="button"
+            class="rounded bg-v2-background-bg-layer-01 px-2 py-0.5 text-11-regular hover:bg-v2-background-bg-layer-02"
+            onClick={() => void newSession()}
+          >
+            New
+          </button>
+        </header>
         <div class="flex-1 overflow-y-auto">
           <For each={sessions()}>
             {(session) => (
@@ -130,6 +170,30 @@ export function SessionSurface(props: { url: string; token: string }) {
             </footer>
           )}
         </Show>
+        <footer class="flex items-end gap-2 border-t border-v2-border-border-weak px-3 py-2">
+          <textarea
+            class="max-h-40 min-h-9 flex-1 resize-none rounded bg-v2-background-bg-layer-01 px-2 py-1.5 text-12-regular outline-none"
+            placeholder={selected() ? "Ask anything" : "Create a session first"}
+            disabled={!selected()}
+            value={draft()}
+            rows={2}
+            onInput={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault()
+                void send()
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="rounded bg-v2-background-bg-layer-01 px-3 py-1.5 text-12-medium disabled:opacity-40"
+            disabled={!selected() || !draft().trim() || busy()}
+            onClick={() => void send()}
+          >
+            {busy() ? "Sending" : "Send"}
+          </button>
+        </footer>
       </main>
     </div>
   )

@@ -25,9 +25,10 @@ export type EngineTransport = {
 }
 
 /**
- * The read side of one window's attachment to a local engine: catalog, one
- * Session's header, and its committed events. Writes stay out until a caller
- * needs them, so nothing here can start model work by accident.
+ * One window's attachment to a local engine: catalog, one Session's header,
+ * committed events, and the two writes a conversation needs — create a
+ * Session, admit a prompt. Everything else stays out until a caller asks,
+ * so no other surface here can start model work by accident.
  */
 export function createEngineReader(input: {
   url: string
@@ -52,6 +53,26 @@ export function createEngineReader(input: {
   return {
     sessions,
     snapshot,
+    /** Create one idle Session. The renderer draws the id the same way the
+     * TUI does; the store adopts the string it is given. `protocol` is the
+     * engine's current wire version (`miao_engine::PROTOCOL`). */
+    async initialize(sessionID: string, title: string) {
+      return transport.request("initialize", { session_id: sessionID, title, protocol: 2 })
+    },
+    /** Admit one durable prompt. The answer arrives as events on the
+     * Session's stream; `resume` lets the runner promote it at the next safe
+     * boundary, and delivery defaults to steer. */
+    async admit(sessionID: string, prompt: string) {
+      return transport.request("admit", {
+        input: {
+          session_id: sessionID,
+          input_id: `in_${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`,
+          prompt,
+        },
+        resume: true,
+        attachments: [],
+      })
+    },
     /** Attach to one Session's committed events, replaying from `after`. */
     async subscribe(sessionID: string, handler: (event: EngineEvent) => void, after = 0) {
       const set = listeners.get(sessionID) ?? new Set()
