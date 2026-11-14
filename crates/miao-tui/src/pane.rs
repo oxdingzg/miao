@@ -2939,6 +2939,32 @@ fn clip_cells(line: &str, offset: usize, width: u16) -> String {
 /// level), the trailing column is the current hour, `~` says a figure covers
 /// fewer turns than the window counted, and `partial` says retention removed
 /// rows inside it. A monochrome terminal loses none of those facts.
+/// The hourly table's numeric columns. Seven cells hold the widest compact
+/// token count (`1254.4m`); the hit column holds `100%`.
+const MODEL_IN_CELLS: usize = 7;
+const MODEL_OUT_CELLS: usize = 7;
+const MODEL_CACHE_CELLS: usize = 5;
+
+/// One row of the hourly model table: the name takes the cells the figures
+/// leave, and the three numeric columns sit right-aligned under their header
+/// so long model names truncate in one column instead of pushing `in`/`out`
+/// off the row.
+fn model_row(name: &str, input: u64, output: u64, hit: &str, width: usize) -> String {
+    let numbers = MODEL_IN_CELLS + MODEL_OUT_CELLS + MODEL_CACHE_CELLS + 3;
+    let name_cells = width.saturating_sub(numbers).max(8);
+    format!(
+        "{:<name_cells$} {:>in_cells$} {:>out_cells$} {:>hit_cells$}",
+        fit(name, name_cells),
+        crate::status::compact_tokens(input),
+        crate::status::compact_tokens(output),
+        hit,
+        name_cells = name_cells,
+        in_cells = MODEL_IN_CELLS,
+        out_cells = MODEL_OUT_CELLS,
+        hit_cells = MODEL_CACHE_CELLS,
+    )
+}
+
 fn hourly_lines(
     usage: Option<&crate::status::HourlyUsage>,
     width: usize,
@@ -3036,6 +3062,27 @@ fn hourly_lines(
         .map(|model| model.provider.as_deref())
         .collect();
     let grouped = providers.len() > 1;
+    // The header names each column: a long model name truncates in its own
+    // column instead of running the figures together, and `in`/`out`/`cache`
+    // stay findable as you scan down the rows.
+    {
+        let numbers = MODEL_IN_CELLS + MODEL_OUT_CELLS + MODEL_CACHE_CELLS + 3;
+        let name_cells = width.saturating_sub(numbers).max(8);
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{:<name_cells$} {:>in_cells$} {:>out_cells$} {:>hit_cells$}",
+                "model",
+                "in",
+                "out",
+                "cache",
+                name_cells = name_cells,
+                in_cells = MODEL_IN_CELLS,
+                out_cells = MODEL_OUT_CELLS,
+                hit_cells = MODEL_CACHE_CELLS,
+            ),
+            muted,
+        )));
+    }
     let mut open_provider = None;
     for (index, model) in usage.models.iter().enumerate() {
         if index == MODEL_ROWS {
@@ -3061,15 +3108,24 @@ fn hourly_lines(
             true => "  - ",
             false => "  ",
         };
-        let row = format!(
-            "{mark}{} · in {} · out {} · {}",
-            model.model,
-            compact(model.input),
-            compact(model.output),
-            hit
+        let row = model_row(
+            &format!("{mark}{}", model.model),
+            model.input,
+            model.output,
+            &hit,
+            width,
         );
-        hover.push((lines.len(), row.clone()));
-        lines.push(Line::from(Span::styled(fit(&row, width), muted)));
+        hover.push((
+            lines.len(),
+            format!(
+                "{mark}{} · in {} · out {} · cache {}",
+                model.model,
+                compact(model.input),
+                compact(model.output),
+                hit
+            ),
+        ));
+        lines.push(Line::from(Span::styled(row, muted)));
     }
     let mut money = Vec::new();
     if usage.cost_turns > 0 {
@@ -7865,18 +7921,47 @@ mod tests {
             cache_hit_ratio: None,
         };
         let (strip, _) = hourly_lines(Some(&usage), 40, &theme.palette);
-        let joined = strip
+        let lines = strip
             .iter()
-            .flat_map(|line| line.spans.iter())
-            .map(|span| span.content.to_string())
-            .collect::<String>();
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        let joined = lines.join("\n");
+        // A table: one header naming the columns, then one row per model with
+        // the name in its own column and the figures right-aligned beneath it.
+        let header = lines
+            .iter()
+            .position(|line| line.contains("model") && line.contains("cache"))
+            .unwrap_or_else(|| panic!("the table names its columns: {joined:?}"));
+        let busiest = lines
+            .iter()
+            .position(|line| line.contains("glm-5"))
+            .unwrap_or_else(|| panic!("the busiest model leads: {joined:?}"));
+        let second = lines
+            .iter()
+            .position(|line| line.contains("claude-opus"))
+            .unwrap_or_else(|| panic!("the second model keeps its row: {joined:?}"));
         assert!(
-            joined.contains("glm-5 · in 1.2k · out 300 · 75%"),
-            "the busiest model leads with its own share: {joined:?}"
+            header < busiest && busiest < second,
+            "rows follow the header: {joined:?}"
         );
         assert!(
-            joined.contains("claude-opus · in 500 · out 100 · 0%"),
-            "the second model keeps its cold-cache row: {joined:?}"
+            lines[busiest].contains("1.2k")
+                && lines[busiest].contains("300")
+                && lines[busiest].contains("75%"),
+            "the busiest model carries its own share: {:?}",
+            lines[busiest]
+        );
+        assert!(
+            lines[second].contains("500")
+                && lines[second].contains("100")
+                && lines[second].contains("0%"),
+            "the second model keeps its cold-cache row: {:?}",
+            lines[second]
         );
         let (bare, _) = hourly_lines(
             Some(&crate::status::HourlyUsage {
