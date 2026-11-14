@@ -55,12 +55,17 @@ pub enum Builtin {
     Suspend,
     TerminalTitle,
     Recall,
+    /// Read the clipboard as the paste the terminal swallowed: Windows
+    /// Terminal and conhost bind Ctrl+V themselves, and an image-only
+    /// clipboard then sends the app nothing, so the stroke must stay
+    /// reachable by name.
+    Paste,
     Help,
     Quit,
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 32] = [
+    pub const ALL: [Builtin; 33] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::Sandbox,
@@ -91,6 +96,7 @@ impl Builtin {
         Builtin::Suspend,
         Builtin::TerminalTitle,
         Builtin::Recall,
+        Builtin::Paste,
         Builtin::Help,
         Builtin::Quit,
     ];
@@ -128,6 +134,7 @@ impl Builtin {
             Builtin::Suspend => "suspend",
             Builtin::TerminalTitle => "terminal-title",
             Builtin::Recall => "recall",
+            Builtin::Paste => "paste",
             Builtin::Help => "help",
             Builtin::Quit => "quit",
         }
@@ -184,6 +191,7 @@ impl Builtin {
             Builtin::Suspend => "Suspend to shell",
             Builtin::TerminalTitle => "Toggle terminal title",
             Builtin::Recall => "Restore an archived tool output by handle",
+            Builtin::Paste => "Paste the clipboard (image or text)",
             Builtin::Help => "Keys and commands",
             Builtin::Quit => "Quit miao",
         }
@@ -235,6 +243,8 @@ impl Builtin {
             Builtin::Suspend => Some(Action::TerminalSuspend),
             Builtin::TerminalTitle => Some(Action::TerminalTitleToggle),
             Builtin::Recall => None,
+            // Pasting is asked for by name: /paste, no chord.
+            Builtin::Paste => None,
             Builtin::Help => Some(Action::Help),
             Builtin::Quit => Some(Action::AppExit),
         }
