@@ -20,7 +20,8 @@
     "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=miao --no-browser",
     "translate:app": "bun run script/translate-app.ts",
-    "test": "echo 'do not run tests from root' && exit 1"
+    "test": "echo 'do not run tests from root' && exit 1",
+    "lint:dead": "knip --include files"
   },
   "workspaces": {
     "packages": [
@@ -93,6 +94,7 @@
     "@typescript/native-preview": "catalog:",
     "glob": "13.0.5",
     "husky": "9.1.7",
+    "knip": "6.44.2",
     "oxlint": "1.60.0",
     "oxlint-tsgolint": "0.21.0",
     "prettier": "3.6.2",
