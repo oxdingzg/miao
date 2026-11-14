@@ -64,7 +64,7 @@ credentials cannot receive later Agent responses while awaiting the socket sweep
 Bundle from the repository root after installing workspace dependencies:
 
 ```sh
-bun build packages/remote-control/src/hub-main.ts --target=bun --outfile=packages/remote-control/dist/hub.mjs
+bun build packages/engine-ts/remote-control/src/hub-main.ts --target=bun --outfile=packages/engine-ts/remote-control/dist/hub.mjs
 (cd packages/remote-control && bun run build:web)
 docker build -t miao-control-hub:preview packages/remote-control
 ```

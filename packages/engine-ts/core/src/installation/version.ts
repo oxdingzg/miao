@@ -1,4 +1,4 @@
-import manifest from "../../../../package.json"
+import manifest from "../../../../../package.json"
 
 declare global {
   const MIAO_VERSION: string

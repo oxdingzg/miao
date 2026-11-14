@@ -12,7 +12,7 @@ import { RuntimeRegistration } from "../../core/src/runtime/registration"
 import { RuntimeOwnership } from "../../core/src/runtime/ownership"
 import { InstallationVersion } from "../../core/src/installation/version"
 
-const root = fileURLToPath(new URL("../../../", import.meta.url))
+const root = fileURLToPath(new URL("../../../../", import.meta.url))
 const directory = await mkdtemp(path.join(os.tmpdir(), "miao-web-runtime-"))
 const databasePath = path.join(directory, "sessions.db")
 const project = path.join(directory, "project")

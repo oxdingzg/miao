@@ -27,7 +27,7 @@ fn compile(patterns: &[&str]) -> Vec<Regex> {
 }
 
 /// Refusals that name an oversized request. Kept in step with the TypeScript
-/// matcher in `packages/llm/src/provider-error.ts`; the two must agree, or a
+/// matcher in `packages/engine-ts/llm/src/provider-error.ts`; the two must agree, or a
 /// host and an engine disagree about whether a Session may compact.
 fn patterns() -> &'static Vec<Regex> {
     static PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {

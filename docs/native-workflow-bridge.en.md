@@ -3,7 +3,7 @@
 [Roadmap](roadmap.md) §9 gate 2 landed the product-tool reverse bridge, and
 `packages/miao/src/engine/product-tools.ts` advertises the peer tools and
 `push_notification`. The `workflow` tool
-(`packages/core/src/tool/workflow.ts`) is absent. This document records the
+(`packages/engine-ts/core/src/tool/workflow.ts`) is absent. This document records the
 design for closing that gap, following the analysis pattern of
 [native-worktree-move.en.md](native-worktree-move.en.md).
 
@@ -14,7 +14,7 @@ The TS `workflow` tool is two pieces:
 1. **A confined JavaScript interpreter** (`@miao/codemode`) that executes the
    orchestration script with a single capability: `agent(...)`.
 2. **A spawn capability** bound to the TS runner closure (`runSubagent`,
-   `packages/core/src/session/runner/llm.ts`): agent catalog selection,
+   `packages/engine-ts/core/src/session/runner/llm.ts`): agent catalog selection,
    permission assertion, budget inheritance, and a first-class child Session
    whose final assistant text becomes the call's result.
 

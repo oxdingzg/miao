@@ -1,6 +1,6 @@
 //! V1 config document migration for the S5 unified read model.
 //!
-//! Ported from `packages/core/src/v1/config` (migrate.ts plus the provider
+//! Ported from `packages/engine-ts/core/src/v1/config` (migrate.ts plus the provider
 //! options lowerers): the engine and the TypeScript product must decode the
 //! same document set into the same normalized V2 value, pinned by the shared
 //! golden samples in `tests/fixtures/config-golden`. The port works on JSON
@@ -11,7 +11,7 @@
 
 use serde_json::{json, Map, Value};
 
-/// V1-only top-level keys, from `packages/core/src/v1/config/migrate.ts`.
+/// V1-only top-level keys, from `packages/engine-ts/core/src/v1/config/migrate.ts`.
 const V1_KEYS: &[&str] = &[
     "logLevel",
     "server",

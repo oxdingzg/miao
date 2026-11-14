@@ -11,8 +11,8 @@ to sessions: the local owner approves a device and the scope of its access.
 
 - Use a current miao build with `/remote-control` and a running local window.
 - Deploy a Hub with account authentication and an HTTPS address. The repository
-  contains [Hub setup and container instructions](../packages/remote-control/README.md)
-  and a [Compose deployment](../packages/remote-control/deploy/README.md).
+  contains [Hub setup and container instructions](../packages/engine-ts/remote-control/README.md)
+  and a [Compose deployment](../packages/engine-ts/remote-control/deploy/README.md).
 - Serve the Web client from that Hub's origin, or use a compatible iOS client.
   The Hub is separate from mtty.dev and is not a hosted service provided by this site.
 

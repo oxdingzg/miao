@@ -161,7 +161,7 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 - `crates/miao-sandbox/src/lib.rs`（seatbelt / landlock / 后端分派与 `supported()`）
 - `crates/miao-native/src/bin/miao-run.rs`（dev/测试用 runner，调用 `miao-sandbox`）
 - `crates/miao-native/tests/linux-sandbox.rs`（Linux 强制集成测试，作为 Windows 版的模板）
-- `packages/core/src/sandbox/runner.ts`（`resolve` / `backend`）与 `packages/core/src/sandbox.ts`（`Sandbox.Service`）
+- `packages/engine-ts/core/src/sandbox/runner.ts`（`resolve` / `backend`）与 `packages/engine-ts/core/src/sandbox.ts`（`Sandbox.Service`）
 - `packages/miao/src/sandbox-runner.ts`（release 自执行的隐藏 `__sandbox-run` 实现）
 - `.github/workflows/native.yml`（`native` / `sandbox-linux` job，新增 `sandbox-windows`）
 - `docs/rust-rewrite-feasibility.zh.md`（沙箱在整体计划中的位置）

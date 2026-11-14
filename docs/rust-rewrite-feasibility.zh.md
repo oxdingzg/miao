@@ -70,7 +70,7 @@
 
 **当前实现**
 
-- 匹配：V2 `packages/core/src/tool/edit.ts` 先做精确匹配，失败后回退到 `edit-fuzzy.ts`（`matchFuzzy`），容忍逐行的空白与缩进差异。旧的 9-replacer 实现（Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence）位于已删除的 V1 `packages/miao/src/tool/edit.ts`，现仅存于 Rust addon。
+- 匹配：V2 `packages/engine-ts/core/src/tool/edit.ts` 先做精确匹配，失败后回退到 `edit-fuzzy.ts`（`matchFuzzy`），容忍逐行的空白与缩进差异。旧的 9-replacer 实现（Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence）位于已删除的 V1 `packages/miao/src/tool/edit.ts`，现仅存于 Rust addon。
 - 生成 diff：`diff`（jsdiff 8.0.2）的 `diffLines` 与 `createTwoFilesPatch`，在 `core/src/tool/{edit,apply-patch}.ts`、`snapshot/index.ts`、`project/vcs.ts` 里反复调用。
 - 一次编辑里 `createTwoFilesPatch` 会被调用多次：格式化前后各一次，core 侧还有一次。
 
@@ -123,7 +123,7 @@ Rust `strsim` 同规模 Levenshtein：**3.1 ms**，相对全矩阵约 12x，相�
 
 ### 已落地的 native 模块（PoC，全部纯函数，MIAO_NATIVE 门控 + TS 回退）
 
-每个函数都带 Rust 单测；JS parity 测试已随 V1 工具删除。当前原生覆盖还包括 `packages/core/test/sandbox-policy.test.ts` 与 `packages/core/test/tool-bash-sandbox.test.ts`，由 `native` 与 `sandbox-linux` CI job 运行。
+每个函数都带 Rust 单测；JS parity 测试已随 V1 工具删除。当前原生覆盖还包括 `packages/engine-ts/core/test/sandbox-policy.test.ts` 与 `packages/engine-ts/core/test/tool-bash-sandbox.test.ts`，由 `native` 与 `sandbox-linux` CI job 运行。
 
 | 分类 | 函数 | parity 对象 |
 |---|---|---|

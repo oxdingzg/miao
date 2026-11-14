@@ -121,7 +121,7 @@ Place this in `.miao/miao.jsonc` for a project or `~/.config/miao/miao.jsonc` gl
 
 ## Remote Control
 
-Use `/remote-control` in the TUI to configure a self-hosted relay and pair or revoke App/Web devices. The legacy WeChat/QQ connectors and local IM session Router have been removed. See [Runtime behavior](docs/runtime.md) and [relay setup](packages/remote-control/README.md).
+Use `/remote-control` in the TUI to configure a self-hosted relay and pair or revoke App/Web devices. The legacy WeChat/QQ connectors and local IM session Router have been removed. See [Runtime behavior](docs/runtime.md) and [relay setup](packages/engine-ts/remote-control/README.md).
 
 ## Performance work you can inspect
 

@@ -1,5 +1,5 @@
 import path from "path"
-import { SessionCommand } from "../../../packages/core/src/session/command"
+import { SessionCommand } from "../../../packages/engine-ts/core/src/session/command"
 
 const cases = [
   "Read @src/main.ts and ask @reviewer.",
@@ -37,5 +37,5 @@ const records = cases.map((text) => {
 })
 await Bun.write(
   path.join(import.meta.dir, "../tests/fixtures/command-reference-corpus.json"),
-  JSON.stringify({ producer: "packages/core/src/session/command.ts: SessionCommand.files", records }, null, 2) + "\n",
+  JSON.stringify({ producer: "packages/engine-ts/core/src/session/command.ts: SessionCommand.files", records }, null, 2) + "\n",
 )

@@ -62,9 +62,9 @@ attachments.
 
 ## Source references
 
-- `packages/core/src/diagnostic-files.ts`: leases, matching, rotation and quotas.
-- `packages/core/src/observability/logging.ts`: ordinary file logger.
+- `packages/engine-ts/core/src/diagnostic-files.ts`: leases, matching, rotation and quotas.
+- `packages/engine-ts/core/src/observability/logging.ts`: ordinary file logger.
 - `packages/miao/src/cli/monitor.ts`: monitor budget and startup cleanup.
 - `packages/tui/src/context/theme.tsx`: theme log budget.
-- `packages/core/src/provider-wire-archive.ts`: wire rotation and age cleanup.
+- `packages/engine-ts/core/src/provider-wire-archive.ts`: wire rotation and age cleanup.
 - `packages/miao/src/cli/heap.ts`: opt-in heap capture.

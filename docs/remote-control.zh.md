@@ -47,8 +47,8 @@ Remote Control 让你从另一台设备操作正在运行的 miao 窗口。任�
 ## 连接前
 
 - 使用支持 `/remote-control` 的当前 miao 构建，并保持本地窗口运行。
-- 部署具有账号鉴权和 HTTPS 地址的 Hub。仓库提供 [Hub 与容器说明](../packages/remote-control/README.md)
-  和 [Compose 部署](../packages/remote-control/deploy/README.md)。
+- 部署具有账号鉴权和 HTTPS 地址的 Hub。仓库提供 [Hub 与容器说明](../packages/engine-ts/remote-control/README.md)
+  和 [Compose 部署](../packages/engine-ts/remote-control/deploy/README.md)。
 - 从同一个 Hub 域名提供 Web 客户端，或使用兼容的 iOS 客户端。
   Hub 独立于 mtty.dev，本站不提供托管的 Hub 服务。
 

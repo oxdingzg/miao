@@ -27,7 +27,7 @@ pub struct Input {
     #[serde(default)]
     pub pty: bool,
 }
-/// Product parity with `packages/core/src/tool/bash.ts`: a foreground command
+/// Product parity with `packages/engine-ts/core/src/tool/bash.ts`: a foreground command
 /// defaults to two minutes and may ask for up to ten. Remote builds routinely
 /// exceed the old two-minute ceiling, and an over-limit value was rejected as
 /// a bare "invalid tool input" the model could not explain.

@@ -33,8 +33,8 @@ MIAO_TUNNEL_TOKEN_FILE=<absolute private tunnel token filename>
 Run from the repository root, replacing the environment filename:
 
 ```sh
-docker compose --env-file <private environment file> -f packages/remote-control/deploy/compose.yml config --quiet
-docker compose --env-file <private environment file> -f packages/remote-control/deploy/compose.yml --profile cloudflare up -d
+docker compose --env-file <private environment file> -f packages/engine-ts/remote-control/deploy/compose.yml config --quiet
+docker compose --env-file <private environment file> -f packages/engine-ts/remote-control/deploy/compose.yml --profile cloudflare up -d
 ```
 
 Verify the public HTTPS health endpoint, sign in, register a host, and exercise

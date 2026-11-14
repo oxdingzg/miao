@@ -29,7 +29,7 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Layer.empty)
 const fixture = AbsolutePath.make(path.resolve(import.meta.dir, "fixture/custom-tools"))
 // This repository's own `.miao` directory ships two custom tools.
-const repository = AbsolutePath.make(path.resolve(import.meta.dir, "../../../.miao"))
+const repository = AbsolutePath.make(path.resolve(import.meta.dir, "../../../../.miao"))
 const sessionID = SessionV2.ID.make("ses_custom_tools")
 const agent = AgentV2.ID.make("custom-test")
 const allowAll: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }]

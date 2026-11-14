@@ -1,6 +1,6 @@
 <!--
   Built-in skill. Name and description are registered in code at
-  packages/core/src/plugin/skill.ts for the TypeScript host and
+  packages/engine-ts/core/src/plugin/skill.ts for the TypeScript host and
   crates/miao-engine/src/context.rs for the Rust host. The body below
   becomes the skill's content.
 -->

@@ -1,5 +1,5 @@
-import { PermissionV2 } from "../../../../packages/core/src/permission"
-import { PermissionClassifier } from "../../../../packages/core/src/permission/classifier"
+import { PermissionV2 } from "../../../../packages/engine-ts/core/src/permission"
+import { PermissionClassifier } from "../../../../packages/engine-ts/core/src/permission/classifier"
 
 // Golden decisions come from the real layered TypeScript evaluator (S6 step 1).
 // Rust consumes this corpus to pin the rule semantics at the bridge: same

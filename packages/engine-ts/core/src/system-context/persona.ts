@@ -1,15 +1,15 @@
 export * as Persona from "./persona"
 
-import ANTHROPIC from "../../../../assets/persona/anthropic.txt"
-import ASTRA from "../../../../assets/persona/gpt-astra.txt"
-import BEAST from "../../../../assets/persona/beast.txt"
-import CODEX from "../../../../assets/persona/codex.txt"
-import DEFAULT from "../../../../assets/persona/default.txt"
-import GEMINI from "../../../../assets/persona/gemini.txt"
-import GPT from "../../../../assets/persona/gpt.txt"
-import KIMI from "../../../../assets/persona/kimi.txt"
-import META from "../../../../assets/persona/meta.txt"
-import TRINITY from "../../../../assets/persona/trinity.txt"
+import ANTHROPIC from "../../../../../assets/persona/anthropic.txt"
+import ASTRA from "../../../../../assets/persona/gpt-astra.txt"
+import BEAST from "../../../../../assets/persona/beast.txt"
+import CODEX from "../../../../../assets/persona/codex.txt"
+import DEFAULT from "../../../../../assets/persona/default.txt"
+import GEMINI from "../../../../../assets/persona/gemini.txt"
+import GPT from "../../../../../assets/persona/gpt.txt"
+import KIMI from "../../../../../assets/persona/kimi.txt"
+import META from "../../../../../assets/persona/meta.txt"
+import TRINITY from "../../../../../assets/persona/trinity.txt"
 
 /** Providers that serve the Moonshot family whatever the model id says. */
 const KIMI_PROVIDERS = ["kimi-for-coding", "moonshotai", "moonshotai-cn"]

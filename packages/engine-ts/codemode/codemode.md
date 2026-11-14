@@ -88,7 +88,7 @@ attach them to the outer result, but the program receives only the structured to
 This section describes the V2 integration; the pre-V2 `dev` path in
 `packages/miao/src/tool/code-mode.ts` was removed with the V1 tools.
 
-CodeMode is integrated into V2 through `packages/core/src/tool/registry.ts`:
+CodeMode is integrated into V2 through `packages/engine-ts/core/src/tool/registry.ts`:
 
 - Core has one canonical `Tool` representation. Location-scoped producers register direct or deferred tools through
   `Tools.Service`.

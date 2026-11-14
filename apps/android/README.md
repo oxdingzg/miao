@@ -4,9 +4,9 @@ The Android app lives here, independently of the TypeScript workspace packages.
 `core` is a plain JVM module that mirrors `apps/ios/MiaoCore`; `app` is the
 Jetpack Compose application that consumes it.
 
-The wire contract is unchanged: [secure channel](../../packages/remote-control/SECURITY-PROTOCOL.md),
-[pairing](../../packages/remote-control/PAIRING-PROTOCOL.md), [RPC](../../packages/remote-control/RPC-PROTOCOL.md),
-[push](../../packages/remote-control/PUSH.md) and [device rosters](../../packages/remote-control/DEVICE-ROSTER.md).
+The wire contract is unchanged: [secure channel](../../packages/engine-ts/remote-control/SECURITY-PROTOCOL.md),
+[pairing](../../packages/engine-ts/remote-control/PAIRING-PROTOCOL.md), [RPC](../../packages/engine-ts/remote-control/RPC-PROTOCOL.md),
+[push](../../packages/engine-ts/remote-control/PUSH.md) and [device rosters](../../packages/engine-ts/remote-control/DEVICE-ROSTER.md).
 Canonical JSON, P-256 `x963` points, 64-byte `r || s` signatures, HKDF-SHA256
 and AES-256-GCM frames match the TypeScript implementation byte for byte, which
 `scripts/check-interop.ts` verifies against the real server code.

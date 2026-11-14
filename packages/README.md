@@ -33,22 +33,24 @@ helpers (`encode`, `path`, `retry`, `binary`), not the engine implementation.
 ## 3. TypeScript engine implementation (test reference)
 
 The engine itself is Rust. This directory holds the earlier TypeScript
-implementation, which is kept because the Rust engine is validated against it:
+implementation, which is kept because the Rust engine is validated against it.
+It is grouped under `packages/engine-ts` so the tree shows the boundary instead
+of leaving seven engine packages beside the shipped ones:
 
 | Path | Package |
 | --- | --- |
-| `packages/core` | `@miao/core` (session runner, tools, providers, database) |
-| `packages/llm` | `@miao/llm` |
-| `packages/server` | `@miao/server` |
-| `packages/sdk` | `@miao/sdk` |
-| `packages/codemode` | `@miao/codemode` |
-| `packages/plugin` | `@miao/plugin` |
-| `packages/native` | `@miao/native` |
-| `packages/effect-drizzle-sqlite` | `@miao/effect-drizzle-sqlite` |
-| `packages/remote-control` | `@miao/remote-control` |
+| `packages/engine-ts/core` | `@miao/core` (session runner, tools, providers, database) |
+| `packages/engine-ts/llm` | `@miao/llm` |
+| `packages/engine-ts/codemode` | `@miao/codemode` |
+| `packages/engine-ts/plugin` | `@miao/plugin` |
+| `packages/engine-ts/native` | `@miao/native` |
+| `packages/engine-ts/effect-drizzle-sqlite` | `@miao/effect-drizzle-sqlite` |
+| `packages/engine-ts/remote-control` | `@miao/remote-control` |
 
-Its consumers are the differential and black-box suites (`packages/miao/test`,
-`packages/core/test`, and the recorded fixtures in `packages/llm/test`). Nothing
+The package names did not change with the move, so imports and CI are untouched.
+Its consumers are the differential and black-box suites (`packages/engine-ts/core/test`,
+the recorded fixtures in `packages/engine-ts/llm/test`, and the generators under
+`crates/miao-engine/tests/differential`). Nothing
 in the shipped product runs it. Retiring a piece of it means moving the
 corresponding regression to a Rust-side fixture first; deleting it outright would
 remove the oracle, not just dead code.
@@ -57,12 +59,10 @@ remove the oracle, not just dead code.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/miao` | `miao` | Engine integration harness and the release build driver (`script/build.ts`); `bin/miao` is a launcher shim, not a TypeScript entry point |
 | `packages/script` | `@miao/script` | Shared build helpers |
 | `packages/http-recorder` | `@miao/http-recorder` | Records and replays provider traffic for tests |
 | `packages/httpapi-codegen` | `@miao/httpapi-codegen` | Generates the client from the HttpApi contract |
 | `packages/storybook` | `@miao/storybook` | Component workshop (`bun run dev:storybook`) |
-| `packages/desktop` | `@miao/desktop-electron` | The previous Electron desktop shell. Kept for feature parity reference and still packaged by `nix/desktop.nix`; no package imports it |
 
 ## Rules of thumb
 

@@ -3,7 +3,7 @@
 [Roadmap](roadmap.md) §9 gate 2 landed the product-tool reverse bridge, but the
 bridge's manifest (`packages/miao/src/engine/product-tools.ts`) carries only the
 peer tools and `push_notification`. The worktree pair
-(`enter_worktree`/`exit_worktree`, `packages/core/src/tool/worktree.ts`) is
+(`enter_worktree`/`exit_worktree`, `packages/engine-ts/core/src/tool/worktree.ts`) is
 missing, and this document records why it cannot be added as a manifest-only
 change, and the design that closes the gap.
 
@@ -24,7 +24,7 @@ Session:
    `store.location(session) == tools.location()` (`crates/miao-engine/src/runtime.rs`).
 3. **The TS move does not reach the engine.** `MoveSession` publishes
    `SessionEvent.Moved` in the product catalog
-   (`packages/core/src/control-plane/move-session.ts`); nothing engine-side
+   (`packages/engine-ts/core/src/control-plane/move-session.ts`); nothing engine-side
    consumes it.
 
 A naive manifest registration would therefore move the product catalog while
@@ -36,21 +36,21 @@ The product semantics to preserve are the TS ones: enter creates a worktree on
 the Session's project and moves the Session into it; the running drain yields
 at the boundary ("a moved Session cannot keep running in the runner that served
 the move"), a steer reminder documents the move, and the owner of the new
-directory promotes it (`packages/core/src/session/placement.ts`).
+directory promotes it (`packages/engine-ts/core/src/session/placement.ts`).
 
 ## 2. What already exists
 
 - The **TS worktree flow**: `SessionPlacement.enterWorktree/exitWorktree`
   (create/remove via `ProjectWorktree`, move via `MoveSession`, steer reminder).
 - The **transfer machinery** (#1105–#1148): durable freeze states
-  (`packages/core/src/session/migration.ts`), the bundle format
+  (`packages/engine-ts/core/src/session/migration.ts`), the bundle format
   `miao.session.transfer.v1`, staged imports with exact-retry adoption
   (`crates/miao-engine/src/transfer.rs`), activation that validates against the
   product placement before importing history, snapshots, and bindings
   (`crates/miao-engine/src/transfer_activation.rs`), and reverse-migration
   deltas (#1144, #1148).
 - The **coordinator pattern**: `SessionMigrationCoordinator.toNative`
-  (`packages/core/src/session/migration-coordinator.ts`) shows the ordered,
+  (`packages/engine-ts/core/src/session/migration-coordinator.ts`) shows the ordered,
   crash-recoverable freeze → stage → switch → activate → complete sequence this
   feature reuses.
 
@@ -104,7 +104,7 @@ location.
 
 ## 5. Host changes
 
-1. **Move coordinator** (`packages/core/src/session/`, sibling of
+1. **Move coordinator** (`packages/engine-ts/core/src/session/`, sibling of
    `migration-coordinator.ts`): claim ownership, verify no active drain except
    the one waiting on this very product-tool call, freeze, native source export
    from the source owner, stage + activate into the destination owner (its

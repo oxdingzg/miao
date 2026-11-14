@@ -121,10 +121,10 @@ and actual usage.
 - [Open-source agent comparison](agent-comparison.en.md)
 - [Report an issue or suggestion](https://github.com/oxdingzg/miao/issues): include build version, configuration, task logs and expected/observed behavior
 
-Implementation references: [execution](../packages/core/src/session/runner/llm.ts),
-[input admission](../packages/core/src/session/input.ts),
-[output governance](../packages/core/src/tool-output-store.ts),
-[compaction](../packages/core/src/session/compaction.ts), [edit recovery](edit-recovery.md),
-[read/LSP](../packages/core/src/tool/read.ts), and [permissions/isolation](../SECURITY.md).
+Implementation references: [execution](../packages/engine-ts/core/src/session/runner/llm.ts),
+[input admission](../packages/engine-ts/core/src/session/input.ts),
+[output governance](../packages/engine-ts/core/src/tool-output-store.ts),
+[compaction](../packages/engine-ts/core/src/session/compaction.ts), [edit recovery](edit-recovery.md),
+[read/LSP](../packages/engine-ts/core/src/tool/read.ts), and [permissions/isolation](../SECURITY.md).
 
 For source attribution and licensing, see [project origins and licensing](attribution.en.md).

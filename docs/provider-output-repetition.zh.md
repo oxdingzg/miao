@@ -30,7 +30,7 @@
 
 ## 保护机制
 
-`packages/core/src/session/runner/output-guard.ts` 在事件进入持久化发布器和本地工具派发之前，
+`packages/engine-ts/core/src/session/runner/output-guard.ts` 在事件进入持久化发布器和本地工具派发之前，
 检查每次 provider attempt。普通文本与 reasoning 分块独立跟踪；状态按每次流订阅创建，不在
 不同 Session 或窗口之间共享。
 

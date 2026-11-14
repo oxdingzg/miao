@@ -9,7 +9,7 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
 
 ### R1. Packaging and distribution (solved) (High)
 - Evidence: `packages/miao/script/build.ts` uses `bun build --compile` to produce a **single-file** binary; native dependencies (`@ff-labs/fff-bun`, etc.) are embedded from node_modules.
-- Addon: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified). A release uses `--single`, so each platform runner builds the **host** addon (`packages/native/build.ts`) and hides it for non-host targets so a wrong-platform `.node` is not embedded.
+- Addon: added `packages/native` (`@miao/native`), which loads the addon with a **literal** `require("./miao-native.node")` that `--compile` embeds (verified). A release uses `--single`, so each platform runner builds the **host** addon (`packages/engine-ts/native/build.ts`) and hides it for non-host targets so a wrong-platform `.node` is not embedded.
 - Sandbox sidecar: no separate `miao-run` needs to ship. The sandbox logic moved to `crates/miao-sandbox`, exposed by the addon as `sandboxProfile` (macOS profile) and `sandboxRestrict` (Linux Landlock); the compiled binary runs sandboxed children by **self-executing** through the hidden `__sandbox-run` command (`build.ts` defines `MIAO_PACKAGED`, and `SandboxRunner.resolve()` returns `process.execPath` + `__sandbox-run`). Single file, naturally per-platform, one signature/notarization. `miao-run` stays only for dev/tests and `MIAO_RUN` overrides.
 - Verified: `miao-preview __sandbox-run --print-profile`, a write inside the workdir succeeds, a write outside is denied, and the deny-report is written.
 
@@ -17,8 +17,8 @@ This page is only about the pitfalls of actually wiring `crates/miao-native` and
 - Evidence: when this was written, the JS native suites in `packages/miao/test/tool/*-native.test.ts`
   used `withNative = native ? describe : describe.skip` (and `withMiaoRun` likewise), so an absent
   `.node` / `miao-run` skipped the whole suite. Those suites were removed with the V1 tools; the
-  current native coverage is the Rust unit tests plus `packages/core/test/sandbox-policy.test.ts`
-  and `packages/core/test/tool-bash-sandbox.test.ts`.
+  current native coverage is the Rust unit tests plus `packages/engine-ts/core/test/sandbox-policy.test.ts`
+  and `packages/engine-ts/core/test/tool-bash-sandbox.test.ts`.
 - Consequence: CI that does not build Rust goes "green" while running zero native cases; any Rust
   regression goes unnoticed.
 - Mitigation: the `native` and `sandbox-linux` jobs in `.github/workflows/native.yml` build Rust and
@@ -120,7 +120,7 @@ Current parity is mostly ASCII; the following produce **different results**, not
    `native`/`sandbox-linux` CI jobs forcing a Rust build and running the sandbox tests (R2).
 2. ~~Integrate the lowest-risk pieces first~~ -> **taken differently**: the plan rested on the
    assumption that native `edit`/`apply_patch` were consumed only by the V1 tools. That assumption did
-   not hold — `packages/core/src/tool/edit-match.ts` and `packages/core/src/patch.ts` call the same
+   not hold — `packages/engine-ts/core/src/tool/edit-match.ts` and `packages/engine-ts/core/src/patch.ts` call the same
    `matchEdit` and `deriveNewContentsV2` primitives from the V2 tools, gated on `MIAO_NATIVE` (on by
    default). The V1 removal took the tools, not the primitives.
 3. **git status is now wired (narrowly)**: the async wrapper (R3) is in place and `Git.status.entries` uses it, with untracked files and per-entry line stats; `add`/`write-tree` remain subprocesses, so the full snapshot gain is still limited (R7).

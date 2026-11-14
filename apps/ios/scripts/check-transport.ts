@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { ControlAgent } from "../../../packages/remote-control/src/agent"
-import { DeviceGrants } from "../../../packages/remote-control/src/grants"
-import { ControlHub } from "../../../packages/remote-control/src/hub"
-import { SecureChannel } from "../../../packages/remote-control/src/secure-channel"
+import { ControlAgent } from "../../../packages/engine-ts/remote-control/src/agent"
+import { DeviceGrants } from "../../../packages/engine-ts/remote-control/src/grants"
+import { ControlHub } from "../../../packages/engine-ts/remote-control/src/hub"
+import { SecureChannel } from "../../../packages/engine-ts/remote-control/src/secure-channel"
 
 // Run the approved-host/CI-built native probe on the same machine as this harness.
 // This is a test-only local pairing; production must use locally confirmed grants.

@@ -14,7 +14,7 @@
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck --concurrency=2",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
-    "postinstall": "bun run --cwd packages/core fix-node-pty",
+    "postinstall": "bun run --cwd packages/engine-ts/core fix-node-pty",
     "prepare": "husky",
     "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=miao --no-browser",
@@ -25,6 +25,7 @@
   "workspaces": {
     "packages": [
       "packages/*",
+      "packages/engine-ts/*",
       "apps/desktop"
     ],
     "catalog": {

@@ -17,7 +17,7 @@ suites), not by daily traffic.
 
 None configured on the release channel (`miao.jsonc` has no `mcp` key). The
 OAuth ladder (CIMD ordering, RFC 9207 `iss` validation, issuer-keyed grants)
-is covered by `packages/core/test/mcp/*` against the embedded fixture servers.
+is covered by `packages/engine-ts/core/test/mcp/*` against the embedded fixture servers.
 
 ## Configured non-tool surfaces
 

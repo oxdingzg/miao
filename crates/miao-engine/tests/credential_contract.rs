@@ -9,7 +9,7 @@ use miao_engine::credential::{Kind, Source};
 use std::path::PathBuf;
 
 fn product_database() -> PathBuf {
-    // Columns and nullability mirror packages/core/src/credential/sql.ts.
+    // Columns and nullability mirror packages/engine-ts/core/src/credential/sql.ts.
     let path = std::env::temp_dir().join(format!(
         "miao-credential-contract-{}-{}.db",
         std::process::id(),
