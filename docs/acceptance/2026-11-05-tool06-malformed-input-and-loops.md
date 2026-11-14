@@ -37,9 +37,36 @@ the operator saw.
 
 ## Criterion 4 — cross-provider matrix
 
-**Not accepted.** These runs exercise the engine's own guard and correction paths through
-the real wire fixtures, but no matrix across live providers is claimed here, and the
-compiled-client presentation of a stopped loop is not covered by any of the commands
-above.
+Accepted for the offline codec matrix; the live-provider leg stays open. The loop
+guard sits in the engine's shared stream reader and observes the deltas each codec's
+frames normalize into (`src/delta.rs`), so the matrix question is whether every
+codec's looping wire trips the guard and whether every codec's malformed tool input
+reaches the same bounded correction. The commands ran on the Linux build host from
+`crates/miao-engine` on the tree that carries the two extensions below — the
+test commit `281461f7d3` on this branch (main `3e476a2957` plus the tests; the
+later commits here touch documentation only).
 
-Result: criteria 1–3 **accepted**; criterion 4 stays open on the item.
+| command | observed |
+| --- | --- |
+| `cargo test --test output_guard the_guard_stops_a_looping_provider_stream` | ok — the same replay (40 refrain deltas, then a late tool call) now runs through all four streaming codecs — anthropic, openai-chat, openai-responses, gemini — and each codec's turn fails with `output.repetition`, dispatches no `tool.completed`, sends one provider request, and is not retried |
+| `cargo test --test tool_input_recovery gemini_wire_correction_settles_invalid_arguments` | ok — through the Gemini codec: the completed `write_file` stays on disk, the malformed call settles `invalid tool input: read_file requires path`, the rejection reaches the model's next request, the corrected call recovers the turn with `RECOVERED`, three requests total |
+| `cargo test --test tool_input_recovery` | `5 passed` — the two truncated-JSON budget tests keep their three-codec loop (anthropic, openai-chat, openai-responses), plus `provider_executed_calls_are_never_corrected_or_dispatched` and `unregistered_calls_are_corrected_within_the_same_budget_and_never_dispatched` |
+| `cargo test --test output_guard` | `3 passed` |
+
+**Why the matrix is shaped this way.** The Gemini codec carries tool arguments as
+parsed JSON objects, so truncated-JSON arguments are structurally impossible on its
+wire: the codec itself rejects a malformed `functionCall` part before the engine sees
+it, which `tests/gemini.rs::malformed_truncated_blocked_and_duplicate_calls_never_become_replies`
+already pins. Its malformed-input flavor is therefore schema-invalid arguments, and
+that flavor settles the same corrective result the other codecs produce for
+unparseable ones. The correction budget stop (`tool.input_recovery.stopped`,
+`reason: "correction_budget"`) consequently stays exercised through the three codecs
+that can carry truncated arguments, and the loop-guard matrix covers all four.
+
+**Recorded open, not hidden:** the matrix runs against wire fixtures, not live
+provider accounts, and the compiled-client presentation of a stopped loop is not
+covered by any command above (the transcript-rendering side is TUI-04's record).
+
+Result: criteria 1–3 **accepted**; criterion 4 accepted for the cross-provider codec
+matrix, with the live-provider leg and the compiled-client presentation recorded
+open on the item.

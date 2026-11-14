@@ -1,9 +1,11 @@
 mod common;
 use async_trait::async_trait;
 use miao_engine::{
+    gemini::Gemini,
     openai_chat::OpenAIChat,
+    openai_responses::OpenAIResponses,
     protocol::{Delivery, Event, Input, ModelRequest},
-    provider::{Provider, ProviderError, Reply},
+    provider::{Anthropic, Provider, ProviderError, Reply},
     runtime::Runtime,
     store::Store,
     tools::Tools,
@@ -155,63 +157,130 @@ async fn a_stopped_loop_fails_the_turn_without_retrying_or_dispatching() {
     runtime.shutdown().await;
 }
 
-fn sse(events: Vec<Value>) -> String {
-    let mut body: String = events
+/// The looping wire for each codec: 40 identical refrain deltas, then the
+/// late tool call the guard must stop before. Every shape is parser-valid for
+/// its own codec, because the parser runs before the guard observes deltas.
+fn looping_frames(codec: &str) -> Vec<Value> {
+    let mut frames = Vec::new();
+    let refrain = || LOOPED.to_owned();
+    match codec {
+        "anthropic" => {
+            frames.push(json!({"type":"message_start","message":{"usage":{"input_tokens":1}}}));
+            frames.push(json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}));
+            for _ in 0..40 {
+                frames
+                    .push(json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":refrain()}}));
+            }
+            frames.push(json!({"type":"content_block_stop","index":0}));
+            frames.push(json!({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"late","name":"write","input":{}}}));
+            frames.push(json!({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{}"}}));
+            frames.push(json!({"type":"content_block_stop","index":1}));
+            frames.push(json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}));
+            frames.push(json!({"type":"message_stop"}));
+        }
+        "openai-responses" => {
+            frames.push(json!({"type":"response.created","response":{"id":"r"}}));
+            for _ in 0..40 {
+                frames.push(json!({"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":refrain()}));
+            }
+            frames.push(json!({"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"late","name":"write","arguments":"{}","status":"completed"}],"usage":{"input_tokens":1,"output_tokens":1}}}));
+        }
+        "gemini" => {
+            for _ in 0..40 {
+                frames.push(json!({"candidates":[{"content":{"parts":[{"text":refrain()}]}}]}));
+            }
+            frames.push(json!({"candidates":[{"content":{"parts":[{"functionCall":{"name":"write","args":{},"id":"late"}}]},"finishReason":"STOP"}]}));
+        }
+        _ => {
+            for _ in 0..40 {
+                frames.push(json!({"choices":[{"index":0,"delta":{"content":refrain()},"finish_reason":null}]}));
+            }
+            frames.push(json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"late","type":"function","function":{"name":"write","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}));
+        }
+    }
+    frames
+}
+
+fn wire_body(codec: &str, frames: Vec<Value>) -> String {
+    // Gemini's real wire frames SSE with CRLF; the other codecs use LF.
+    let terminator = if codec == "gemini" {
+        "\r\n\r\n"
+    } else {
+        "\n\n"
+    };
+    let mut body = frames
         .iter()
-        .map(|event| format!("data: {event}\n\n"))
-        .collect();
-    body.push_str("data: [DONE]\n\n");
+        .map(|frame| format!("data: {frame}{terminator}"))
+        .collect::<String>();
+    if codec == "openai-chat" {
+        body.push_str("data: [DONE]\n\n");
+    }
     body
 }
 
-/// The same replay through the real SSE parser: the guard recognizes a prose
-/// loop mid-stream, stops before a late tool call, and the request is not sent
-/// a second time.
+/// The same replay through every streaming codec's real SSE parser: the guard
+/// recognizes a prose loop mid-stream regardless of wire shape, stops before a
+/// late tool call, and the request is not sent a second time.
 #[tokio::test]
 async fn the_guard_stops_a_looping_provider_stream_before_a_late_tool_call() {
-    let mut frames = Vec::new();
-    for _ in 0..40 {
-        frames
-            .push(json!({"choices":[{"index":0,"delta":{"content":LOOPED},"finish_reason":null}]}));
-    }
-    frames.push(json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"late","type":"function","function":{"name":"write","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}));
-    let (endpoint, mut requests, _server) = common::endpoint(vec![(200, sse(frames))]).await;
-    let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-    let runtime = Runtime::new(
-        store.clone(),
-        Arc::new(OpenAIChat::new(endpoint, "fixture".into(), "fixture-model".into()).unwrap()),
-        Tools::new(dir.path()).await.unwrap(),
-    )
-    .await
-    .unwrap();
-    runtime.admit(input("s", "go"), true).await.unwrap();
-    let events = events_until_finished(&store, "s").await;
+    for codec in ["anthropic", "openai-chat", "openai-responses", "gemini"] {
+        let (endpoint, mut requests, _server) =
+            common::endpoint(vec![(200, wire_body(codec, looping_frames(codec)))]).await;
+        let provider: Arc<dyn Provider> = match codec {
+            "anthropic" => {
+                Arc::new(Anthropic::new(endpoint, "fixture".into(), "model".into()).unwrap())
+            }
+            "openai-responses" => {
+                Arc::new(OpenAIResponses::new(endpoint, "fixture".into(), "model".into()).unwrap())
+            }
+            "gemini" => {
+                Arc::new(Gemini::new(endpoint, "fixture".into(), "fixture-model".into()).unwrap())
+            }
+            _ => Arc::new(
+                OpenAIChat::new(endpoint, "fixture".into(), "fixture-model".into()).unwrap(),
+            ),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+        let runtime = Runtime::new(
+            store.clone(),
+            provider,
+            Tools::new(dir.path()).await.unwrap(),
+        )
+        .await
+        .unwrap();
+        runtime.admit(input("s", "go"), true).await.unwrap();
+        let events = events_until_finished(&store, "s").await;
 
-    assert!(
-        events
+        assert!(
+            events
+                .iter()
+                .any(|event| event.kind == "run.finished" && event.data["reason"] == "failed"),
+            "the turn fails on {codec}"
+        );
+        let repetition = events
             .iter()
-            .any(|event| event.kind == "run.finished" && event.data["reason"] == "failed"),
-        "the turn fails"
-    );
-    let repetition = events
-        .iter()
-        .find(|event| event.kind == "output.repetition")
-        .expect("output.repetition is recorded");
-    assert_eq!(repetition.data["channel"], "text");
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.kind == "tool.completed")
-            .count(),
-        0
-    );
-    assert!(requests.try_recv().is_ok(), "one provider request");
-    assert!(
-        requests.try_recv().is_err(),
-        "the stopped stream is not retried"
-    );
-    runtime.shutdown().await;
+            .find(|event| event.kind == "output.repetition")
+            .unwrap_or_else(|| panic!("output.repetition is recorded on {codec}"));
+        assert_eq!(repetition.data["channel"], "text");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "tool.completed")
+                .count(),
+            0,
+            "the late tool call never dispatches on {codec}"
+        );
+        assert!(
+            requests.try_recv().is_ok(),
+            "one provider request on {codec}"
+        );
+        assert!(
+            requests.try_recv().is_err(),
+            "the stopped stream is not retried on {codec}"
+        );
+        runtime.shutdown().await;
+    }
 }
 
 /// The provider-facing history neutralizes an earlier loop, while the durable
