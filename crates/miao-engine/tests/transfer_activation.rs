@@ -102,7 +102,7 @@ fn switch(path: &Path) {
 #[tokio::test]
 async fn actual_product_cas_is_required_and_activation_restores_provider_context_and_state() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = tokio::fs::canonicalize(tmp.path()).await.unwrap();
+    let workspace = miao_engine::placement::canonical(tmp.path());
     let native = tmp.path().join("engine.db");
     let database = Store::open(&native).await.unwrap();
     let source = source(&workspace);
@@ -472,7 +472,7 @@ async fn actual_product_cas_is_required_and_activation_restores_provider_context
 #[tokio::test]
 async fn activation_failure_rolls_back_the_gate_and_every_provider_row() {
     let tmp = tempfile::tempdir().unwrap();
-    let workspace = tokio::fs::canonicalize(tmp.path()).await.unwrap();
+    let workspace = miao_engine::placement::canonical(tmp.path());
     let native = tmp.path().join("engine.db");
     let database = Store::open(&native).await.unwrap();
     let source = source(&workspace);

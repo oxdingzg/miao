@@ -66,10 +66,7 @@ async fn model_free_source_initialization_creates_no_session_or_provider_work() 
     assert!(store.sessions().await.unwrap().is_empty());
     assert!(store
         .directory_permission_source(
-            directory
-                .path()
-                .canonicalize()
-                .unwrap()
+            miao_engine::placement::canonical(directory.path())
                 .to_str()
                 .unwrap()
                 .into()
@@ -113,7 +110,7 @@ async fn explicit_cli_selection_opens_the_completed_pair_and_rejects_legacy_proj
     let directory = tempfile::tempdir().unwrap();
     let workspace = directory.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
-    let workspace = workspace.canonicalize().unwrap();
+    let workspace = miao_engine::placement::canonical(&workspace);
     let db = directory.path().join("source.db");
     let root = directory.path().join("permissions.db");
     let store = Store::open(&db).await.unwrap();
