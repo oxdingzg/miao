@@ -440,7 +440,7 @@ async fn capability_mismatch_refuses_media_consistently_and_keeps_bytes_recovera
         common::endpoint(vec![(200, anthropic_text("recovered"))]).await;
     let capable: Arc<dyn Provider> =
         Arc::new(Anthropic::new(url, "fixture".into(), "fixture-model".into()).unwrap());
-    let reopened = Store::open(&store_path).await.unwrap();
+    let reopened = common::open_recovered(&store_path).await;
     let runtime = Runtime::new(
         reopened.clone(),
         capable,
