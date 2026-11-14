@@ -1045,7 +1045,10 @@ impl Runtime {
         let directory = tokio::fs::canonicalize(&context.directory)
             .await
             .map_err(|_| Error::Invalid("invalid product host directory".into()))?;
-        if !same_directory(&directory, std::path::Path::new(self.inner.tools.location())) {
+        if !same_directory(
+            &directory,
+            std::path::Path::new(self.inner.tools.location()),
+        ) {
             return Err(Error::Invalid(
                 "product host directory does not match Location".into(),
             ));
@@ -2016,7 +2019,10 @@ impl Runtime {
         let workspace = tokio::fs::canonicalize(workspace)
             .await
             .map_err(|_| Error::Invalid("saved permission workspace is unavailable".into()))?;
-        if !same_directory(&workspace, std::path::Path::new(self.inner.tools.location())) {
+        if !same_directory(
+            &workspace,
+            std::path::Path::new(self.inner.tools.location()),
+        ) {
             return Err(Error::Invalid("saved permission Location mismatch".into()));
         }
         self.inner
