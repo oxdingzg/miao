@@ -70,6 +70,7 @@ pub async fn endpoint_with_disconnects(
 /// connection's path lease is released by its worker thread, so a drop that
 /// just returned can still race the reopen with `Busy` (#2994). Retry through
 /// that teardown window instead of sleeping a fixed guess before reopening.
+#[allow(dead_code)]
 pub async fn open_recovered(path: &std::path::Path) -> miao_engine::store::Store {
     for attempt in 0..50 {
         if attempt > 0 {
