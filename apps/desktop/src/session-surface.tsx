@@ -4,6 +4,7 @@ import {
   type EngineSessionState,
   type EngineSessionSummary,
 } from "@miao/app"
+import { Markdown } from "@miao/session-ui/markdown"
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 
 /**
@@ -272,7 +273,9 @@ export function SessionSurface(props: { url: string; token: string }) {
                     </div>
                   }
                 >
-                  <div class="py-2 pr-8 text-13-regular whitespace-pre-wrap">{turn.text}</div>
+                  <div class="py-2 pr-8 text-13-regular">
+                    <Markdown text={turn.text} />
+                  </div>
                 </Show>
               )}
             </For>
