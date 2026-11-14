@@ -11,6 +11,16 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.72] - 2026-11-14
+
+### Added
+- **desktop**: finish the conversation surface (#3020) (`0fe4a660a8`)
+- **tui**: lay the hourly models out as a table (#3024) (`33c529548f`)
+
+### Fixed
+- **engine**: strip the verbatim prefix when checking snapshot containment (#3026) (`9703b557f7`)
+- **tui**: make the sidebar's usage rows legible and honest (#3023) (`e9dfab50d5`)
+
 ## [0.3.70] - 2026-11-14
 
 ### Fixed
