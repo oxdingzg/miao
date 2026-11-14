@@ -7,8 +7,8 @@ import {
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
 
 /**
- * One local engine's Sessions and the conversation on the selected one: new
- * Session, admitted prompt, and the answer as it commits.
+ * One local engine's Sessions and the conversation on the selected one, with
+ * a WorkBuddy-style welcome screen while the Session has no turns yet.
  *
  * This is deliberately not `AppInterface` yet. The shared renderer speaks the
  * HTTP API, while the shipped binary exposes the engine's own control plane;
@@ -17,6 +17,13 @@ import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
  */
 
 type Turn = { role: "user" | "assistant"; text: string }
+
+const SUGGESTIONS = ["分析一份调查数据", "创作一篇产品文档", "做一份深度研究", "写一份周报", "审查一段代码", "策划一个方案"]
+
+const dayLabel = (updatedAt: number) =>
+  updatedAt === 0
+    ? "刚刚"
+    : new Date(updatedAt).toLocaleDateString("zh-CN", { month: "long", day: "numeric" })
 
 /** The conversation a viewer reads, derived from the raw event stream. */
 const turns = (events: EngineEvent[]): Turn[] => {
@@ -61,6 +68,7 @@ export function SessionSurface(props: { url: string; token: string }) {
   const [busy, setBusy] = createSignal(false)
 
   let detach: (() => void) | undefined
+  let composer: HTMLTextAreaElement | undefined
 
   const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))
 
@@ -96,28 +104,31 @@ export function SessionSurface(props: { url: string; token: string }) {
 
   const newSession = async () => {
     const id = `ses_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`
-    await reader.initialize(id, "Desktop session").catch(fail)
+    await reader.initialize(id, "新的任务").catch(fail)
     const list = await reader.sessions().catch(() => sessions())
     setSessions(list)
     await open(
       list.find((session) => session.id === id) ?? {
         id,
-        title: "Desktop session",
+        title: "新的任务",
         updatedAt: 0,
         pinned: false,
         archived: false,
       },
     )
+    composer?.focus()
   }
 
-  const send = async () => {
+  const submit = async (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed || busy()) return
+    if (!selected()) await newSession()
     const sessionID = selected()
-    const text = draft().trim()
-    if (!sessionID || !text || busy()) return
+    if (!sessionID) return
     setDraft("")
     setBusy(true)
     try {
-      await reader.admit(sessionID, text)
+      await reader.admit(sessionID, trimmed)
     } catch (cause) {
       fail(cause)
     } finally {
@@ -139,109 +150,168 @@ export function SessionSurface(props: { url: string; token: string }) {
     void reader.close()
   })
 
+  const conversation = () => turns(events())
+  const welcome = () => selected() !== undefined && conversation().length === 0 && !running(events())
+
   return (
     <div class="flex h-dvh bg-v2-background-bg-deep text-v2-text-text-base">
-      <aside class="w-64 shrink-0 border-r border-v2-border-border-weak flex flex-col">
-        <header class="flex items-center justify-between px-3 py-2">
-          <span class="text-12-medium text-v2-text-text-weak">Sessions</span>
+      <aside class="flex w-64 shrink-0 flex-col border-r border-v2-border-border-weak">
+        <div class="px-4 pb-2 pt-4">
+          <div class="text-15-medium">miao</div>
+          <div class="text-11-regular text-v2-text-text-weak">local engine</div>
+        </div>
+        <div class="px-3">
           <button
             type="button"
-            class="rounded bg-v2-background-bg-layer-01 px-2 py-0.5 text-11-regular hover:bg-v2-background-bg-layer-02"
+            class="w-full rounded bg-v2-background-bg-layer-01 px-3 py-2 text-left text-13-medium hover:bg-v2-background-bg-layer-02"
             onClick={() => void newSession()}
           >
-            New
+            + 新的任务
           </button>
-        </header>
+        </div>
+        <div class="px-4 pb-1 pt-4 text-11-regular text-v2-text-text-weak">
+          任务 ({sessions().length})
+        </div>
         <div class="flex-1 overflow-y-auto">
           <For each={sessions()}>
             {(session) => (
               <button
                 type="button"
-                class="block w-full px-3 py-2 text-left hover:bg-v2-background-bg-layer-01"
+                class="flex w-full items-center justify-between gap-2 px-4 py-2 text-left hover:bg-v2-background-bg-layer-01"
                 classList={{ "bg-v2-background-bg-layer-01": session.id === selected() }}
                 onClick={() => void open(session)}
               >
-                <div class="truncate text-12-medium">{session.title}</div>
-                <div class="truncate text-11-regular text-v2-text-text-weak">{session.id}</div>
+                <span class="min-w-0 flex-1 truncate text-12-regular">{session.title}</span>
+                <span class="shrink-0 text-11-regular text-v2-text-text-weak">{dayLabel(session.updatedAt)}</span>
               </button>
             )}
           </For>
           <Show when={sessions().length === 0}>
-            <p class="px-3 py-2 text-11-regular text-v2-text-text-weak">No sessions in this engine yet.</p>
+            <p class="px-4 py-2 text-11-regular text-v2-text-text-weak">暂无任务</p>
           </Show>
+        </div>
+        <div class="border-t border-v2-border-border-weak px-4 py-3 text-11-regular text-v2-text-text-weak">
+          由本机 miao 引擎驱动
         </div>
       </aside>
       <main class="flex min-w-0 flex-1 flex-col">
-        <header class="border-b border-v2-border-border-weak px-4 py-2">
-          <Show when={state()} fallback={<span class="text-12-regular text-v2-text-text-weak">Select a session</span>}>
-            {(current) => (
-              <div class="flex items-baseline gap-3">
-                <h1 class="truncate text-13-medium">{current().title}</h1>
-                <span class="text-11-regular text-v2-text-text-weak">
-                  {current().messageCount} messages
-                  {current().pending ? ` · ${current().pending} pending` : ""}
-                  {current().approvals ? ` · ${current().approvals} approvals` : ""}
-                  {live() ? " · live" : ""}
-                </span>
+        <Show
+          when={!welcome()}
+          fallback={
+            <div class="flex flex-1 flex-col items-center justify-center px-8 pb-10">
+              <h1 class="text-28-medium">miao，我帮你</h1>
+              <div class="mt-6 flex w-full max-w-2xl flex-col rounded-2xl border border-v2-border-border-weak bg-v2-background-bg-layer-01 shadow-sm">
+                <textarea
+                  ref={composer}
+                  class="max-h-48 min-h-24 w-full resize-none bg-transparent px-4 pt-3 text-13-regular outline-none"
+                  placeholder="今天帮你做些什么？"
+                  value={draft()}
+                  rows={3}
+                  onInput={(event) => setDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault()
+                      void submit(draft())
+                    }
+                  }}
+                />
+                <div class="flex items-center justify-between px-3 pb-3">
+                  <span class="text-11-regular text-v2-text-text-weak">Enter 发送 · Shift+Enter 换行</span>
+                  <button
+                    type="button"
+                    class="rounded-full bg-v2-text-text-base px-4 py-1.5 text-12-medium text-v2-background-bg-deep disabled:opacity-40"
+                    disabled={!draft().trim() || busy()}
+                    onClick={() => void submit(draft())}
+                  >
+                    {busy() ? "发送中" : "发送"}
+                  </button>
+                </div>
+              </div>
+              <div class="mt-5 flex flex-wrap justify-center gap-2">
+                <For each={SUGGESTIONS}>
+                  {(suggestion) => (
+                    <button
+                      type="button"
+                      class="rounded-full border border-v2-border-border-weak px-3 py-1.5 text-12-regular hover:bg-v2-background-bg-layer-01"
+                      onClick={() => void submit(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <div class="mt-auto pt-8 text-11-regular text-v2-text-text-weak">内容由 AI 生成，请核对重要信息</div>
+            </div>
+          }
+        >
+          <header class="border-b border-v2-border-border-weak px-4 py-2">
+            <Show when={state()} fallback={<span class="text-12-regular text-v2-text-text-weak">选择一个任务</span>}>
+              {(current) => (
+                <div class="flex items-baseline gap-3">
+                  <h1 class="truncate text-13-medium">{current().title}</h1>
+                  <span class="text-11-regular text-v2-text-text-weak">
+                    {current().messageCount} messages
+                    {current().pending ? ` · ${current().pending} pending` : ""}
+                    {current().approvals ? ` · ${current().approvals} approvals` : ""}
+                    {live() ? " · live" : ""}
+                  </span>
+                </div>
+              )}
+            </Show>
+          </header>
+          <div class="flex-1 overflow-y-auto px-6 py-3">
+            <For each={conversation()}>
+              {(turn) => (
+                <Show
+                  when={turn.role === "assistant"}
+                  fallback={
+                    <div class="flex justify-end py-2">
+                      <div class="max-w-[80%] rounded-2xl bg-v2-background-bg-layer-01 px-4 py-2 text-13-regular whitespace-pre-wrap">
+                        {turn.text}
+                      </div>
+                    </div>
+                  }
+                >
+                  <div class="py-2 pr-8 text-13-regular whitespace-pre-wrap">{turn.text}</div>
+                </Show>
+              )}
+            </For>
+            <Show when={running(events())}>
+              <div class="py-2 text-12-regular text-v2-text-text-weak">thinking…</div>
+            </Show>
+          </div>
+          <Show when={error()}>
+            {(message) => (
+              <div class="border-t border-v2-border-border-weak px-4 py-2 text-11-regular text-v2-text-text-critical">
+                {message()}
               </div>
             )}
           </Show>
-        </header>
-        <div class="flex-1 overflow-y-auto px-4 py-2">
-          <For each={turns(events())}>
-            {(turn) => (
-              <Show
-                when={turn.role === "assistant"}
-                fallback={
-                  <div class="flex justify-end py-1.5">
-                    <div class="max-w-[80%] rounded bg-v2-background-bg-layer-01 px-3 py-1.5 text-12-regular whitespace-pre-wrap">
-                      {turn.text}
-                    </div>
-                  </div>
+          <div class="flex items-end gap-2 border-t border-v2-border-border-weak px-4 py-3">
+            <textarea
+              class="max-h-40 min-h-9 flex-1 resize-none rounded bg-v2-background-bg-layer-01 px-3 py-2 text-13-regular outline-none"
+              placeholder="继续这个任务…"
+              value={draft()}
+              rows={2}
+              onInput={(event) => setDraft(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  void submit(draft())
                 }
-              >
-                <div class="py-1.5 pr-8 text-12-regular whitespace-pre-wrap">{turn.text}</div>
-              </Show>
-            )}
-          </For>
-          <Show when={running(events())}>
-            <div class="py-1.5 text-12-regular text-v2-text-text-weak">thinking…</div>
-          </Show>
-          <Show when={turns(events()).length === 0 && !running(events())}>
-            <p class="py-2 text-11-regular text-v2-text-text-weak">Ask anything.</p>
-          </Show>
-        </div>
-        <Show when={error()}>
-          {(message) => (
-            <footer class="border-t border-v2-border-border-weak px-4 py-2 text-11-regular text-v2-text-text-critical">
-              {message()}
-            </footer>
-          )}
+              }}
+            />
+            <button
+              type="button"
+              class="rounded-full bg-v2-text-text-base px-4 py-2 text-12-medium text-v2-background-bg-deep disabled:opacity-40"
+              disabled={!draft().trim() || busy()}
+              onClick={() => void submit(draft())}
+            >
+              {busy() ? "发送中" : "发送"}
+            </button>
+          </div>
+          <div class="px-4 pb-2 text-right text-10-regular text-v2-text-text-weak">内容由 AI 生成，请核对重要信息</div>
         </Show>
-        <footer class="flex items-end gap-2 border-t border-v2-border-border-weak px-3 py-2">
-          <textarea
-            class="max-h-40 min-h-9 flex-1 resize-none rounded bg-v2-background-bg-layer-01 px-2 py-1.5 text-12-regular outline-none"
-            placeholder={selected() ? "Ask anything" : "Create a session first"}
-            disabled={!selected()}
-            value={draft()}
-            rows={2}
-            onInput={(event) => setDraft(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault()
-                void send()
-              }
-            }}
-          />
-          <button
-            type="button"
-            class="rounded bg-v2-background-bg-layer-01 px-3 py-1.5 text-12-medium disabled:opacity-40"
-            disabled={!selected() || !draft().trim() || busy()}
-            onClick={() => void send()}
-          >
-            {busy() ? "Sending" : "Send"}
-          </button>
-        </footer>
       </main>
     </div>
   )
