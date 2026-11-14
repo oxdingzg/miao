@@ -1,0 +1,5 @@
+# libtest reads RUST_MIN_STACK when it spawns each test thread. The
+# embedded-stream futures run the whole engine in-process and need more
+# than the 2 MiB default on Windows (#2926).
+[env]
+RUST_MIN_STACK = "16777216"
