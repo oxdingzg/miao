@@ -12,6 +12,7 @@ tmp
 dist
 ts-dist
 .turbo
+test-results
 **/.serena
 .serena/
 **/.omo
