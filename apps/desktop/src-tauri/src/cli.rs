@@ -1,4 +1,4 @@
-use futures::{FutureExt, Stream, StreamExt, future};
+use futures::{future, FutureExt, Stream, StreamExt};
 use process_wrap::tokio::CommandWrap;
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, path::BaseDirectory};
+use tauri::{path::BaseDirectory, AppHandle, Manager};
 use tauri_specta::Event;
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, BufReader},
@@ -108,7 +108,13 @@ fn quote_args(args: &[String]) -> String {
     args.iter()
         .map(|arg| {
             if arg.is_empty() || arg.contains([' ', '\t', '"', '\'', '$', '`', '\\']) {
-                format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$").replace('`', "\\`"))
+                format!(
+                    "\"{}\"",
+                    arg.replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('$', "\\$")
+                        .replace('`', "\\`")
+                )
             } else {
                 arg.clone()
             }
@@ -440,7 +446,11 @@ pub fn spawn_command(
                     .map(|(key, value)| format!("{}={}", key, shell_escape(value))),
             );
 
-            script.push(format!("{} exec \"$BIN\" {}", env_prefix.join(" "), quote_args(args)));
+            script.push(format!(
+                "{} exec \"$BIN\" {}",
+                env_prefix.join(" "),
+                quote_args(args)
+            ));
 
             let mut cmd = Command::new("wsl");
             cmd.args(["-e", "bash", "-lc", &script.join("\n")]);
@@ -602,6 +612,9 @@ pub fn serve(
         workspace.display().to_string(),
         "--db".to_string(),
         database.display().to_string(),
+        // The desktop has no approval surface: asks the default policy raises
+        // settle through the classifier instead of blocking on a prompt.
+        "--auto-approve".to_string(),
     ];
 
     let (events, child) = spawn_command(app, &args, &envs).expect("Failed to spawn miao");
