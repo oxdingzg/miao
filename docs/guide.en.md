@@ -48,7 +48,7 @@ The current Windows release is not Authenticode-signed. The archive is `miao-win
 
 | Command        | What it is                                                                                           | Data / config                       | Updates                |
 | -------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------- |
-| `miao`         | Stable release binary                                                                                | channel `latest`, DB `miao.db`      | background auto-update |
+| `miao`         | Stable release binary                                                                                | channel `latest`, DB `miao.db`      | explicit `miao upgrade` |
 | `miao-dev`     | Runs from source; the only entry that sees uncommitted edits                                         | channel `local`, DB `miao-local.db` | manual                 |
 | `miao-preview` | Compiled build of the current checkout (`./script/install-local.sh --binary /path/to/prebuilt/miao`) | channel = current branch            | none                   |
 
@@ -59,7 +59,13 @@ The current Windows release is not Authenticode-signed. The archive is `miao-win
 ```bash
 miao upgrade
 miao uninstall
-MIAO_DISABLE_AUTOUPDATE=1 miao   # disable auto-update for one run
+```
+
+An upgrade repoints `~/.miao/bin/miao` at a new version directory (`~/.miao/bin/.versions/<id>/miao`, previous ones are kept). It does **not** happen in the background, and no environment variable turns it on or off. Windows that are already open keep running the build they started with: the footer reports the **running** build and switching needs a restart — from the release that carries the notice, the status strip says `X installed · restart to apply`. To see which build a window runs, compare its start time with the version directory it is bound to:
+
+```bash
+ps -o lstart= -p <pid>
+lsof -p <pid> | grep '.versions/'
 ```
 
 ## 3. Quick start

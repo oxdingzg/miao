@@ -47,7 +47,7 @@ $env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/mia
 
 | 命令           | 是什么                                                                                     | 数据/配置                           | 更新         |
 | -------------- | ------------------------------------------------------------------------------------------ | ----------------------------------- | ------------ |
-| `miao`         | 稳定版（官方 release 二进制）                                                              | channel `latest`，DB `miao.db`      | 后台自动更新 |
+| `miao`         | 稳定版（官方 release 二进制）                                                              | channel `latest`，DB `miao.db`      | 显式 `miao upgrade` |
 | `miao-dev`     | 从源码运行，唯一能看到**未提交改动**的入口                                                 | channel `local`，DB `miao-local.db` | 手动         |
 | `miao-preview` | 当前 checkout 的编译版（`./script/install-local.sh --binary /path/to/prebuilt/miao` 安装） | 当前分支为 channel                  | 不自动更新   |
 
@@ -58,7 +58,13 @@ $env:MIAO_VERSION = "0.0.33"; irm https://raw.githubusercontent.com/oxdingzg/mia
 ```bash
 miao upgrade            # 升级稳定版
 miao uninstall          # 卸载
-MIAO_DISABLE_AUTOUPDATE=1 miao   # 本次关闭自动更新
+```
+
+升级会把 `~/.miao/bin/miao` 重新指向一个新的版本目录（`~/.miao/bin/.versions/<id>/miao`，旧目录保留），**不会**在后台自动进行，也没有环境变量可以开启或关闭它。已经打开的窗口继续运行原来的构建：页脚显示的是**正在运行**的那个版本，重开窗口才会切换——从带提示的版本起，状态栏会用 warning 样式写出「`X` installed · restart to apply」。要确认某个窗口跑的是哪个构建，可以看它的启动时间与绑定的版本目录：
+
+```bash
+ps -o lstart= -p <pid>
+lsof -p <pid> | grep '.versions/'
 ```
 
 ## 3. 快速开始
