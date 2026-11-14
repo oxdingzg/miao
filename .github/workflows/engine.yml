@@ -220,7 +220,10 @@ jobs:
         # Serialize these tests rather than relax their event deadlines.
         # `--no-fail-fast` keeps cargo from stopping at the first failing target:
         # several Windows-only tests fail at once, and one green target should not
-        # hide the rest behind it.
+        # hide the rest behind it. The stack matches the other legs: the deep
+        # future chain overflows the Windows test thread without it.
+        env:
+          RUST_MIN_STACK: "16777216"
         run: cargo test --no-fail-fast -- --test-threads=1
 
       - name: Credential daemon tests
