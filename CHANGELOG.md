@@ -11,6 +11,11 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.70] - 2026-11-14
+
+### Fixed
+- **cli**: upgrade on Windows through the PowerShell installer (#3004) (`f8c49f5c8a`)
+
 ## [0.3.69] - 2026-11-14
 
 ### Added
