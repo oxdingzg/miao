@@ -65,3 +65,21 @@ pub async fn endpoint_with_disconnects(
     });
     (url, requests, server)
 }
+
+/// Reopens a store whose predecessor was dropped moments ago: the old
+/// connection's path lease is released by its worker thread, so a drop that
+/// just returned can still race the reopen with `Busy` (#2994). Retry through
+/// that teardown window instead of sleeping a fixed guess before reopening.
+pub async fn open_recovered(path: &std::path::Path) -> miao_engine::store::Store {
+    for attempt in 0..50 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        match miao_engine::store::Store::open(path).await {
+            Ok(store) => return store,
+            Err(miao_engine::protocol::Error::Busy) => continue,
+            Err(error) => panic!("reopening {path:?} failed: {error}"),
+        }
+    }
+    panic!("reopening {path:?} still Busy after 50 attempts over 1 s")
+}
