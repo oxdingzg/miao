@@ -3369,11 +3369,19 @@ impl Pane for SidebarPane {
                                 plural(usage.failed_attempts)
                             ));
                         }
-                        parts.push(format!(
-                            "{} attempt{}",
-                            usage.attempts,
-                            plural(usage.attempts)
-                        ));
+                        // The engine reports the attempt count beside the two
+                        // counters above, and it can be zero while a replay or
+                        // a failure is recorded: the row then read
+                        // `retried 7 · 0 attempts`, a zero describing nothing
+                        // (see the comment on the row). State it only when it
+                        // carries a count of its own.
+                        if usage.attempts > 0 {
+                            parts.push(format!(
+                                "{} attempt{}",
+                                usage.attempts,
+                                plural(usage.attempts)
+                            ));
+                        }
                         hoverable_line(
                             &mut self.hover_rows,
                             inner,
@@ -8026,6 +8034,52 @@ mod tests {
             !rows(&mut terminal).iter().any(|row| row.contains("ctx ")),
             "no reported window is not an empty one"
         );
+    }
+
+    /// The engine reports `attempts` beside `replayedTurns` and
+    /// `failedAttempts`, and it can be zero while either fires: the row then
+    /// read `retried 7 · 0 attempts`, a zero that describes nothing. Only a
+    /// count of its own earns the part.
+    #[test]
+    fn a_zero_attempt_count_is_not_painted_beside_a_replay() {
+        fn rows(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(60)
+                .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect()
+        }
+        let usage = crate::status::UsageSummary::from_value(&serde_json::json!({
+            "turns": 7,
+            "retries": {"attempts": 0, "failedAttempts": 0, "replayedTurns": 7},
+        }));
+        let mut pane = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_z", "zero", None)),
+            usage: Some(usage),
+            usage_hourly: None,
+            goal: None,
+            plan: None,
+            todos: Vec::new(),
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        terminal
+            .draw(|frame| pane.render(frame, frame.area()))
+            .expect("draw");
+        let painted = rows(&mut terminal);
+        let rework = painted
+            .iter()
+            .find(|row| row.contains("retried"))
+            .expect("the replay keeps its row");
+        assert!(rework.contains("retried 7"), "{rework:?}");
+        assert!(!rework.contains("0 attempt"), "{rework:?}");
     }
 
     /// #2737: the billed-usage column is two scopes, and the rows inside the
