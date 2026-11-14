@@ -160,14 +160,47 @@ image.writeToFileAtomically({:?}, true)"#,
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-    let bytes = std::fs::read(&file).ok();
-    let _ = std::fs::remove_file(&file);
+    let mut bytes = std::fs::read(&file).ok();
     if !status.is_ok_and(|status| status.success()) {
+        let _ = std::fs::remove_file(&file);
         return None;
     }
-    let bytes = bytes.filter(|bytes| !bytes.is_empty())?;
+    let mut bytes = bytes.filter(|bytes| !bytes.is_empty())?;
+    let mut mime = "image/png".to_string();
+    // A Retina screenshot dwarfs the engine's 8 MiB base64 attachment cap, so
+    // the admit would bounce after the operator already pasted it (issue
+    // #2959: the prompt sends, the model never sees the picture). sips ships
+    // with macOS: re-encode the oversized ones as JPEG at a bounded size.
+    if bytes.len() > 4 * 1024 * 1024 {
+        let jpeg = file.with_extension("jpg");
+        let encoded = Command::new("sips")
+            .args([
+                "-s",
+                "format",
+                "jpeg",
+                "-s",
+                "formatOptions",
+                "80",
+                "--resampleHeightWidthMax",
+                "2400",
+            ])
+            .arg(&file)
+            .arg(&jpeg)
+            .output()
+            .is_ok_and(|output| output.status.success());
+        if encoded {
+            if let Ok(smaller) = std::fs::read(&jpeg) {
+                if !smaller.is_empty() && smaller.len() < bytes.len() {
+                    bytes = smaller;
+                    mime = "image/jpeg".into();
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&jpeg);
+    }
+    let _ = std::fs::remove_file(&file);
     Some(Content::Image {
-        mime: "image/png".into(),
+        mime,
         data: base64::engine::general_purpose::STANDARD.encode(bytes),
     })
 }
