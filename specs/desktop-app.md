@@ -45,7 +45,7 @@ apps/desktop（Tauri 2 壳，Rust）
 - `apps/ios`：SwiftUI 原生客户端（远程控制 + 端侧 agent）。
 - `apps/desktop`：Tauri 壳与其渲染层入口（本目录），`src-tauri/` 是原生壳。
 - `packages/app`、`packages/ui`、`packages/session-ui`：跨客户端共享的渲染层与组件。
-- `packages/desktop`：**过渡期保留**的 Electron 实现，只作参照与功能对照；对等后删除，不再新增功能。
+- `packages/desktop`（Electron）：已随 Tauri 桌面端（`apps/desktop`）达到对等而**退役**，代码与 `nix/desktop.nix` 的 `miao-desktop` 输出一并删除；历史实现见 git 历史。
 
 workspace 通过根 `package.json` 的 `workspaces.packages` 显式登记 `apps/desktop`（不写 `apps/*`，避免把无 `package.json` 的 `apps/ios` 纳入）。
 

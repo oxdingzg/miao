@@ -8,7 +8,6 @@
   "packageManager": "bun@1.4.2",
   "scripts": {
     "dev": "cargo run --manifest-path crates/miao-cli/Cargo.toml",
-    "dev:desktop": "bun --cwd packages/desktop dev",
     "dev:desktop-tauri": "bun --cwd apps/desktop tauri dev",
     "dev:web": "bun --cwd packages/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
