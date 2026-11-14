@@ -8,6 +8,7 @@ use std::ffi::c_void;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -221,6 +222,26 @@ impl Drop for AclLock {
         }
     }
 }
+
+/// Teardown failures used to `eprintln!` straight to stderr, but under the
+/// product TUI stderr is the operator's alternate screen and one revoke
+/// failure painted over the status strip. Hosts install a reporter instead:
+/// the engine logs a diagnostic, the standalone `miao-run` CLI keeps stderr.
+/// Unreported by default, so an unknown host stays quiet too.
+static TEARDOWN_REPORT: OnceLock<Box<dyn Fn(&str) + Send + Sync>> = OnceLock::new();
+
+/// Install the sink teardown failures are reported through. The first
+/// installation wins; later calls are ignored.
+pub fn set_teardown_reporter(report: fn(&str)) {
+    let _ = TEARDOWN_REPORT.set(Box::new(report));
+}
+
+fn report_teardown_failure(message: &str) {
+    if let Some(report) = TEARDOWN_REPORT.get() {
+        report(message);
+    }
+}
+
 fn acl_lock() -> Result<AclLock, WinError> {
     let name = wide("Local\\miao-sandbox-acl");
     let handle = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
@@ -323,7 +344,7 @@ impl Drop for AclGrant {
             Ok(())
         })();
         if let Err(error) = result {
-            eprintln!("miao-run: failed to revoke invocation ACL: {error}");
+            report_teardown_failure(&format!("failed to revoke invocation ACL: {error}"));
         }
         unsafe {
             if !self.old_sd.is_null() {

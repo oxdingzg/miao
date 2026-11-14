@@ -377,6 +377,15 @@ pub fn sandbox_runner(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(target_os = "windows")]
     {
+        // This process shares the TUI's terminal, so a teardown failure
+        // written to stderr would paint over the status strip; the
+        // diagnostics log is where the engine's own failures go.
+        miao_sandbox::win::set_teardown_reporter(|message| {
+            crate::diagnostics::warn(
+                "sandbox ACL revoke failed",
+                &[("error", message.to_owned())],
+            );
+        });
         let workdirs = vec![workspace.clone(), temp.clone()];
         let code =
             miao_sandbox::win::run_in(&workdirs, &[], spec.allow_network, &spec.argv, Some(&cwd))
