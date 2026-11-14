@@ -11,6 +11,24 @@ at `docs/releases/vX.Y.Z.md` and `docs/releases/vX.Y.Z.zh.md`; both are required
 
 ## [Unreleased]
 
+## [0.3.69] - 2026-11-14
+
+### Added
+- **tui**: say when an upgrade is installed but not running (#2978) (`af59192717`)
+- **tui/engine**: multi-account credentials and per-provider tool gates (#2975) (`37d9a71274`)
+
+### Changed
+- gather the TypeScript engine into packages/engine-ts (#2987) (`61b0816999`)
+
+### Fixed
+- **engine**: settle background jobs and monitors failed on panic (#2992) (`3bc6badc02`)
+- **engine**: scan the serve/acp flags per token (#2991) (`0b0885b47e`)
+- **tui**: drop the unused mut on the clipboard image read (#2990) (`a4af6c3e60`)
+- **app**: drop the retired desktop locale from the parity check (#2989) (`3eec6b8099`)
+- **engine**: reserve the route's output capacity in the context budget (#2985) (`46d093ea36`)
+- **tui**: re-encode oversized clipboard screenshots before attaching (#2988) (`294d59ebc4`)
+- **engine**: compile the goal gate after #2975 (#2976) (`40315878f9`)
+
 ## [0.3.62] - 2026-11-11
 
 ### Added
