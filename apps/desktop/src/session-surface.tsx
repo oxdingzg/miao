@@ -46,6 +46,39 @@ const turns = (events: EngineEvent[]): Turn[] => {
   return out
 }
 
+/** The streamed answer in flight: deltas after the last committed assistant turn. */
+const streamingText = (events: EngineEvent[]): string => {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq)
+  let cut = 0
+  for (const event of sorted)
+    if (event.kind === "message.committed" && (event.data as { role?: string })?.role === "assistant")
+      cut = event.seq
+  return sorted
+    .filter((event) => event.seq > cut && event.kind === "provider.delta")
+    .map((event) => {
+      const data = event.data
+      if (typeof data === "string") return data
+      const part = (data ?? {}) as Record<string, unknown>
+      return String(part.text ?? part.delta ?? "")
+    })
+    .join("")
+}
+
+/** Tool calls this run started, after the last committed answer. */
+const toolRows = (events: EngineEvent[]): Array<{ tool: string; resource: string }> => {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq)
+  let cut = 0
+  for (const event of sorted)
+    if (event.kind === "message.committed" && (event.data as { role?: string })?.role === "assistant")
+      cut = event.seq
+  return sorted
+    .filter((event) => event.seq > cut && event.kind === "tool.started")
+    .map((event) => {
+      const data = (event.data ?? {}) as Record<string, unknown>
+      return { tool: String(data.tool ?? "tool"), resource: String(data.resource ?? "") }
+    })
+}
+
 /** A run is open when the stream's last lifecycle kind started one. */
 const running = (events: EngineEvent[]): boolean => {
   const sorted = [...events].sort((a, b) => a.seq - b.seq)
@@ -279,7 +312,23 @@ export function SessionSurface(props: { url: string; token: string }) {
                 </Show>
               )}
             </For>
-            <Show when={running(events())}>
+            <For each={toolRows(events())}>
+              {(row) => (
+                <div class="flex items-center gap-2 py-1 pl-1 text-11-regular text-v2-text-text-weak">
+                  <span class="rounded border border-v2-border-border-weak px-1.5 py-0.5">tool</span>
+                  <span class="truncate">{row.tool}</span>
+                  <span class="min-w-0 flex-1 truncate opacity-70">{row.resource}</span>
+                </div>
+              )}
+            </For>
+            <Show when={streamingText(events())}>
+              {(text) => (
+                <div class="py-2 pr-8 text-13-regular">
+                  <Markdown text={text()} streaming={true} />
+                </div>
+              )}
+            </Show>
+            <Show when={running(events()) && !streamingText(events())}>
               <div class="py-2 text-12-regular text-v2-text-text-weak">thinking…</div>
             </Show>
           </div>
