@@ -28,9 +28,10 @@
     },
     "apps/desktop": {
       "name": "@miao/desktop",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@miao/app": "workspace:*",
+        "@miao/session-ui": "workspace:*",
         "@miao/ui": "workspace:*",
         "@solidjs/router": "0.15.4",
         "@tauri-apps/api": "^2",
@@ -50,7 +51,7 @@
     },
     "packages/app": {
       "name": "@miao/app",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@corvu/drawer": "catalog:",
         "@dnd-kit/abstract": "0.5.0",
@@ -136,7 +137,7 @@
     },
     "packages/engine-ts/codemode": {
       "name": "@miao/codemode",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "acorn": "8.15.0",
         "effect": "catalog:",
@@ -150,7 +151,7 @@
     },
     "packages/engine-ts/core": {
       "name": "@miao/core",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "bin": {
         "opencode": "./bin/opencode",
       },
@@ -253,7 +254,7 @@
     },
     "packages/engine-ts/effect-drizzle-sqlite": {
       "name": "@miao/effect-drizzle-sqlite",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -267,7 +268,7 @@
     },
     "packages/engine-ts/llm": {
       "name": "@miao/llm",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@miao/schema": "workspace:*",
         "@smithy/eventstream-codec": "4.2.14",
@@ -286,11 +287,11 @@
     },
     "packages/engine-ts/native": {
       "name": "@miao/native",
-      "version": "0.3.70",
+      "version": "0.3.71",
     },
     "packages/engine-ts/plugin": {
       "name": "@miao/plugin",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@ai-sdk/provider": "3.0.8",
         "@miao/client": "workspace:*",
@@ -336,7 +337,7 @@
     },
     "packages/http-recorder": {
       "name": "@miao/http-recorder",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@effect/platform-node": "4.0.0-beta.83",
         "@effect/platform-node-shared": "4.0.0-beta.83",
@@ -401,7 +402,7 @@
     },
     "packages/session-ui": {
       "name": "@miao/session-ui",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@miao/client": "workspace:*",
@@ -467,7 +468,7 @@
     },
     "packages/ui": {
       "name": "@miao/ui",
-      "version": "0.3.70",
+      "version": "0.3.71",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@pierre/diffs": "catalog:",
