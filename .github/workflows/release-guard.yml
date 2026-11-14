@@ -44,10 +44,12 @@ jobs:
           echo "Release PR detected: $version_base -> $version_head"
           # Every bun workspace manifest belongs in a release PR: `script/set-version.ts`
           # synchronizes the whole workspace, and `apps/desktop` is a workspace
-          # member (`package.json` `workspaces.packages`). Allowing only
-          # `packages/*` made every release PR fail this gate on a file the
-          # release script had just written.
-          violations=$(git diff --name-only "$base" "$head" | grep -vE '^(package\.json|bun\.lock|CHANGELOG\.md|(packages|apps)/([^/]+/)?package\.json|docs/releases/.+|docs/release\.(en|zh)\.md)$' || true)
+          # member (`package.json` `workspaces.packages`). Workspaces nest, so
+          # the manifest pattern has to accept any depth under `packages/` or
+          # `apps/` — `packages/engine-ts/core/package.json` is one of them. Both
+          # narrower forms failed a release PR on a file the release script had
+          # just written.
+          violations=$(git diff --name-only "$base" "$head" | grep -vE '^(package\.json|bun\.lock|CHANGELOG\.md|(packages|apps)/(.*/)?package\.json|docs/releases/.+|docs/release\.(en|zh)\.md)$' || true)
           if [ -n "$violations" ]; then
             echo "::error title=Release PR carries unrelated changes::A release PR may only touch workspace manifests, bun.lock, CHANGELOG.md, and release docs. These paths do not belong in it:"
             printf '%s\n' "$violations"
