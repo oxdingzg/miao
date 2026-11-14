@@ -3,6 +3,11 @@
 //! The criterion asks for CPU, RSS and file-descriptor usage to be *recorded*
 //! across idle runs rather than inferred. This spawns the real TUI against the
 //! scripted engine, lets the first frames settle, and samples the process with
+#![cfg(not(windows))]
+// The sampling plumbing is POSIX-only (ps, /proc/<pid>/fd, lsof, pgrep), and
+// on Windows the fixture's ConPTY startup hangs past every bounded deadline —
+// tracked with the host evidence in specs/ci-windows.md (idle_resources row).
+// Re-enable once a Windows sampler (Get-Process / handle counting) exists.
 //! `ps` over a quiet window.
 //!
 //! The assertions are deliberately loose — an idle TUI burning a whole core or
