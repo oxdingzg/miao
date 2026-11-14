@@ -42,7 +42,9 @@ guard sits in the engine's shared stream reader and observes the deltas each cod
 frames normalize into (`src/delta.rs`), so the matrix question is whether every
 codec's looping wire trips the guard and whether every codec's malformed tool input
 reaches the same bounded correction. The commands ran on the Linux build host from
-`crates/miao-engine` on the tree that carries the two extensions below.
+`crates/miao-engine` on the tree that carries the two extensions below — the
+test commit `281461f7d3` on this branch (main `3e476a2957` plus the tests; the
+later commits here touch documentation only).
 
 | command | observed |
 | --- | --- |
