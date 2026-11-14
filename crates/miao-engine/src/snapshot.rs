@@ -33,6 +33,20 @@ pub(crate) fn valid_path(path: &str) -> Option<PathBuf> {
         .then(|| path.to_path_buf())
 }
 
+/// Windows canonical paths carry a verbatim prefix (`canonicalize` adds it)
+/// while the path handed in may not. Comparing the de-prefixed spellings keeps
+/// the containment check honest: without it `strip_prefix` failed and a
+/// snapshot inside the workspace was refused as escaping it.
+fn strip_verbatim(path: &Path) -> std::borrow::Cow<'_, Path> {
+    match path
+        .to_string_lossy()
+        .strip_prefix(crate::runtime::VERBATIM)
+    {
+        Some(rest) => std::borrow::Cow::Owned(Path::new(rest).to_path_buf()),
+        None => std::borrow::Cow::Borrowed(path),
+    }
+}
+
 fn within(root: &Path, path: &Path) -> Result<PathBuf, Error> {
     let root = fs::canonicalize(root)?;
     let parent = path
@@ -54,10 +68,11 @@ fn within(root: &Path, path: &Path) -> Result<PathBuf, Error> {
         if !fs::canonicalize(existing)?.starts_with(&root) {
             return Err(Error::Invalid("snapshot path escapes the workspace".into()));
         }
-        root.join(
-            path.strip_prefix(&root)
-                .map_err(|_| Error::Invalid("snapshot path escapes the workspace".into()))?,
-        )
+        let relative = strip_verbatim(path)
+            .strip_prefix(strip_verbatim(&root).as_ref())
+            .map_err(|_| Error::Invalid("snapshot path escapes the workspace".into()))?
+            .to_path_buf();
+        root.join(relative)
     };
     if !resolved.starts_with(&root) {
         return Err(Error::Invalid("snapshot path escapes the workspace".into()));
