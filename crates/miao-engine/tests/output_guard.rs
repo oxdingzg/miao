@@ -203,7 +203,11 @@ fn looping_frames(codec: &str) -> Vec<Value> {
 
 fn wire_body(codec: &str, frames: Vec<Value>) -> String {
     // Gemini's real wire frames SSE with CRLF; the other codecs use LF.
-    let terminator = if codec == "gemini" { "\r\n\r\n" } else { "\n\n" };
+    let terminator = if codec == "gemini" {
+        "\r\n\r\n"
+    } else {
+        "\n\n"
+    };
     let mut body = frames
         .iter()
         .map(|frame| format!("data: {frame}{terminator}"))
@@ -226,19 +230,25 @@ async fn the_guard_stops_a_looping_provider_stream_before_a_late_tool_call() {
             "anthropic" => {
                 Arc::new(Anthropic::new(endpoint, "fixture".into(), "model".into()).unwrap())
             }
-            "openai-responses" => Arc::new(
-                OpenAIResponses::new(endpoint, "fixture".into(), "model".into()).unwrap(),
-            ),
+            "openai-responses" => {
+                Arc::new(OpenAIResponses::new(endpoint, "fixture".into(), "model".into()).unwrap())
+            }
             "gemini" => {
                 Arc::new(Gemini::new(endpoint, "fixture".into(), "fixture-model".into()).unwrap())
             }
-            _ => Arc::new(OpenAIChat::new(endpoint, "fixture".into(), "fixture-model".into()).unwrap()),
+            _ => Arc::new(
+                OpenAIChat::new(endpoint, "fixture".into(), "fixture-model".into()).unwrap(),
+            ),
         };
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path().join("engine.db")).await.unwrap();
-        let runtime = Runtime::new(store.clone(), provider, Tools::new(dir.path()).await.unwrap())
-            .await
-            .unwrap();
+        let runtime = Runtime::new(
+            store.clone(),
+            provider,
+            Tools::new(dir.path()).await.unwrap(),
+        )
+        .await
+        .unwrap();
         runtime.admit(input("s", "go"), true).await.unwrap();
         let events = events_until_finished(&store, "s").await;
 
@@ -261,7 +271,10 @@ async fn the_guard_stops_a_looping_provider_stream_before_a_late_tool_call() {
             0,
             "the late tool call never dispatches on {codec}"
         );
-        assert!(requests.try_recv().is_ok(), "one provider request on {codec}");
+        assert!(
+            requests.try_recv().is_ok(),
+            "one provider request on {codec}"
+        );
         assert!(
             requests.try_recv().is_err(),
             "the stopped stream is not retried on {codec}"
