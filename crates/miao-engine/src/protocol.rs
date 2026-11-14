@@ -527,6 +527,13 @@ pub enum Command {
     /// engine serves the host's list read-only; pairing and revocation stay
     /// with the host that owns that authority.
     Devices,
+    /// The operator starts over: checkpoint the Session's provider context
+    /// through the newest assistant message with an empty summary. Durable
+    /// rows stay for audit; the next request carries only what is sent after
+    /// the clear. Idle-only — the compaction guards apply unchanged.
+    SessionClear {
+        session_id: String,
+    },
     /// Read-only Git state of the Session's workspace (WSP-02). A location that
     /// is not inside a repository answers `{"repository": false}` rather than
     /// failing, because "there is no repository here" is a normal answer.

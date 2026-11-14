@@ -236,6 +236,10 @@ pub enum Request {
         session_id: String,
         pinned: bool,
     },
+    /// Clear the Session's provider context: the next prompt starts fresh.
+    Clear {
+        session_id: String,
+    },
     /// Ask what a revert at this boundary would change, without changing it.
     RevertPreview {
         session_id: String,
@@ -591,6 +595,12 @@ impl Handle {
         let _ = self.tx.send(Request::RevertPreview {
             session_id: session_id.to_string(),
             boundary_seq,
+        });
+    }
+
+    pub fn clear(&self, session_id: &str) {
+        let _ = self.tx.send(Request::Clear {
+            session_id: session_id.to_string(),
         });
     }
 
@@ -1204,6 +1214,17 @@ async fn run(
                         }
                         Err(error) => {
                             bus.send(AppEvent::ActionFailed(format!("reject failed: {error}")))
+                        }
+                    }
+                }
+                Request::Clear { session_id } => {
+                    match client
+                        .request("session_clear", json!({ "session_id": session_id }))
+                        .await
+                    {
+                        Ok(_) => bus.send(AppEvent::ContextCleared),
+                        Err(error) => {
+                            bus.send(AppEvent::ActionFailed(format!("clear failed: {error}")))
                         }
                     }
                 }

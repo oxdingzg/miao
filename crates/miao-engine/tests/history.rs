@@ -29,6 +29,28 @@ async fn seed(store: &Store) -> u64 {
 }
 
 #[tokio::test]
+async fn clear_checkpoints_the_context_to_nothing_without_deleting_raw_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    seed(&store).await;
+    store.clear_history("s").await.unwrap();
+    // The provider prefix is empty: no summary block, no prior messages.
+    let selected = store.selected_history("s").await.unwrap();
+    assert!(selected.is_empty(), "{selected:?}");
+    // The raw transcript stays for audit.
+    let history = store.history("s").await.unwrap();
+    assert_eq!(history.len(), 2, "{history:?}");
+    // What the operator sends after the clear is all the provider sees.
+    store
+        .message("s", "user", json!([{"type":"text","text":"fresh task"}]))
+        .await
+        .unwrap();
+    let selected = store.selected_history("s").await.unwrap();
+    assert_eq!(selected.len(), 1, "{selected:?}");
+    assert_eq!(selected[0].content[0]["text"], "fresh task");
+}
+
+#[tokio::test]
 async fn checkpoint_changes_selected_history_without_deleting_raw_transcript() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path().join("engine.db")).await.unwrap();

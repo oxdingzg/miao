@@ -132,6 +132,9 @@ pub enum AppEvent {
     /// A control action (cancel, approve, answer) the engine refused. Shown as
     /// a composer notice; it never ends the transport.
     ActionFailed(String),
+    /// The engine accepted a /clear: the Session's provider context starts
+    /// over, so the painted transcript goes with it.
+    ContextCleared,
     /// Something the user should know that is not a failure, such as the engine
     /// reloading its configuration. Shown as a composer notice.
     Notice(String),

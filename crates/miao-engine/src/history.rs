@@ -15,7 +15,7 @@ impl Store {
         through: u64,
         summary: String,
     ) -> Result<Value, Error> {
-        self.commit_compaction(session, id, through, summary, None)
+        self.commit_compaction(session, id, through, summary, None, false)
             .await
     }
 
@@ -31,7 +31,34 @@ impl Store {
         through: u64,
         summary: String,
     ) -> Result<Value, Error> {
-        self.commit_compaction(session, id, through, summary, Some(run.to_owned()))
+        self.commit_compaction(session, id, through, summary, Some(run.to_owned()), false)
+            .await
+    }
+
+    /// The operator starts over: checkpoint through the newest assistant
+    /// message with an empty summary. Durable rows stay for audit; the next
+    /// provider prefix carries only what is sent after the clear. The
+    /// compaction guards (idle Session, assistant boundary, no cut through a
+    /// tool continuation) apply unchanged.
+    pub async fn clear_history(&self, session: &str) -> Result<Value, Error> {
+        let owner = session.to_owned();
+        let query = owner.clone();
+        let through = self
+            .call(move |conn| {
+                conn.query_row(
+                    "SELECT seq FROM engine_message WHERE session_id=?1 AND role='assistant' AND reverted=0 ORDER BY seq DESC LIMIT 1",
+                    params![query],
+                    |row| row.get::<_, u64>(0),
+                )
+                .optional()
+                .map_err(Error::from)
+            })
+            .await?;
+        let Some(through) = through else {
+            return Err(Error::Invalid("nothing to clear yet".into()));
+        };
+        let id = format!("clear-{}", uuid::Uuid::new_v4());
+        self.commit_compaction(&owner, &id, through, String::new(), None, true)
             .await
     }
 
@@ -42,8 +69,13 @@ impl Store {
         through: u64,
         summary: String,
         run: Option<String>,
+        allow_empty_summary: bool,
     ) -> Result<Value, Error> {
-        if id.is_empty() || id.len() > 256 || summary.is_empty() || summary.len() > 32768 {
+        if id.is_empty()
+            || id.len() > 256
+            || (summary.is_empty() && !allow_empty_summary)
+            || summary.len() > 32768
+        {
             return Err(Error::Invalid("invalid compaction checkpoint".into()));
         }
         let (session, id) = (session.to_owned(), id.to_owned());
@@ -128,8 +160,13 @@ impl Store {
             let checkpoint:Option<(u64,String)>=tx.query_row("SELECT through_seq,summary FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1",[&session],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             let mut selected=Vec::new();let mut bytes=0;
             let through=if let Some((through,summary))=checkpoint {
-                let text=format!("<history-summary>\n{summary}\n</history-summary>\nThis summarizes completed history. Do not repeat completed operations or unknown side effects automatically.");
-                bytes=text.len();selected.push(Message{role:"user".into(),content:json!([{"type":"text","text":text}]),checkpoint:None,recorded_at_ms:None});through
+                // An empty summary is the operator's explicit clear: the cut
+                // applies, but nothing of the cleared history re-enters.
+                if !summary.is_empty() {
+                    let text=format!("<history-summary>\n{summary}\n</history-summary>\nThis summarizes completed history. Do not repeat completed operations or unknown side effects automatically.");
+                    bytes=text.len();selected.push(Message{role:"user".into(),content:json!([{"type":"text","text":text}]),checkpoint:None,recorded_at_ms:None});
+                }
+                through
             }else{0};
             let mut pending_tools=std::collections::HashSet::new();
             let mut deferred_context=Vec::new();

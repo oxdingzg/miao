@@ -191,6 +191,18 @@ impl Shell {
         self.last = Some(transcript.clone());
     }
 
+    /// The operator cleared the Session's context: the painted rows go, one
+    /// marker stays, and nothing stale re-enters until the next snapshot.
+    pub fn clear_transcript(&mut self) {
+        self.transcript.set_rows(vec![Row::plain(Line::from(
+            "context cleared · the next prompt starts fresh",
+        ))]);
+        self.transcript.user_anchors = Vec::new();
+        self.transcript.scroll = 0;
+        self.transcript.follow = true;
+        self.last = None;
+    }
+
     /// Show what the model is streaming before its message commits. Empty
     /// strings clear it.
     pub fn set_draft(&mut self, parts: &[DraftPart]) {
