@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 //! PERF-04 switch curve: what a hundred Session switches cost.
 //!
 //! The criterion asks for CPU, RSS and descriptor usage "across 100 Session
@@ -8,6 +10,9 @@
 //!
 //! The assertions are about growth, not about an absolute figure: a healthy
 //! TUI returns to roughly where it started, and a leak shows up as a slope.
+//!
+//! Unix only: the fixture is driven through a pty and the samples come from
+//! `ps` and `/proc` or `lsof`, none of which describe a Windows process.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
