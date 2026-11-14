@@ -1,11 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { ControlAgent } from "../../../packages/remote-control/src/agent"
-import { ControlHub } from "../../../packages/remote-control/src/hub"
-import { DeviceGrants } from "../../../packages/remote-control/src/grants"
-import { ControlPairing } from "../../../packages/remote-control/src/pairing"
-import { SecureChannel } from "../../../packages/remote-control/src/secure-channel"
+import { ControlAgent } from "../../../packages/engine-ts/remote-control/src/agent"
+import { ControlHub } from "../../../packages/engine-ts/remote-control/src/hub"
+import { DeviceGrants } from "../../../packages/engine-ts/remote-control/src/grants"
+import { ControlPairing } from "../../../packages/engine-ts/remote-control/src/pairing"
+import { SecureChannel } from "../../../packages/engine-ts/remote-control/src/secure-channel"
 
 const argv: unknown = JSON.parse(process.env.MIAO_SWIFT_PAIRING_PROBE_COMMAND ?? "null")
 if (!Array.isArray(argv) || !argv.length || !argv.every((value) => typeof value === "string"))

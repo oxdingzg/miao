@@ -1,5 +1,5 @@
-import { SecureChannel } from "../../../packages/remote-control/src/secure-channel"
-import { PushContext } from "../../../packages/remote-control/src/push-context"
+import { SecureChannel } from "../../../packages/engine-ts/remote-control/src/secure-channel"
+import { PushContext } from "../../../packages/engine-ts/remote-control/src/push-context"
 import assert from "node:assert/strict"
 
 // JSON argv avoids shell expansion and keeps build-host details in private configuration.

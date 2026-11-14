@@ -1,6 +1,6 @@
 <!--
   Built-in skill. Name and description are registered in code at
-  packages/core/src/plugin/skill.ts and crates/miao-engine/src/context.rs
+  packages/engine-ts/core/src/plugin/skill.ts and crates/miao-engine/src/context.rs
   and CUSTOMIZE_MIAO_SKILL_DESCRIPTION). The body below becomes the
   skill's content.
 -->

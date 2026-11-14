@@ -134,7 +134,7 @@
         "effect",
       ],
     },
-    "packages/codemode": {
+    "packages/engine-ts/codemode": {
       "name": "@miao/codemode",
       "version": "0.3.68",
       "dependencies": {
@@ -148,7 +148,7 @@
         "@typescript/native-preview": "catalog:",
       },
     },
-    "packages/core": {
+    "packages/engine-ts/core": {
       "name": "@miao/core",
       "version": "0.3.68",
       "bin": {
@@ -251,7 +251,7 @@
         "drizzle-kit": "catalog:",
       },
     },
-    "packages/effect-drizzle-sqlite": {
+    "packages/engine-ts/effect-drizzle-sqlite": {
       "name": "@miao/effect-drizzle-sqlite",
       "version": "0.3.68",
       "dependencies": {
@@ -260,6 +260,75 @@
       },
       "devDependencies": {
         "@effect/sql-sqlite-bun": "catalog:",
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+      },
+    },
+    "packages/engine-ts/llm": {
+      "name": "@miao/llm",
+      "version": "0.3.68",
+      "dependencies": {
+        "@miao/schema": "workspace:*",
+        "@smithy/eventstream-codec": "4.2.14",
+        "@smithy/util-utf8": "4.2.2",
+        "aws4fetch": "1.0.20",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@clack/prompts": "1.0.0-alpha.1",
+        "@effect/platform-node": "catalog:",
+        "@miao/http-recorder": "workspace:*",
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+      },
+    },
+    "packages/engine-ts/native": {
+      "name": "@miao/native",
+      "version": "0.3.68",
+    },
+    "packages/engine-ts/plugin": {
+      "name": "@miao/plugin",
+      "version": "0.3.68",
+      "dependencies": {
+        "@ai-sdk/provider": "3.0.8",
+        "@miao/client": "workspace:*",
+        "@miao/schema": "workspace:*",
+        "effect": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@opentui/core": "catalog:",
+        "@opentui/keymap": "catalog:",
+        "@opentui/solid": "catalog:",
+        "@tsconfig/node22": "catalog:",
+        "@types/node": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@opentui/core": ">=0.4.5",
+        "@opentui/keymap": ">=0.4.5",
+        "@opentui/solid": ">=0.4.5",
+      },
+      "optionalPeers": [
+        "@opentui/core",
+        "@opentui/keymap",
+        "@opentui/solid",
+      ],
+    },
+    "packages/engine-ts/remote-control": {
+      "name": "@miao/remote-control",
+      "dependencies": {
+        "@miao/schema": "workspace:*",
+        "better-auth": "1.7.7",
+        "effect": "catalog:",
+        "jose": "6.2.12",
+      },
+      "devDependencies": {
+        "@miao/core": "workspace:*",
+        "@playwright/test": "catalog:",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
@@ -296,59 +365,6 @@
         "@typescript/native-preview": "catalog:",
       },
     },
-    "packages/llm": {
-      "name": "@miao/llm",
-      "version": "0.3.68",
-      "dependencies": {
-        "@miao/schema": "workspace:*",
-        "@smithy/eventstream-codec": "4.2.14",
-        "@smithy/util-utf8": "4.2.2",
-        "aws4fetch": "1.0.20",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@clack/prompts": "1.0.0-alpha.1",
-        "@effect/platform-node": "catalog:",
-        "@miao/http-recorder": "workspace:*",
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
-      },
-    },
-    "packages/native": {
-      "name": "@miao/native",
-      "version": "0.3.68",
-    },
-    "packages/plugin": {
-      "name": "@miao/plugin",
-      "version": "0.3.68",
-      "dependencies": {
-        "@ai-sdk/provider": "3.0.8",
-        "@miao/client": "workspace:*",
-        "@miao/schema": "workspace:*",
-        "effect": "catalog:",
-        "zod": "catalog:",
-      },
-      "devDependencies": {
-        "@opentui/core": "catalog:",
-        "@opentui/keymap": "catalog:",
-        "@opentui/solid": "catalog:",
-        "@tsconfig/node22": "catalog:",
-        "@types/node": "catalog:",
-        "@typescript/native-preview": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@opentui/core": ">=0.4.5",
-        "@opentui/keymap": ">=0.4.5",
-        "@opentui/solid": ">=0.4.5",
-      },
-      "optionalPeers": [
-        "@opentui/core",
-        "@opentui/keymap",
-        "@opentui/solid",
-      ],
-    },
     "packages/protocol": {
       "name": "@miao/protocol",
       "dependencies": {
@@ -356,22 +372,6 @@
         "effect": "catalog:",
       },
       "devDependencies": {
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
-      },
-    },
-    "packages/remote-control": {
-      "name": "@miao/remote-control",
-      "dependencies": {
-        "@miao/schema": "workspace:*",
-        "better-auth": "1.7.7",
-        "effect": "catalog:",
-        "jose": "6.2.12",
-      },
-      "devDependencies": {
-        "@miao/core": "workspace:",
-        "@playwright/test": "catalog:",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
@@ -1046,27 +1046,27 @@
 
     "@miao/client": ["@miao/client@workspace:packages/client"],
 
-    "@miao/codemode": ["@miao/codemode@workspace:packages/codemode"],
+    "@miao/codemode": ["@miao/codemode@workspace:packages/engine-ts/codemode"],
 
-    "@miao/core": ["@miao/core@workspace:packages/core"],
+    "@miao/core": ["@miao/core@workspace:packages/engine-ts/core"],
 
     "@miao/desktop": ["@miao/desktop@workspace:apps/desktop"],
 
-    "@miao/effect-drizzle-sqlite": ["@miao/effect-drizzle-sqlite@workspace:packages/effect-drizzle-sqlite"],
+    "@miao/effect-drizzle-sqlite": ["@miao/effect-drizzle-sqlite@workspace:packages/engine-ts/effect-drizzle-sqlite"],
 
     "@miao/http-recorder": ["@miao/http-recorder@workspace:packages/http-recorder"],
 
     "@miao/httpapi-codegen": ["@miao/httpapi-codegen@workspace:packages/httpapi-codegen"],
 
-    "@miao/llm": ["@miao/llm@workspace:packages/llm"],
+    "@miao/llm": ["@miao/llm@workspace:packages/engine-ts/llm"],
 
-    "@miao/native": ["@miao/native@workspace:packages/native"],
+    "@miao/native": ["@miao/native@workspace:packages/engine-ts/native"],
 
-    "@miao/plugin": ["@miao/plugin@workspace:packages/plugin"],
+    "@miao/plugin": ["@miao/plugin@workspace:packages/engine-ts/plugin"],
 
     "@miao/protocol": ["@miao/protocol@workspace:packages/protocol"],
 
-    "@miao/remote-control": ["@miao/remote-control@workspace:packages/remote-control"],
+    "@miao/remote-control": ["@miao/remote-control@workspace:packages/engine-ts/remote-control"],
 
     "@miao/schema": ["@miao/schema@workspace:packages/schema"],
 

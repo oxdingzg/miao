@@ -183,11 +183,11 @@ const table = sqliteTable("session", {
 
 - Avoid mocks as much as possible, you shouldn't be using globalThis.\* at all unless it's the only option.
 - Test actual implementation, do not duplicate logic into tests
-- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/core`.
+- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/engine-ts/core`.
 
 ## Type Checking
 
-- Always run `bun typecheck` from package directories (e.g., `packages/core`), never `tsc` directly.
+- Always run `bun typecheck` from package directories (e.g., `packages/engine-ts/core`), never `tsc` directly.
 
 ## Build offloading
 

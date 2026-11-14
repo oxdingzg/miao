@@ -29,7 +29,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex, Notify, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
-/// TS parity (`packages/core/src/session/runner/llm.ts`): how many times one
+/// TS parity (`packages/engine-ts/core/src/session/runner/llm.ts`): how many times one
 /// identical tool input may execute between promoted user inputs before
 /// further identical calls are refused with a corrective error result.
 const MAX_IDENTICAL_TOOL_CALLS: u32 = 5;

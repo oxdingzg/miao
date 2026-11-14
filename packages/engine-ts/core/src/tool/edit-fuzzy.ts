@@ -6,7 +6,7 @@ export * as EditFuzzy from "./edit-fuzzy"
  * The strategies below are ported back from miao's own V1 edit tool (removed in
  * 55dc46784), which in turn adapted:
  * - https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-23-25.ts
- * - https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/utils/editCorrector.ts
+ * - https://github.com/google-gemini/gemini-cli/blob/main/packages/engine-ts/core/src/utils/editCorrector.ts
  * - https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-26-25.ts
  *
  * Every strategy only ever returns substrings that already exist in the content;

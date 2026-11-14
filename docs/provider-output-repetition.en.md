@@ -35,7 +35,7 @@ Related upstream reports: [#44962](https://github.com/anomalyco/opencode/issues/
 
 ## Protection
 
-`packages/core/src/session/runner/output-guard.ts` guards each provider attempt before events reach
+`packages/engine-ts/core/src/session/runner/output-guard.ts` guards each provider attempt before events reach
 the durable publisher or local tool dispatcher. Text and reasoning blocks are tracked separately;
 state is created per stream subscription, not shared between Sessions or windows.
 

@@ -16,7 +16,7 @@
 
 ## 验证
 
-- `packages/core` 诊断存储测试：**8 项通过**，覆盖轮转、配额、保护无关文件，以及同步/异步写入的租约互斥。
+- `packages/engine-ts/core` 诊断存储测试：**8 项通过**，覆盖轮转、配额、保护无关文件，以及同步/异步写入的租约互斥。
 - `packages/miao` typecheck 通过；监控回归：**1 项通过、16 个断言**。真实子进程中的 OS 探测故意延迟 500ms，主线程心跳仍能继续；测试以实际记录出现为就绪信号，验证采样重叠抑制和窗口指标。
 - 原生 histogram 校准：[monitor-calibration-2026-10-04.json](monitor-calibration-2026-10-04.json)，Bun 1.4.2。故意阻塞 90ms 后采样 max 为 85.766ms；reset 后 count 为零；随后空闲窗口 max 为 2.018ms。这是监控校准数据，不是按键回显延迟。
 

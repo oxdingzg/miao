@@ -481,7 +481,7 @@ fn fuzzy_candidates(content: &str, find: &str) -> Vec<String> {
     out
 }
 
-/// The one matching contract shared with `packages/core/src/tool/edit-match.ts`:
+/// The one matching contract shared with `packages/engine-ts/core/src/tool/edit-match.ts`:
 /// an exact occurrence wins, otherwise the restored V1 strategies are tried in
 /// order, each gated by line-anchor, disproportionate-span and uniqueness safety.
 fn match_plan(content: &str, old_string: &str, replace_all: bool) -> EditMatch {
@@ -949,7 +949,7 @@ fn derive_new_contents(
     derive_new_contents_impl(chunks, file_path, original_text, false)
 }
 
-/// V2 core contract: identical to `packages/core/src/patch.ts`'s `deriveTs`.
+/// V2 core contract: identical to `packages/engine-ts/core/src/patch.ts`'s `deriveTs`.
 fn derive_new_contents_v2(
     chunks: &[PatchChunk],
     file_path: &str,

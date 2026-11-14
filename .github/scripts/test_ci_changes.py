@@ -16,10 +16,10 @@ class ChangesTest(unittest.TestCase):
         self.assertEqual(changes.classify(["packages/ui/src/components/button.tsx"]), {"code": True, "windows": False})
 
     def test_runtime_resources_are_code(self):
-        self.assertTrue(changes.classify(["packages/core/src/prompt/system.md"])["code"])
+        self.assertTrue(changes.classify(["packages/engine-ts/core/src/prompt/system.md"])["code"])
 
     def test_platform_and_shared_changes_require_windows(self):
-        for path in ["packages/core/src/session.ts", "script/install-local.ps1", "bun.lock", ".github/actions/setup-bun/action.yml"]:
+        for path in ["packages/engine-ts/core/src/session.ts", "script/install-local.ps1", "bun.lock", ".github/actions/setup-bun/action.yml"]:
             self.assertEqual(changes.classify([path]), {"code": True, "windows": True})
 
 

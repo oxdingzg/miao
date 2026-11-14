@@ -10,7 +10,7 @@ def classify(paths):
     )
     windows = any(
         path.startswith((
-            "packages/core/", "packages/schema/", "packages/protocol/", "packages/server/",
+            "packages/engine-ts/core/", "packages/schema/", "packages/protocol/",
             ".github/workflows/", ".github/actions/", ".github/scripts/",
         ))
         or path in ("package.json", "bun.lock", "turbo.json")

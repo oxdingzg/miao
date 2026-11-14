@@ -100,8 +100,8 @@ miao 可以单独运行；在 mtty 中，它上报工作、等待输入、完成
 - [开源代理工作流对比](agent-comparison.zh.md)
 - [提交问题或建议](https://github.com/oxdingzg/miao/issues)：附构建版本、配置、任务日志及预期/实际行为
 
-源码依据：[会话执行](../packages/core/src/session/runner/llm.ts)、[输入准入](../packages/core/src/session/input.ts)、
-[输出治理](../packages/core/src/tool-output-store.ts)、[压缩](../packages/core/src/session/compaction.ts)、
-[编辑恢复](edit-recovery.md)、[read/LSP](../packages/core/src/tool/read.ts)、[权限与隔离](../SECURITY.zh.md)。
+源码依据：[会话执行](../packages/engine-ts/core/src/session/runner/llm.ts)、[输入准入](../packages/engine-ts/core/src/session/input.ts)、
+[输出治理](../packages/engine-ts/core/src/tool-output-store.ts)、[压缩](../packages/engine-ts/core/src/session/compaction.ts)、
+[编辑恢复](edit-recovery.md)、[read/LSP](../packages/engine-ts/core/src/tool/read.ts)、[权限与隔离](../SECURITY.zh.md)。
 
 项目来源与许可说明见[项目来源与许可](attribution.zh.md)。

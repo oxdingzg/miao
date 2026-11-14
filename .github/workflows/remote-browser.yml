@@ -21,10 +21,10 @@ jobs:
         with:
           node-version: "24.15"
       - name: Install Chromium
-        working-directory: packages/remote-control
+        working-directory: packages/engine-ts/remote-control
         run: bunx playwright install --with-deps chromium
       - name: Verify remote browser
-        working-directory: packages/remote-control
+        working-directory: packages/engine-ts/remote-control
         run: |
           bun run check:browser
           bun run check:browser:enrollment

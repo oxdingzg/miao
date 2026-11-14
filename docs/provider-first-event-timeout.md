@@ -41,8 +41,8 @@ rather than inheriting the first attempt's progress or silence. The native
 engine applies the same three phases and environment variables to its own
 provider streams.
 
-`packages/core/test/session-first-byte-guard.test.ts` covers each phase, the
+`packages/engine-ts/core/test/session-first-byte-guard.test.ts` covers each phase, the
 request-size allowance, retry re-subscription, connection-pool retirement,
 immediate completion, and interruption cleanup.
-`packages/llm/test/stream-activity.test.ts` covers the transport signals that
+`packages/engine-ts/llm/test/stream-activity.test.ts` covers the transport signals that
 feed the watchdogs.

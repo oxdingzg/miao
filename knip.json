@@ -7,6 +7,10 @@
       "entry": ["src/**/*.test.ts", "src/**/*.test.tsx", "script/*.ts"],
       "project": ["src/**/*.{ts,tsx}"]
     },
+    "packages/engine-ts/*": {
+      "entry": ["src/**/*.test.ts", "src/**/*.test.tsx", "script/*.ts"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
     "packages/storybook": { "entry": [".storybook/**/*.{ts,tsx}"], "project": [".storybook/**/*.{ts,tsx}"] }
   }
 }

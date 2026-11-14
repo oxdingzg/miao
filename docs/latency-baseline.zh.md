@@ -18,7 +18,7 @@ bun packages/script/src/baseline.ts --log /path/to/miao.log --model provider/mod
 
 ## 指标语义
 
-来源：`packages/core/src/session/runner/llm.ts` 的 `session.turn`；格式由 `packages/core/src/observability/logging.ts` 定义。
+来源：`packages/engine-ts/core/src/session/runner/llm.ts` 的 `session.turn`；格式由 `packages/engine-ts/core/src/observability/logging.ts` 定义。
 
 - **preRequestMs**：本次尝试开始到请求发出前的等待，包括本地准备和可能的集成/鉴权等待，不全是 CPU。
 - **ttftMs**：请求发出到首个流事件，不保证是首个可见文字。网络、provider 排队与 prefill 混在其中，无法进一步分离。
@@ -104,7 +104,7 @@ bun packages/script/src/baseline.ts --log /path/to/miao.log --model provider/mod
 复现（从包目录执行；该性能测量默认不开启）：
 
 ```sh
-cd packages/core
+cd packages/engine-ts/core
 MIAO_BENCHMARK_CATALOG=1 bun test test/session-model-lookup.test.ts
 ```
 
@@ -146,7 +146,7 @@ MIAO_BENCHMARK_CATALOG=1 bun test test/session-model-lookup.test.ts
 复现：
 
 ```sh
-cd packages/core
+cd packages/engine-ts/core
 MIAO_BENCHMARK_CREDENTIALS=1 bun test test/integration-credential-lookup.test.ts --test-name-pattern benchmarks
 ```
 
@@ -190,7 +190,7 @@ MIAO_BENCHMARK_CREDENTIALS=1 bun test test/integration-credential-lookup.test.ts
 复现：
 
 ```sh
-cd packages/core
+cd packages/engine-ts/core
 MIAO_BENCHMARK_MATERIALIZE=1 bun test test/session-runner-materialize.test.ts --test-name-pattern benchmarks
 ```
 

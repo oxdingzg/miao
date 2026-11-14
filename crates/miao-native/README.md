@@ -27,7 +27,7 @@ cargo test --release        # lib + bin Rust unit tests
 ```
 
 The JS parity suites compare the Rust matchers against the TypeScript references across fixtures and a
-generated corpus (`packages/core/test/tool-edit-native.test.ts`, `packages/core/test/patch-native.test.ts`);
+generated corpus (`packages/engine-ts/core/test/tool-edit-native.test.ts`, `packages/engine-ts/core/test/patch-native.test.ts`);
 they skip when the addon is absent.
 
 ## API
@@ -43,11 +43,11 @@ deriveNewContentsV2(chunks, filePath, originalText) -> { content, unifiedDiff, b
 gitStatus(path) -> Array<{ path, status }>
 ```
 
-`matchEdit` is the shared contract with `packages/core/src/tool/edit-match.ts`: an exact occurrence
+`matchEdit` is the shared contract with `packages/engine-ts/core/src/tool/edit-match.ts`: an exact occurrence
 wins, otherwise the restored V1 strategies run in order, each gated by line-anchor, disproportionate
 span and uniqueness safety. `replaceOnly`/`applyEdit` build on it; an older addon without `matchEdit`
 falls back to the TypeScript reference. `deriveNewContentsV2` is the shared contract with
-`packages/core/src/patch.ts`'s `deriveTs`, used by the V2 apply_patch path; `deriveNewContents` keeps
+`packages/engine-ts/core/src/patch.ts`'s `deriveTs`, used by the V2 apply_patch path; `deriveNewContents` keeps
 the legacy insertion point for `packages/miao/src/patch/index.ts`, and an older addon without
 `deriveNewContentsV2` falls back to the TypeScript reference. `gitStatus` uses `gix` and returns
 worktree-vs-index changes (`added` / `modified` / `deleted` / `renamed` / `copied`).
@@ -72,7 +72,7 @@ miao-run --workdir <dir> [--allow-path <dir>]... [--allow-network] [--compat] [-
 
 ### Escalating denials
 
-`packages/core/src/sandbox.ts` and `packages/core/src/sandbox/runner.ts` are the integration seam:
+`packages/engine-ts/core/src/sandbox.ts` and `packages/engine-ts/core/src/sandbox/runner.ts` are the integration seam:
 `Sandbox.wrap` runs the command, reads `--deny-report`, and the V2 `bash` tool requests
 `external_directory` approval for the blocked directories, then retries with them writable. It is
 wired into the V2 `bash` tool.
@@ -126,9 +126,9 @@ straight into the output, the unified diff buffer is preallocated, and there is 
 
 ## Status
 
-The V2 edit tool uses the `matchEdit` contract through `packages/core/src/tool/edit-match.ts` when the
+The V2 edit tool uses the `matchEdit` contract through `packages/engine-ts/core/src/tool/edit-match.ts` when the
 addon exposes it, and falls back to the TypeScript reference otherwise. The V2 apply_patch path uses
-`deriveNewContentsV2` through `packages/core/src/patch.ts` with the same fallback; the legacy
+`deriveNewContentsV2` through `packages/engine-ts/core/src/patch.ts` with the same fallback; the legacy
 `deriveNewContents` stays wired through `packages/miao/src/patch`. The sandbox runner is wired into
 the V2 `bash` tool through `@miao/core/sandbox`. In-process `gitStatus` remains a prototype; the
 default Git path is still subprocess-based.

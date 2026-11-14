@@ -268,7 +268,7 @@ fn user_content(text: &[String], images: &[Value]) -> Value {
 /// assistant turn. DeepSeek's thinking mode does, and its identifier names the
 /// family on every route miao can reach (`deepseek/deepseek-flash`,
 /// `opencode-go/deepseek-v4.1-flash`), the same signal the TypeScript runner
-/// keys on in `packages/core/src/session/runner/to-llm-message.ts`. Other
+/// keys on in `packages/engine-ts/core/src/session/runner/to-llm-message.ts`. Other
 /// OpenAI-compatible gateways do not read the field, so it stays omitted
 /// rather than becoming an unknown key in their request bodies.
 fn requires_reasoning_passback(model: &str) -> bool {

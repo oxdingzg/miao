@@ -617,7 +617,7 @@ describe.skipIf(process.platform === "win32" || SandboxRunner.backend() === unde
 
 // End-to-end against the real kernel sandbox: the built `miao-run` binary when
 // present, otherwise the source runner through the native addon.
-const builtRunner = path.join(import.meta.dir, "../../../crates/miao-native/target/release/miao-run")
+const builtRunner = path.join(import.meta.dir, "../../../../crates/miao-native/target/release/miao-run")
 const realRunner = existsSync(builtRunner) ? builtRunner : undefined
 const realAvailable =
   process.platform === "darwin" &&

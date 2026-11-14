@@ -23,11 +23,11 @@ This package is an Effect Schema-first LLM core. The Schema classes in `src/sche
 
 Primary in-repo integration point:
 
-- `packages/core/src/session/runner/llm.ts` is the session-owned V2 orchestration layer. Each provider turn makes one explicit `LLMClient.stream(request)` call; there is no AI SDK versus native-route branch.
-- `packages/core/src/session/runner/to-llm-message.ts` lowers V2 session history into this package's `LLMRequest` message model.
-- `packages/core/src/session/runner/publish-llm-event.ts` projects this package's `LLMEvent`s onto durable Session events.
+- `packages/engine-ts/core/src/session/runner/llm.ts` is the session-owned V2 orchestration layer. Each provider turn makes one explicit `LLMClient.stream(request)` call; there is no AI SDK versus native-route branch.
+- `packages/engine-ts/core/src/session/runner/to-llm-message.ts` lowers V2 session history into this package's `LLMRequest` message model.
+- `packages/engine-ts/core/src/session/runner/publish-llm-event.ts` projects this package's `LLMEvent`s onto durable Session events.
 
-Keep this package independent of session concerns. Session auth, permissions, plugins, telemetry headers, and continuation belong in `packages/core/src/session/runner/*`.
+Keep this package independent of session concerns. Session auth, permissions, plugins, telemetry headers, and continuation belong in `packages/engine-ts/core/src/session/runner/*`.
 
 ### Request Flow
 
@@ -115,7 +115,7 @@ Keep provider facades small and explicit:
 ### Folder layout
 
 ```
-packages/llm/src/
+packages/engine-ts/llm/src/
   schema/                   canonical Schema model, split by concern
     ids.ts                  branded IDs, literal types, ProviderMetadata
     options.ts              Generation/Provider/Http options, Limits, Model, cache policy

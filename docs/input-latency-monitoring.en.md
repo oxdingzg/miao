@@ -16,7 +16,7 @@ Implementation: `16cb4a0f7` (`perf(miao): make monitoring probes and writes asyn
 
 ## Verification
 
-- `packages/core`: diagnostic storage tests, **8 pass**. Includes rotation/budgets, unrelated-file preservation, and mixed synchronous/asynchronous lease exclusion.
+- `packages/engine-ts/core`: diagnostic storage tests, **8 pass**. Includes rotation/budgets, unrelated-file preservation, and mixed synchronous/asynchronous lease exclusion.
 - `packages/miao`: typecheck passed; monitor regression, **1 pass / 16 assertions**. A real child process uses deliberately slow 500ms OS probes, while main-thread heartbeats continue. The test waits for recorded samples rather than a fixed readiness sleep, and checks overlap suppression plus persisted window metrics.
 - Native histogram calibration: [monitor-calibration-2026-10-04.json](monitor-calibration-2026-10-04.json), Bun 1.4.2. A deliberate 90ms pause produced an 85.766ms sampled maximum; reset returned count zero; the following idle window had a 2.018ms maximum. These are calibration observations, not keyboard latency measurements.
 

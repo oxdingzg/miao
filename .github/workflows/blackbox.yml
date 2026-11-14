@@ -37,5 +37,5 @@ jobs:
         run: cargo build --locked --bin miao-engine
       - name: Core tape and real Session replay
         if: matrix.shard == 1
-        working-directory: packages/core
+        working-directory: packages/engine-ts/core
         run: bun test test/blackbox*.test.ts test/session-runner.test.ts

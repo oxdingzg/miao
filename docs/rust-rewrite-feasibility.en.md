@@ -70,7 +70,7 @@ Of the four modules I start with this one, not because it is the fastest, but be
 
 **Current implementation**
 
-- Matching: V2 `packages/core/src/tool/edit.ts` tries an exact match, then falls back to `edit-fuzzy.ts` (`matchFuzzy`), which tolerates per-line whitespace and indentation differences. The nine-replacer implementation (Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence) lived in the removed V1 `packages/miao/src/tool/edit.ts` and now survives only in the Rust addon.
+- Matching: V2 `packages/engine-ts/core/src/tool/edit.ts` tries an exact match, then falls back to `edit-fuzzy.ts` (`matchFuzzy`), which tolerates per-line whitespace and indentation differences. The nine-replacer implementation (Simple / LineTrimmed / BlockAnchor / WhitespaceNormalized / IndentationFlexible / EscapeNormalized / TrimmedBoundary / ContextAware / MultiOccurrence) lived in the removed V1 `packages/miao/src/tool/edit.ts` and now survives only in the Rust addon.
 - Diff generation: `diffLines` and `createTwoFilesPatch` from `diff` (jsdiff 8.0.2), called repeatedly in `core/src/tool/{edit,apply-patch}.ts`, `snapshot/index.ts`, and `project/vcs.ts`.
 - A single edit calls `createTwoFilesPatch` several times: once before formatting, once after, and again on the core side.
 
@@ -123,7 +123,7 @@ Conclusion: behaviour is correct and, after optimization, the typical and pathol
 
 ### Native modules landed (PoC; pure functions, `MIAO_NATIVE`-gated with a TS fallback)
 
-Each function ships with Rust unit tests. The JS parity suites were removed with the V1 tools; native coverage now also includes `packages/core/test/sandbox-policy.test.ts` and `packages/core/test/tool-bash-sandbox.test.ts`, run by the `native` and `sandbox-linux` CI jobs.
+Each function ships with Rust unit tests. The JS parity suites were removed with the V1 tools; native coverage now also includes `packages/engine-ts/core/test/sandbox-policy.test.ts` and `packages/engine-ts/core/test/tool-bash-sandbox.test.ts`, run by the `native` and `sandbox-linux` CI jobs.
 
 | Area | Functions | Parity target |
 |---|---|---|

@@ -158,7 +158,7 @@ $wd = New-Item -ItemType Directory -Path $env:TEMP\miao-wd -Force
 - `crates/miao-sandbox/src/lib.rs` (seatbelt / landlock / backend dispatch and `supported()`)
 - `crates/miao-native/src/bin/miao-run.rs` (dev/test runner, calls `miao-sandbox`)
 - `crates/miao-native/tests/linux-sandbox.rs` (Linux enforcement tests; template for the Windows version)
-- `packages/core/src/sandbox/runner.ts` (`resolve` / `backend`) and `packages/core/src/sandbox.ts` (`Sandbox.Service`)
+- `packages/engine-ts/core/src/sandbox/runner.ts` (`resolve` / `backend`) and `packages/engine-ts/core/src/sandbox.ts` (`Sandbox.Service`)
 - `packages/miao/src/sandbox-runner.ts` (the hidden `__sandbox-run` implementation for release self-exec)
 - `.github/workflows/native.yml` (`native` / `sandbox-linux` jobs; add `sandbox-windows`)
 - `docs/rust-rewrite-feasibility.en.md` (where the sandbox sits in the overall plan)

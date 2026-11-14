@@ -67,7 +67,7 @@ impl Palette {
 }
 
 /// Token colours for code, named after the product's `syntax*` theme keys
-/// (`packages/plugin/src/tui.ts: TuiThemeCurrent`). A grammar decides which
+/// (`packages/engine-ts/plugin/src/tui.ts: TuiThemeCurrent`). A grammar decides which
 /// token a run of code is; this decides what that token looks like.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Syntax {

@@ -3,7 +3,7 @@
 [Roadmap](roadmap.md) §9 gate 2's reverse bridge covers product tools; this
 document designs the last plugin-surface gap: hooks that plugins register at
 runtime (`host.tool.definition`, and the `before`/`after` pair exposed at
-`packages/core/src/plugin/host.ts`) do not execute around tool calls in
+`packages/engine-ts/core/src/plugin/host.ts`) do not execute around tool calls in
 engine-owned Sessions.
 
 ## 1. What already works

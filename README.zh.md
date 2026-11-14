@@ -121,7 +121,7 @@ V2 自治循环需要显式开启：待办仍未完成时继续推进，同时�
 
 ## 远程会话接入
 
-在 TUI 输入 `/remote-control`，配置自建中继、配对 App/Web 设备或撤销授权。旧微信/QQ连接器和本机 IM 会话 Router 已移除。详见 [Runtime 行为](docs/runtime.md) 和 [中继配置](packages/remote-control/README.md)。
+在 TUI 输入 `/remote-control`，配置自建中继、配对 App/Web 设备或撤销授权。旧微信/QQ连接器和本机 IM 会话 Router 已移除。详见 [Runtime 行为](docs/runtime.md) 和 [中继配置](packages/engine-ts/remote-control/README.md)。
 
 ## 有数据，也有明确边界的性能优化
 

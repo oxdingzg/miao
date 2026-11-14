@@ -1,12 +1,12 @@
 // Generates the V4A patch differential corpus from the TypeScript reference
-// implementation (packages/core/src/patch.ts). The expected file map in the
+// implementation (packages/engine-ts/core/src/patch.ts). The expected file map in the
 // corpus is produced by the reference, so the Rust engine is checked against an
 // independent oracle rather than a hand-written expectation.
 //
 //   bun crates/miao-engine/tests/differential/generate.ts
 //
 // Writes crates/miao-engine/tests/differential/patch_corpus.json.
-import { parse, deriveTs, joinBom } from "../../../../packages/core/src/patch.ts"
+import { parse, deriveTs, joinBom } from "../../../../packages/engine-ts/core/src/patch.ts"
 
 type Files = Record<string, string>
 interface Case {

@@ -1,5 +1,5 @@
-import { ShellApproval } from "../../../../packages/core/src/shell/approval"
-import { PermissionV2 } from "../../../../packages/core/src/permission"
+import { ShellApproval } from "../../../../packages/engine-ts/core/src/shell/approval"
+import { PermissionV2 } from "../../../../packages/engine-ts/core/src/permission"
 
 // Golden decisions come from the real host evaluator. Rust consumes this corpus
 // to pin the contract at the bridge, including last-match exceptions and the

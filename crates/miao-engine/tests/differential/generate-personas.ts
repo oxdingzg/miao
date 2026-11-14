@@ -1,6 +1,6 @@
 // Independent oracle: execute the real TS selector, then check native selection
 // against its UTF-8 asset hashes. Never duplicate TS dispatch rules in the test.
-import { Persona } from "../../../../packages/core/src/system-context/persona"
+import { Persona } from "../../../../packages/engine-ts/core/src/system-context/persona"
 import path from "node:path"
 
 const inputs = [

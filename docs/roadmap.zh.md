@@ -20,7 +20,7 @@
 - V1 会话运行时、工具，以及 `/session/*`、`/permission/*`、`/question/*`、`/sync/*` 路由组
   已删除。服务端只挂载 `/api/*`、OpenAPI 文档与内嵌 UI。
 - V1 退役的 Stage 1–5 已全部落地。创建已是 V2 原生（`session.next.created.1`）；V1 投影器与
-  `packages/core/v1` schema 仅为 legacy DB 读取、backfill、compact、restore 保留。
+  `packages/engine-ts/core/v1` schema 仅为 legacy DB 读取、backfill、compact、restore 保留。
 - 所有已发布的客户端——TUI、`--mini`、ACP、`miao run`、web/desktop app——
   都通过 `/api/*` 读写。TUI 已**清零** legacy SDK 调用。
 - app 已从 vendored 上游客户端切到 `@miao/client`；`detectServerProtocol` 与
@@ -41,7 +41,7 @@
   （#132）；ripgrep 已设界（默认超时 + `Stream.splitLines` + 行数上限）；AST 模糊编辑阶梯
   （行裁剪、块锚点、相似度阈值）已实现（#76 #80 #103）；peer 消息在安全续跑边界投递并显示出站
   回执（#112 #150）；供应商重复输出检测已覆盖多短语循环（#53 #127）。
-- **配置/存储/性能**：config V1 自动迁移（`packages/core/src/config.ts` 的 `ConfigMigrateV1`）；
+- **配置/存储/性能**：config V1 自动迁移（`packages/engine-ts/core/src/config.ts` 的 `ConfigMigrateV1`）；
   `miao db {stats,backfill,vacuum,compact,restore,externalize-blobs,gc-blobs,retention}`
   （#55 #56 #61 #63 #77）；durable log 读取分页（#52）；并发 drain 上限（#100）；独立 PTY 输入
   延迟测试台（#141）与输入计时追踪。
@@ -124,8 +124,8 @@ V1 形状的遗留：
 - [ ] 在远端消费者需要处，通过 HTTP 与生成的 SDK 暴露可重放的 Session 事件游标。
 
 ### 2.2 后台 / 异步任务（G6）
-**入口：** `packages/core/src/session/background-jobs.ts`、`packages/core/src/tool/background-job.ts`、
-`packages/core/src/background-job.ts`、`packages/core/src/tool/bash.ts`。
+**入口：** `packages/engine-ts/core/src/session/background-jobs.ts`、`packages/engine-ts/core/src/tool/background-job.ts`、
+`packages/engine-ts/core/src/background-job.ts`、`packages/engine-ts/core/src/tool/bash.ts`。
 - [ ] 采用 ACP terminal 契约（`terminal/create` → `output`
       [output/truncated/exitStatus] / `wait_for_exit` / `kill` / `release`、`outputByteLimit`
       从头部按字符边界截断）。
@@ -135,8 +135,8 @@ V1 形状的遗留：
 - **验收：** 启动一个后台任务，重启 dev server，查询状态并取回退出码与截断输出。
 
 ### 2.3 取消结算与工具进度（G4）
-**入口：** `packages/core/src/session/runner/llm.ts`、`to-llm-message.ts`、
-`packages/core/src/tool/bash.ts`、`packages/core/src/session/input.ts`。
+**入口：** `packages/engine-ts/core/src/session/runner/llm.ts`、`to-llm-message.ts`、
+`packages/engine-ts/core/src/tool/bash.ts`、`packages/engine-ts/core/src/session/input.ts`。
 进展：停滞的子代理会被中断，父级中断时清理子进程组；中断会清除工具 fiber 并让未结算工具
 失败，而 durable 的排队/转向输入得以保留；中断悬挂的 permission/question 会发布
 `Replied(reject)`/`Rejected`；附件在请求构建时按模型能力归一化；工具进度事件已端到端接通
@@ -160,7 +160,7 @@ V1 形状的遗留：
 - **验收：** 中断一个带子任务与悬挂审批的会话 → 无悬挂/丢失状态，无丢失的排队消息。
 
 ### 2.4 崩溃恢复幂等（G5）
-**入口：** `packages/core/src/session/runner/llm.ts`。
+**入口：** `packages/engine-ts/core/src/session/runner/llm.ts`。
 进展：由前序进程遗留仍在运行的工具会以「结果未知」错误结算（`failInterruptedTools`），且
 未派发调用与「结果未知」调用已被区分（#101）。
 - [x] 持久化以 Session、assistant/provider-turn 和 `callID` 为键的一次性 dispatch token。
@@ -173,8 +173,8 @@ V1 形状的遗留：
   该机制防止同一 attempt 重派，不承诺外部 exactly-once，也不引入崩溃后的自动 provider 续跑。
 
 ### 2.5 输出边界 / 超时 / 上限（G7）
-**入口：** `packages/core/src/tool/bash.ts`、`packages/core/src/ripgrep.ts`、
-`packages/core/src/tool/{websearch,http-body}.ts`、`packages/core/src/tool-output-store.ts`。
+**入口：** `packages/engine-ts/core/src/tool/bash.ts`、`packages/engine-ts/core/src/ripgrep.ts`、
+`packages/engine-ts/core/src/tool/{websearch,http-body}.ts`、`packages/engine-ts/core/src/tool-output-store.ts`。
 进展：ripgrep 强制默认 30s 超时（可覆盖），并用 `Stream.splitLines` + 行数上限为扫描设界；
 webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完整 shell 输出流式落受管存储，
 同时内存预览有界（#132）。
@@ -184,14 +184,14 @@ webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完
 - **验收：** `yes` / 超长行输出不会撑爆内存或挂起；长时间 grep 干净超时。
 
 ### 2.6 AST 编辑阶梯（G8 剩余）
-**入口：** `packages/core/src/tool/edit.ts`、`edit-fuzzy.ts`、`edit-match.ts`、
-`packages/core/src/snapshot.ts`。
+**入口：** `packages/engine-ts/core/src/tool/edit.ts`、`edit-fuzzy.ts`、`edit-match.ts`、
+`packages/engine-ts/core/src/snapshot.ts`。
 - [x] 已按 V1 策略刻意移植 AST 感知编辑阶梯（行裁剪匹配、块锚点回退、缩进修正、相似度阈值
       复核）（#76 #80 #103）。
 - **验收：** 会被 token 匹配破坏的编辑被结构化应用或被拒绝；undo 还原编辑前的字节。
 
 ### 2.7 MCP 渐进发现 / OAuth / CIMD（G9 剩余）
-**入口：** `packages/core/src/mcp.ts`；OAuth 先例在 `packages/miao/src/mcp/{auth,oauth-provider}.ts`。
+**入口：** `packages/engine-ts/core/src/mcp.ts`；OAuth 先例在 `packages/miao/src/mcp/{auth,oauth-provider}.ts`。
 进展：MCP 规范工具名按码点顺序确定性去重（先到先得）。
 - [ ] 渐进发现（`search_tools` → `get_tool_details`，在 1–5% context 时切换，在缓存断点后追加，
       永不重排）。
@@ -207,8 +207,8 @@ webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完
       持久化。
 
 ### 2.8 bash 之外的沙箱覆盖（G12 剩余）
-**入口：** `packages/core/src/sandbox.ts`（`Sandbox.Service`）、
-`packages/core/src/sandbox/{runner,policy}.ts`、`packages/core/src/config/sandbox.ts`。
+**入口：** `packages/engine-ts/core/src/sandbox.ts`（`Sandbox.Service`）、
+`packages/engine-ts/core/src/sandbox/{runner,policy}.ts`、`packages/engine-ts/core/src/config/sandbox.ts`。
 进展：V2 bash 与 code-mode 在 core OS 沙箱下运行；catch-all allow 规则无法解除它。
 - [ ] 把同一 core-owned 沙箱扩展到其他变更型工具（workdir、允许路径、网络），fail-closed、
 - [x] RS：`monitor` 工具已纳入同一沙箱——monitor 命令现经沙箱 runner 启动
@@ -271,12 +271,12 @@ webfetch/websearch 对响应体设界；MCP 图片结果上限 5 MB base64；完
 
 **状态：** partial —— 插件 API 与 config 迁移已落地；service 热重载与 provider-as-plugin 未完成。
 - [x] config V1 自动迁移（`ConfigMigrateV1`）；含任意 V1 key 的文档整体迁移
-      （`packages/core/src/config.ts`）。
+      （`packages/engine-ts/core/src/config.ts`）。
 - [x] 已有作用于作用域化 context/registration seam 的 V2 插件表面
-      （`packages/plugin/src/v2/{promise,effect}`，含 `context.ts` 与 `registration.ts`，建在
-      `packages/core/src/system-context/registry.ts` 之上）。
+      （`packages/engine-ts/plugin/src/v2/{promise,effect}`，含 `context.ts` 与 `registration.ts`，建在
+      `packages/engine-ts/core/src/system-context/registry.ts` 之上）。
 - [ ] 成功读取后的嵌套项目指令发现，在下一个 Safe Provider-Turn Boundary 处 durable 准入
-      （入口 `packages/core/src/instruction-context.ts`）。
+      （入口 `packages/engine-ts/core/src/instruction-context.ts`）。
 - [ ] 设计服务端插件 API 与 hooks（immer 草稿以便丢弃坏变更、全局实例、工具注册）。
 - [ ] 通过细粒度事件让每个 service 可热重载，而非拆除重建，使服务能对变化做出反应并自我
       重配（前端也能收到，如 `model.added`）；这也避免启动阻塞。

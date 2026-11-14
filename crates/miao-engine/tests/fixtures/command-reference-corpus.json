@@ -1,5 +1,5 @@
 {
-  "producer": "packages/core/src/session/command.ts: SessionCommand.files",
+  "producer": "packages/engine-ts/core/src/session/command.ts: SessionCommand.files",
   "records": [
     {
       "text": "Read @src/main.ts and ask @reviewer.",

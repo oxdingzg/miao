@@ -11,7 +11,7 @@ The engine and the product currently exist side by side as two implementations
 of the same session core, with no integration between them:
 
 - The product (bun/TypeScript) owns the CLI, TUI and desktop shell, the V2
-  session core in `packages/core` (durable `session_input` rows, the serialized
+  session core in `packages/engine-ts/core` (durable `session_input` rows, the serialized
   runner, `SessionRunCoordinator`), the plugin/hook/skill ecosystem, config and
   the install/update pipeline (`install`, `script/install-local.sh`, channels
   and the channel-scoped database).

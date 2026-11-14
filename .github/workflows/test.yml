@@ -152,7 +152,7 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
       - name: Verify storage, session ownership, and Windows location paths
-        working-directory: packages/core
+        working-directory: packages/engine-ts/core
         run: bun test test/runtime-ownership.test.ts test/session-ownership.test.ts test/process/process.test.ts test/location-filesystem-windows.test.ts
 
   unit:

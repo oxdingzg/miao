@@ -1781,7 +1781,7 @@ fn project_copy_apply(
 }
 
 /// Carry the source's uncommitted changes onto the target — the TypeScript
-/// product's warp `copyChanges` (packages/core/src/workspace-live.ts): the
+/// product's warp `copyChanges` (packages/engine-ts/core/src/workspace-live.ts): the
 /// HEAD diff plus every untracked file, applied on the target as one patch.
 /// Returns the patch size carried; zero means the source was clean. The
 /// target must be a git repository: a patch needs something to apply against.

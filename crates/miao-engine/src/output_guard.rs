@@ -1,6 +1,6 @@
 //! Repetitive-output guard.
 //!
-//! Ported from `packages/core/src/session/runner/output-guard.ts`. A model can
+//! Ported from `packages/engine-ts/core/src/session/runner/output-guard.ts`. A model can
 //! loop on a short prose refrain without ever calling a tool, so the bounded
 //! tool-call loop never sees it. This guard watches streamed text and reasoning
 //! per part and reports a loop once the last [`WINDOW_LINES`] prose lines are

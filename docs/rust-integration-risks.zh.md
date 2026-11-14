@@ -8,12 +8,12 @@
 
 ### R1. 打包与分发（已解决）（高）
 - 证据：`packages/miao/script/build.ts` 用 `bun build --compile` 产出**单文件**二进制，原生依赖（`@ff-labs/fff-bun` 等）从 node_modules 内嵌。
-- addon：新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测）。release 用 `--single`，每个平台 runner 先跑 `packages/native/build.ts` 构建**宿主** addon，非宿主 target 自动隐藏，避免把错平台 `.node` 打进包。
+- addon：新增 `packages/native`（`@miao/native`），用**字面量** `require("./miao-native.node")` 加载 addon，可被 `--compile` 内嵌（已实测）。release 用 `--single`，每个平台 runner 先跑 `packages/engine-ts/native/build.ts` 构建**宿主** addon，非宿主 target 自动隐藏，避免把错平台 `.node` 打进包。
 - 沙箱 sidecar：不再需要随包分发独立的 `miao-run`。沙箱逻辑抽到 `crates/miao-sandbox`，由 addon 暴露 `sandboxProfile`（macOS profile）与 `sandboxRestrict`（Linux landlock）；编译后的主二进制通过隐藏命令 `__sandbox-run` **自执行**运行沙箱子进程（`build.ts` 定义 `MIAO_PACKAGED`，`SandboxRunner.resolve()` 据此返回 `process.execPath` + `__sandbox-run`）。单文件、每平台天然对应、复用同一签名/公证。`miao-run` 仅保留给 dev/测试与 `MIAO_RUN` 覆盖。
 - 已实测：`miao-preview __sandbox-run --print-profile`、workdir 内写入成功、workdir 外写入被拒并写出 deny-report。
 
 ### R2. CI 现在是假绿（高）
-- 证据：撰写时 `packages/miao/test/tool/*-native.test.ts` 里用 `withNative = native ? describe : describe.skip`（`withMiaoRun` 同理），`.node`/`miao-run` 不存在就整体 skip。这些测试已随 V1 工具删除；当前原生覆盖是 Rust 单元测试加 `packages/core/test/sandbox-policy.test.ts`、`packages/core/test/tool-bash-sandbox.test.ts`。
+- 证据：撰写时 `packages/miao/test/tool/*-native.test.ts` 里用 `withNative = native ? describe : describe.skip`（`withMiaoRun` 同理），`.node`/`miao-run` 不存在就整体 skip。这些测试已随 V1 工具删除；当前原生覆盖是 Rust 单元测试加 `packages/engine-ts/core/test/sandbox-policy.test.ts`、`packages/engine-ts/core/test/tool-bash-sandbox.test.ts`。
 - 后果：不构建 Rust 的 CI 会“通过”，但实际一个 native 用例都没跑。任何 Rust 回归都没人发现。
 - 缓解：`.github/workflows/native.yml` 的 `native` 与 `sandbox-linux` job 会构建 Rust 并跑沙箱测试，作为硬门槛。
 
@@ -78,7 +78,7 @@
 ## 六、建议的接入顺序与门槛
 
 1. ~~先解决 R1/R2~~ → **已解决**：addon 每平台构建 + 沙箱自执行（R1）；`native`/`sandbox-linux` CI job 强制构建并运行沙箱测试（R2）。
-2. ~~先接风险最低的~~ → **换了一种接法**：原计划基于「native `edit`/`apply_patch` 只被 V1 工具消费」这一假设。该假设并不成立 —— V2 工具本身就经 `packages/core/src/tool/edit-match.ts` 与 `packages/core/src/patch.ts` 调用同一套 `matchEdit` 与 `deriveNewContentsV2`，由 `MIAO_NATIVE` 控制（默认开启）。V1 移除的是工具，不是原语。
+2. ~~先接风险最低的~~ → **换了一种接法**：原计划基于「native `edit`/`apply_patch` 只被 V1 工具消费」这一假设。该假设并不成立 —— V2 工具本身就经 `packages/engine-ts/core/src/tool/edit-match.ts` 与 `packages/engine-ts/core/src/patch.ts` 调用同一套 `matchEdit` 与 `deriveNewContentsV2`，由 `MIAO_NATIVE` 控制（默认开启）。V1 移除的是工具，不是原语。
 3. **git status 已接入（窄范围）**：async 封装（R3）已完成并用于 `Git.status.entries`，含 untracked 与逐条增删行数；`add`/`write-tree` 仍是子进程，snapshot 全链路收益仍有限（R7）。
 4. **sandbox 作为可选能力**：已 opt-in 接入 V2 `bash` 工具（`MIAO_SANDBOX=1` 或 `sandbox.mode`）并可回退；Linux 后端已补；默认开启仍待定。不要用 stderr 解析做 escalation 的唯一依据。
 5. 每一步都以“现有测试全绿 + 新 parity 不 skip + 内存/RSS 基线”作为验收。

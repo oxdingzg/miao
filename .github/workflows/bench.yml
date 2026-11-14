@@ -32,7 +32,7 @@ jobs:
       - name: Measure request preparation
         run: |
           set -euo pipefail
-          cd packages/core
+          cd packages/engine-ts/core
           bun run bench | tee "$RUNNER_TEMP/bench.txt"
           {
             echo "### Request preparation"
@@ -43,5 +43,5 @@ jobs:
             echo
             echo "Budgets are reference medians scaled by 3 and given 1.25 headroom."
             echo "Compare the reported medians with the references in"
-            echo '`packages/core/bench/request-preparation.ts` and tighten both.'
+            echo '`packages/engine-ts/core/bench/request-preparation.ts` and tighten both.'
           } >> "$GITHUB_STEP_SUMMARY"

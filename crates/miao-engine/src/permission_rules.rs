@@ -1,6 +1,6 @@
 //! Layered permission rule evaluation (S6 step 1): the pattern-rule model the
 //! host's permission service applies, mirrored from
-//! `packages/core/src/permission.ts` `PermissionV2.decide`. This is the rule
+//! `packages/engine-ts/core/src/permission.ts` `PermissionV2.decide`. This is the rule
 //! evaluator, not the exact-call grant cache (`crate::permission_grant`):
 //! grants answer "was this call approved", rules answer "does policy allow a
 //! shape of call". Semantics are pinned by

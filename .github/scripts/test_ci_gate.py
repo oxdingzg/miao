@@ -16,16 +16,16 @@ class GateTest(unittest.TestCase):
             self.assertTrue(all(gate.classify([path]).values()), path)
 
     def test_runtime_dependencies_require_browser_and_replay_checks(self):
-        flags = gate.classify(["packages/core/src/session/runner/turn.ts"])
+        flags = gate.classify(["packages/engine-ts/core/src/session/runner/turn.ts"])
         for name in ["blackbox", "e2e", "remote"]:
             self.assertTrue(flags[name], name)
-        self.assertTrue(gate.classify(["packages/remote-control/src/browser.ts"])["e2e"])
+        self.assertTrue(gate.classify(["packages/engine-ts/remote-control/src/browser.ts"])["e2e"])
 
     def test_product_session_changes_require_actual_native_contracts(self):
         for path in [
-            "packages/core/src/session/runner/llm.ts",
-            "packages/core/src/system-context/persona/gemini.txt",
-            "packages/core/src/google-account/transport.ts",
+            "packages/engine-ts/core/src/session/runner/llm.ts",
+            "packages/engine-ts/core/src/system-context/persona/gemini.txt",
+            "packages/engine-ts/core/src/google-account/transport.ts",
             "packages/schema/src/agent.ts",
         ]:
             self.assertTrue(gate.classify([path])["engine"], path)

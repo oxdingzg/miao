@@ -247,7 +247,7 @@ pub fn todo_signature(state: &Value) -> String {
 
 /// The task-list protocol the system prompt carries, mirroring the
 /// instructions in the TypeScript `SessionTodo.context` block
-/// (`packages/core/src/session/todo.ts`).
+/// (`packages/engine-ts/core/src/session/todo.ts`).
 ///
 /// It is constant text, so it costs the Session one context epoch no matter how
 /// many turns run: only Anthropic personas name `todowrite`, and a model loaded
@@ -421,7 +421,7 @@ pub(crate) fn projection(conn: &Connection, session: &str, through: u64) -> Resu
 
 /// A list that stopped tracking real progress is worse than no list: the model
 /// keeps reading finished work as open and open work as finished.
-/// `packages/core/src/session/todo.ts` nudges a stale ledger through
+/// `packages/engine-ts/core/src/session/todo.ts` nudges a stale ledger through
 /// `turnsBehind`; the Rust Session had no counterpart, so a long turn could run
 /// dozens of tool calls without ever being asked to reconcile.
 pub fn ledger_nudge(turns_since_write: u64) -> Option<&'static str> {

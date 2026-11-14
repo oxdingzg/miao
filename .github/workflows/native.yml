@@ -56,11 +56,11 @@ jobs:
 
       - name: Build @miao/native addon
         run: bun run build.ts
-        working-directory: packages/native
+        working-directory: packages/engine-ts/native
 
       - name: Sandbox tests
         run: bun test test/sandbox-policy.test.ts test/tool-bash-sandbox.test.ts test/tool-edit-native.test.ts test/patch-native.test.ts test/git-status-native.test.ts
-        working-directory: packages/core
+        working-directory: packages/engine-ts/core
         env:
           MIAO_NATIVE: "1"
           MIAO_NATIVE_REQUIRED: "1"
@@ -115,7 +115,7 @@ jobs:
 
       - name: Build native addon
         run: bun run build.ts
-        working-directory: packages/native
+        working-directory: packages/engine-ts/native
 
       - name: Build miao-run
         run: cargo build --release --bin miao-run
@@ -190,7 +190,7 @@ jobs:
 
       - name: Build native addon
         run: bun run build.ts
-        working-directory: packages/native
+        working-directory: packages/engine-ts/native
 
       - name: Build miao-run
         run: cargo build --release --bin miao-run

@@ -71,7 +71,7 @@ inline with `[RS: …]`.
 - V1 session runtime, tools, and the `/session/*`, `/permission/*`, `/question/*`, `/sync/*`
   route groups are deleted. The server mounts `/api/*`, OpenAPI docs, and the embedded UI only.
 - V1 retirement Stages 1–5 have landed. Creation is V2-native (`session.next.created.1`); the V1
-  projector and `packages/core/v1` schemas remain only for legacy DB reads, backfill, compact, and
+  projector and `packages/engine-ts/core/v1` schemas remain only for legacy DB reads, backfill, compact, and
   restore.
 - Every shipped client — TUI, `--mini`, ACP, `miao run`, web/desktop app — reads and
   writes through `/api/*`. The TUI has **zero** legacy SDK calls left.
@@ -94,7 +94,7 @@ inline with `[RS: …]`.
   storage (#132); ripgrep is bounded (default timeout + `Stream.splitLines` + row limit); the AST
   fuzzy edit ladder (line-trimmed, block-anchor, similarity-threshold) is implemented (#76 #80
   #103); peer messages are delivered at safe continuation boundaries with outgoing receipts (#112); provider-repetition detection covers multi-phrase loops (#53 #127).
-- **Config/storage/perf**: config V1 auto-migration (`ConfigMigrateV1` in `packages/core/src/config.ts`);
+- **Config/storage/perf**: config V1 auto-migration (`ConfigMigrateV1` in `packages/engine-ts/core/src/config.ts`);
   `miao db {stats,backfill,vacuum,compact,restore,externalize-blobs,gc-blobs,retention}` (#55 #56
   #61 #63 #77); durable-log read paging (#52); concurrent drain cap (#100); isolated PTY
   input-latency harness (#141) and input-timing tracing.
@@ -246,8 +246,8 @@ The first Effect-native local runner is implemented. Next reviewed slices:
       seen seq back.
 
 ### 2.2 Background / async jobs (G6)
-**Entry:** `packages/core/src/session/background-jobs.ts`, `packages/core/src/tool/background-job.ts`,
-`packages/core/src/background-job.ts`, `packages/core/src/tool/bash.ts`.
+**Entry:** `packages/engine-ts/core/src/session/background-jobs.ts`, `packages/engine-ts/core/src/tool/background-job.ts`,
+`packages/engine-ts/core/src/background-job.ts`, `packages/engine-ts/core/src/tool/bash.ts`.
 - [ ] Adopt the ACP terminal contract (`terminal/create` → `output`
       [output/truncated/exitStatus] / `wait_for_exit` / `kill` / `release`, `outputByteLimit`
       truncated from the head on a char boundary).
@@ -259,8 +259,8 @@ The first Effect-native local runner is implemented. Next reviewed slices:
   plus truncated output.
 
 ### 2.3 Cancellation settlement & tool progress (G4)
-**Entry:** `packages/core/src/session/runner/llm.ts`, `to-llm-message.ts`,
-`packages/core/src/tool/bash.ts`, `packages/core/src/session/input.ts`.
+**Entry:** `packages/engine-ts/core/src/session/runner/llm.ts`, `to-llm-message.ts`,
+`packages/engine-ts/core/src/tool/bash.ts`, `packages/engine-ts/core/src/session/input.ts`.
 Progress: a stalled subagent is interrupted and child process groups are cleaned up on a parent
 interrupt; interrupt clears tool fibers and fails unsettled tools while durable queued/steer input
 survives; interrupting a pending permission/question publishes `Replied(reject)`/`Rejected`;
@@ -295,7 +295,7 @@ end to end (`session.next.tool.progress`).
   lost state, no lost queue messages.
 
 ### 2.4 Crash-recovery idempotency (G5)
-**Entry:** `packages/core/src/session/runner/llm.ts`.
+**Entry:** `packages/engine-ts/core/src/session/runner/llm.ts`.
 Progress: a tool left running by a prior process is settled with an outcome-unknown error
 (`failInterruptedTools`), and undispatched calls are distinguished from unknown-outcome calls (#101).
 - [x] On restart, mark unsettled calls outcome-unknown and require explicit retry/abandon.
@@ -311,8 +311,8 @@ Progress: a tool left running by a prior process is settled with an outcome-unkn
   or introduce automatic post-crash provider continuation.
 
 ### 2.5 Output bounds / timeouts / caps (G7)
-**Entry:** `packages/core/src/tool/bash.ts`, `packages/core/src/ripgrep.ts`,
-`packages/core/src/tool/{websearch,http-body}.ts`, `packages/core/src/tool-output-store.ts`.
+**Entry:** `packages/engine-ts/core/src/tool/bash.ts`, `packages/engine-ts/core/src/ripgrep.ts`,
+`packages/engine-ts/core/src/tool/{websearch,http-body}.ts`, `packages/engine-ts/core/src/tool-output-store.ts`.
 Progress: ripgrep enforces a default 30s timeout (overridable) and bounds a scan with
 `Stream.splitLines` plus a row limit; webfetch/websearch bound response bodies; MCP image results
 are capped at 5 MB base64; full shell output streams to managed storage while an in-memory preview
@@ -324,15 +324,15 @@ is bounded (#132).
   cleanly.
 
 ### 2.6 AST edit ladder (G8 remainder)
-**Entry:** `packages/core/src/tool/edit.ts`, `edit-fuzzy.ts`, `edit-match.ts`,
-`packages/core/src/snapshot.ts`.
+**Entry:** `packages/engine-ts/core/src/tool/edit.ts`, `edit-fuzzy.ts`, `edit-match.ts`,
+`packages/engine-ts/core/src/snapshot.ts`.
 - [x] AST-aware edit ladder ported deliberately from V1 (line-trimmed matching, block-anchor
       fallback, indentation correction, similarity-threshold review) (#76 #80 #103).
 - **Acceptance:** an edit a token match would corrupt is applied structurally or refused; undo
   restores pre-edit bytes.
 
 ### 2.7 MCP progressive discovery / OAuth / CIMD (G9 remainder)
-**Entry:** `packages/core/src/mcp.ts`; OAuth precedent in `packages/miao/src/mcp/{auth,oauth-provider}.ts`.
+**Entry:** `packages/engine-ts/core/src/mcp.ts`; OAuth precedent in `packages/miao/src/mcp/{auth,oauth-provider}.ts`.
 Progress: canonical MCP tool names are deduped deterministically (codepoint order, first wins).
 - [ ] Progressive discovery (`search_tools` → `get_tool_details`, switch at 1–5% context, append
       after the cache breakpoint, never reorder).
@@ -348,8 +348,8 @@ Progress: canonical MCP tool names are deduped deterministically (codepoint orde
   OAuth completes and credentials persist per issuer.
 
 ### 2.8 Sandbox coverage beyond bash (G12 remainder)
-**Entry:** `packages/core/src/sandbox.ts` (`Sandbox.Service`),
-`packages/core/src/sandbox/{runner,policy}.ts`, `packages/core/src/config/sandbox.ts`.
+**Entry:** `packages/engine-ts/core/src/sandbox.ts` (`Sandbox.Service`),
+`packages/engine-ts/core/src/sandbox/{runner,policy}.ts`, `packages/engine-ts/core/src/config/sandbox.ts`.
 Progress: V2 bash and code-mode run under the core OS sandbox; a catch-all allow rule cannot lift
 it.
 - [ ] Extend the same core-owned sandbox to the other mutating tools (workdir, allowed paths,
@@ -497,7 +497,7 @@ estimate.
 - **Evidence:** `crates/miao-engine/README.md`, `src/context_trigger.rs`, `src/runtime.rs` (the
   settled-boundary call site), `src/history.rs::compact_for_run`, `src/usage.rs` (normalized usage),
   `--context-limits`, `PROTOCOL.md` (`compact`, `pre_compact`/`post_compact`), and the TS
-  implementation in `packages/core/src/session/compaction.ts`.
+  implementation in `packages/engine-ts/core/src/session/compaction.ts`.
 
 ### 2.14 Compaction client surface and restore budget
 
@@ -535,10 +535,10 @@ estimate.
 **Status:** partial — the plugin API and config migration landed; service hot-reload and
 provider-as-plugin remain.
 - [x] Config V1 auto-migration (`ConfigMigrateV1`); a document with any V1 key is migrated as a
-      whole (`packages/core/src/config.ts`).
+      whole (`packages/engine-ts/core/src/config.ts`).
 - [x] A V2 plugin surface with a scoped context/registration seam exists
-      (`packages/plugin/src/v2/{promise,effect}` including `context.ts` and `registration.ts` on top
-      of `packages/core/src/system-context/registry.ts`).
+      (`packages/engine-ts/plugin/src/v2/{promise,effect}` including `context.ts` and `registration.ts` on top
+      of `packages/engine-ts/core/src/system-context/registry.ts`).
 - [x] Nested project instruction discovery — RS native (#1008: product
       instructions/skills/references map into host-owned manifests at owner
       creation; TS-side discovery for TS sessions remains).

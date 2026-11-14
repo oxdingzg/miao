@@ -20,7 +20,7 @@ was local. The cost is a forced rebase-and-rerun cycle on a hot main branch.
 1. **A journal payload change is a cross-engine change.** Adding, removing, or
    re-shaping any event kind the journal emits -- including fields on
    `usage`, `provider.started`, `tool.parallel.started`, lifecycle events --
-   must land in `packages/core`'s runner in the same pull request, or the
+   must land in `packages/engine-ts/core`'s runner in the same pull request, or the
    branch rebases onto a main where both sides already agree.
 2. **Wall-clock never enters the journal** (ADR-13's rule, generalized): any
    duration, latency, or timestamp that replay cannot reproduce belongs in a

@@ -30,7 +30,7 @@ jobs:
       - name: Native signed roster admission integration
         env:
           MIAO_NATIVE_ROSTER_PROBE: apps/ios/MiaoCore/.build/debug/RosterAdmissionProbe
-        run: bun packages/remote-control/script/check-native-roster.ts
+        run: bun packages/engine-ts/remote-control/script/check-native-roster.ts
       - name: iOS platform source check
         run: >-
           xcrun --sdk iphoneos swiftc -typecheck

@@ -23,9 +23,9 @@
 
 ## 原生工具与沙箱：适用范围
 
-V2 是唯一的会话运行时，工具位于 `packages/core/src/tool`；V1 兼容工具及其在 `packages/miao/src/tool` 的原生 edit／patch 路径均已删除。
+V2 是唯一的会话运行时，工具位于 `packages/engine-ts/core/src/tool`；V1 兼容工具及其在 `packages/miao/src/tool` 的原生 edit／patch 路径均已删除。
 
-- **edit／patch：** V2 工具经由 `packages/core/src/tool/edit-match.ts` 与 `packages/core/src/patch.ts`，在 addon 已加载（默认即加载）时调用原生 `matchEdit` 与 `deriveNewContentsV2`。`edit-fuzzy.ts` 与 `deriveTs` 是 TypeScript 参考实现，在缺少 addon 或设置了 `MIAO_NATIVE=0` 时启用。匹配与派生是纯计算：文件 IO、权限、条件写入与落盘都留在 Core。
+- **edit／patch：** V2 工具经由 `packages/engine-ts/core/src/tool/edit-match.ts` 与 `packages/engine-ts/core/src/patch.ts`，在 addon 已加载（默认即加载）时调用原生 `matchEdit` 与 `deriveNewContentsV2`。`edit-fuzzy.ts` 与 `deriveTs` 是 TypeScript 参考实现，在缺少 addon 或设置了 `MIAO_NATIVE=0` 时启用。匹配与派生是纯计算：文件 IO、权限、条件写入与落盘都留在 Core。
 - **OS 沙箱：** V2 `bash` 工具可以把每条命令放进沙箱运行。macOS 用 seatbelt，Linux 用 Landlock，Windows 暂无后端。用 `sandbox.mode: "workspace-write"` 或 `MIAO_SANDBOX=1` 开启，`MIAO_SANDBOX_DENY_NETWORK=1` 禁止网络。默认关闭，需显式开启，且默认 fail-open —— `sandbox.on_unavailable` 默认 `"warn"`，缺少后端的主机会直接裸跑命令，除非设为 `"fail"`。
 - **native addon：** 默认启用。它为沙箱 runner、编辑匹配、补丁派生与其他原生辅助提供支持。`MIAO_NATIVE=0` 全部禁用，改由 TypeScript 实现接管。
 - **进程内 Git：** addon 已加载时 `Git.status.entries` 走原生 `gitStatusAsync`（`gix`），返回每条路径的状态与增删行数；`MIAO_NATIVE=0` 或原生失败时回退到 `git status`/`git diff --numstat` 子进程路径。其余 git 操作仍走子进程。
