@@ -27,6 +27,9 @@ pub enum Builtin {
     Theme,
     Sessions,
     NewSession,
+    /// Clear the Session's provider context: the next prompt starts fresh,
+    /// the durable transcript stays for audit.
+    Clear,
     /// Ask the engine for one checkpoint at the next settled boundary, even
     /// when the automatic trigger's budget gate is under its threshold.
     Compact,
@@ -57,7 +60,7 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub const ALL: [Builtin; 31] = [
+    pub const ALL: [Builtin; 32] = [
         Builtin::Models,
         Builtin::Permissions,
         Builtin::Sandbox,
@@ -67,6 +70,7 @@ impl Builtin {
         Builtin::Theme,
         Builtin::Sessions,
         Builtin::NewSession,
+        Builtin::Clear,
         Builtin::Compact,
         Builtin::Init,
         Builtin::Rename,
@@ -103,6 +107,7 @@ impl Builtin {
             Builtin::Theme => "theme",
             Builtin::Sessions => "sessions",
             Builtin::NewSession => "new",
+            Builtin::Clear => "clear",
             Builtin::Compact => "compact",
             Builtin::Init => "init",
             Builtin::Rename => "rename",
@@ -158,6 +163,7 @@ impl Builtin {
             Builtin::Theme => "Select a theme",
             Builtin::Sessions => "Browse sessions",
             Builtin::NewSession => "New session",
+            Builtin::Clear => "Clear this session's context",
             Builtin::Compact => "Compact this Session's history now",
             Builtin::Init => "Write an AGENTS.md for this project",
             Builtin::Rename => "Rename this session",
@@ -203,6 +209,8 @@ impl Builtin {
             Builtin::Theme => Some(Action::ThemeList),
             Builtin::Sessions => Some(Action::SessionList),
             Builtin::NewSession => Some(Action::SessionNew),
+            // Clearing is asked for by name: /clear, no chord.
+            Builtin::Clear => None,
             // Compaction, the context report, the guidance file and the MCP
             // list have no chord: they are asked for by name.
             Builtin::Compact => None,

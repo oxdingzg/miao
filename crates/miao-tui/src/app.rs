@@ -1434,6 +1434,12 @@ impl App {
             AppEvent::ActionFailed(message) => {
                 self.shell.composer.notice = Some(with_remedy(&message));
             }
+            AppEvent::ContextCleared => {
+                // The durable transcript stays for audit; the pane follows
+                // what the provider will see from now on, which is nothing.
+                self.shell.clear_transcript();
+                self.notice("context cleared · the next prompt starts fresh");
+            }
             AppEvent::Notice(message) => self.notice(&message),
             AppEvent::PromptFailed {
                 text,
@@ -1831,6 +1837,16 @@ impl App {
             Builtin::NewSession => {
                 if let Some(engine) = self.engine.as_ref() {
                     engine.new_session();
+                }
+            }
+            Builtin::Clear => {
+                let Some(session_id) = self.session_id() else {
+                    self.notice("open a Session to clear it");
+                    return;
+                };
+                match self.engine.as_ref() {
+                    Some(engine) => engine.clear(&session_id),
+                    None => self.notice("Engine is not connected"),
                 }
             }
             Builtin::Rename => match self.session.as_ref() {

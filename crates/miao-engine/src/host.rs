@@ -608,6 +608,9 @@ impl Host {
                     .fork(&session_id, &target_session_id, message_seq)
                     .await
             }
+            Command::SessionClear { session_id } => {
+                runtime.store().clear_history(&session_id).await
+            }
             Command::Revert {
                 session_id,
                 checkpoint,
