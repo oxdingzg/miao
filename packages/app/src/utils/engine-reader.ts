@@ -117,4 +117,4 @@ export function createEngineReader(input: {
 
 export type EngineReader = ReturnType<typeof createEngineReader>
 
-export type { EngineSessionState, EngineSessionSummary }
+export type { EngineEvent, EngineSessionState, EngineSessionSummary }
