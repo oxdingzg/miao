@@ -65,6 +65,14 @@ jobs:
           fi
           bun turbo typecheck --concurrency=2 "${filter[@]}"
 
+      - name: Dead code
+        # A source file nothing imports is invisible in a tree with four roles
+        # (desktop client, shared vocabulary, TypeScript engine reference,
+        # tooling): typecheck still passes and the tests that would have used it
+        # are gone. `knip.json` names each workspace's real entries, and the
+        # `--include files` scope keeps the gate to that one question.
+        run: bun run lint:dead
+
   typecheck:
     name: typecheck
     needs: [changes, typecheck-tasks]

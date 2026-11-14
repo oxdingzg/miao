@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": { "entry": ["script/*.ts"], "project": ["script/**/*.ts"] },
+    "apps/desktop": { "entry": ["src/index.tsx"] },
+    "packages/*": {
+      "entry": ["src/**/*.test.ts", "src/**/*.test.tsx", "script/*.ts"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "packages/storybook": { "entry": [".storybook/**/*.{ts,tsx}"], "project": [".storybook/**/*.{ts,tsx}"] }
+  }
+}
