@@ -17,7 +17,7 @@ import { For, Show, createSignal, onCleanup, onMount } from "solid-js"
  * and renders the two event kinds a conversation is made of.
  */
 
-type Turn = { role: "user" | "assistant"; text: string }
+type Turn = { role: "user" | "assistant" | "tool"; text: string }
 
 const SUGGESTIONS = ["分析一份调查数据", "创作一篇产品文档", "做一份深度研究", "写一份周报", "审查一段代码", "策划一个方案"]
 
@@ -48,6 +48,23 @@ const turns = (events: EngineEvent[]): Turn[] => {
         .map((part) => String((part as { text?: string }).text ?? ""))
         .join("")
       if (text) out.push({ role: "assistant", text })
+    } else if (event.kind === "message.committed" && data.role === "tool") {
+      const parts = Array.isArray(data.content) ? data.content : []
+      const text = parts
+        .map((part) => {
+          const result = (part ?? {}) as { type?: string; content?: unknown }
+          if (result.type !== "tool_result") return ""
+          if (typeof result.content === "string") return result.content
+          if (Array.isArray(result.content))
+            return result.content
+              .filter((inner) => (inner as { type?: string })?.type === "text")
+              .map((inner) => String((inner as { text?: string }).text ?? ""))
+              .join("")
+          return ""
+        })
+        .filter(Boolean)
+        .join("\n")
+      if (text) out.push({ role: "tool" as Turn["role"], text })
     }
   }
   return out
@@ -69,6 +86,19 @@ const streamingText = (events: EngineEvent[]): string => {
       return String(part.text ?? part.delta ?? "")
     })
     .join("")
+}
+
+/** Runs that ended failed, after the last committed answer. */
+const failures = (events: EngineEvent[]): string[] => {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq)
+  let cut = 0
+  for (const event of sorted)
+    if (event.kind === "message.committed" && (event.data as { role?: string })?.role === "assistant")
+      cut = event.seq
+  return sorted
+    .filter((event) => event.seq > cut && event.kind === "run.finished")
+    .map((event) => String((event.data as { reason?: string })?.reason ?? ""))
+    .filter((reason) => reason !== "" && reason !== "completed")
 }
 
 /** Tool calls this run started, after the last committed answer. */
@@ -313,17 +343,26 @@ export function SessionSurface(props: { url: string; token: string }) {
             <For each={conversation()}>
               {(turn) => (
                 <Show
-                  when={turn.role === "assistant"}
+                  when={turn.role === "user"}
                   fallback={
-                    <div class="flex justify-end py-2">
-                      <div class="max-w-[80%] rounded-2xl bg-v2-background-bg-layer-01 px-4 py-2 text-13-regular whitespace-pre-wrap">
-                        {turn.text}
+                    <Show
+                      when={turn.role === "assistant"}
+                      fallback={
+                        <div class="py-1 pl-1 text-11-regular text-v2-text-text-weak">
+                          <Markdown text={turn.text} />
+                        </div>
+                      }
+                    >
+                      <div class="py-2 pr-8 text-13-regular">
+                        <Markdown text={turn.text} />
                       </div>
-                    </div>
+                    </Show>
                   }
                 >
-                  <div class="py-2 pr-8 text-13-regular">
-                    <Markdown text={turn.text} />
+                  <div class="flex justify-end py-2">
+                    <div class="max-w-[80%] rounded-2xl bg-v2-background-bg-layer-01 px-4 py-2 text-13-regular whitespace-pre-wrap">
+                      {turn.text}
+                    </div>
                   </div>
                 </Show>
               )}
@@ -344,6 +383,11 @@ export function SessionSurface(props: { url: string; token: string }) {
                 </div>
               )}
             </Show>
+            <For each={failures(events())}>
+              {(reason) => (
+                <div class="py-1 pl-1 text-11-regular text-v2-text-text-critical">运行失败：{reason}</div>
+              )}
+            </For>
             <Show when={running(events()) && !streamingText(events())}>
               <div class="py-2 text-12-regular text-v2-text-text-weak">thinking…</div>
             </Show>

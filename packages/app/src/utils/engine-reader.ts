@@ -59,6 +59,10 @@ export function createEngineReader(input: {
     async initialize(sessionID: string, title: string) {
       return transport.request("initialize", { session_id: sessionID, title, protocol: 2 })
     },
+    /** Answer one pending approval with the engine's approve method. */
+    async approve(sessionID: string, response: unknown) {
+      return transport.request("approve", { session_id: sessionID, response })
+    },
     /** Stop the Session's active run. Idle is a no-op the engine accepts. */
     async cancel(sessionID: string) {
       return transport.request("cancel", { session_id: sessionID })
