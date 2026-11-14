@@ -1,5 +1,6 @@
 mod common;
 use miao_engine::{
+    gemini::Gemini,
     openai_chat::OpenAIChat,
     openai_responses::OpenAIResponses,
     permission::{Config, Decision, Mode, Policy, Rule},
@@ -319,6 +320,126 @@ async fn changing_invalid_calls_cannot_bypass_the_two_correction_allowance() {
         assert_eq!(count, 3);
         runtime.shutdown().await;
     }
+}
+
+/// Gemini's wire carries tool arguments as parsed objects, so its malformed
+/// flavor is never truncated JSON: schema-invalid arguments settle the same
+/// corrective result the other codecs produce for unparseable ones.
+fn gemini_fixture(calls: &[(&str, &str, Value)], text: Option<&str>) -> String {
+    let mut events = Vec::new();
+    if !calls.is_empty() {
+        let parts = calls
+            .iter()
+            .map(|(id, name, args)| json!({"functionCall":{"name":name,"args":args,"id":id}}))
+            .collect::<Vec<_>>();
+        events.push(json!({"candidates":[{"content":{"role":"model","parts":parts}}]}));
+    }
+    if let Some(text) = text {
+        events.push(json!({"candidates":[{"content":{"role":"model","parts":[{"text":text}]}}]}));
+    }
+    events.push(json!({"candidates":[{"finishReason":"STOP"}]}));
+    events
+        .iter()
+        .map(|event| format!("data: {event}\r\n\r\n"))
+        .collect()
+}
+
+/// The correction flow through the Gemini codec: a valid write completes, the
+/// malformed call settles a rejection the model can correct from, and the
+/// corrected call recovers the turn without the invalid call ever dispatching.
+#[tokio::test]
+async fn gemini_wire_correction_settles_invalid_arguments_and_recovers_the_completed_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = gemini_fixture(
+        &[
+            (
+                "write",
+                "write_file",
+                json!({"path":dir.path().join("audit"),"text":"once","expected_sha256":null}),
+            ),
+            ("invalid-1", "read_file", json!({})),
+        ],
+        None,
+    );
+    let second = gemini_fixture(&[("corrected", "read_file", json!({"path":"audit"}))], None);
+    let last = gemini_fixture(&[], Some("RECOVERED"));
+    let (url, mut requests, server) =
+        common::endpoint(vec![(200, first), (200, second), (200, last)]).await;
+    let store = Store::open(dir.path().join("engine.db")).await.unwrap();
+    let runtime = Runtime::with_policy(
+        store.clone(),
+        Arc::new(Gemini::new(url, "fixture".into(), "fixture-model".into()).unwrap()),
+        Tools::new(dir.path()).await.unwrap(),
+        Policy::new(Config {
+            mode: Mode::Workspace,
+            rules: vec![Rule {
+                tool: "write_file".into(),
+                path: "**".into(),
+                decision: Decision::Allow,
+            }],
+            ..Config::default()
+        })
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    runtime
+        .admit(
+            Input {
+                agent_references: Default::default(),
+                command: None,
+                session_id: "s".into(),
+                input_id: "human".into(),
+                prompt: "write once then read".into(),
+                delivery: Delivery::Steer,
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    let events = finished(&store).await;
+    assert_eq!(
+        events
+            .iter()
+            .find(|event| event.kind == "run.finished")
+            .unwrap()
+            .data["reason"],
+        "completed"
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.kind == "tool.planned" && event.data["name"] == "write_file")
+            .count(),
+        1
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("audit")).unwrap(),
+        "once"
+    );
+    let results = store
+        .history("s")
+        .await
+        .unwrap()
+        .iter()
+        .filter_map(|message| message.content.as_array())
+        .flatten()
+        .filter(|block| block["type"] == "tool_result")
+        .map(|block| block["content"].to_string())
+        .collect::<Vec<_>>();
+    assert!(results
+        .iter()
+        .any(|result| result.contains("invalid tool input: read_file requires path")));
+    let history = store.history("s").await.unwrap();
+    assert_eq!(history.last().unwrap().content[0]["text"], "RECOVERED");
+    server.await.unwrap();
+    let mut captured = Vec::<Value>::new();
+    while let Some(request) = requests.recv().await {
+        captured.push(request);
+    }
+    assert_eq!(captured.len(), 3);
+    assert!(captured[1].to_string().contains("requires path"));
+    runtime.shutdown().await;
 }
 
 struct Ineligible {
