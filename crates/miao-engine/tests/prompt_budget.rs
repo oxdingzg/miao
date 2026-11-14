@@ -281,6 +281,8 @@ async fn a_billed_allowance_pause_prints_the_window_beside_the_tally() {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     runtime.set_agent("s", manifest(100)).await.unwrap();

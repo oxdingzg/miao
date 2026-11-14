@@ -143,10 +143,38 @@ pub struct ContextLimits {
     /// Newest user-role messages whose tool output is never elided.
     #[serde(default = "default_protect_turns")]
     pub protect_turns: usize,
+    /// Which tokens count toward the threshold once a checkpoint stands.
+    #[serde(default)]
+    pub prefix_scope: PrefixScope,
+    /// What every automatic pass must keep, in the operator's own words.
+    /// Carried into the summarizer prompt as a retention target; the durable
+    /// state block is retained regardless.
+    #[serde(default)]
+    pub retention: Option<String>,
 }
 
 fn default_protect_turns() -> usize {
     2
+}
+
+/// Which tokens a checkpoint's carried summary accounts for when the next
+/// threshold is measured.
+///
+/// A checkpoint replaces the summarized history with one `<history-summary>`
+/// message. Counting that message toward the next threshold makes a pass pay for
+/// its own output: the Session compacts, then starts the next stretch already
+/// partway to the trigger, and a verbose summary compacts again sooner than the
+/// history actually grew. `BodyAfterPrefix` discounts the carried prefix so the
+/// threshold measures growth since the checkpoint.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrefixScope {
+    /// The whole request the provider counted, carried summary included.
+    #[default]
+    Total,
+    /// Only the history appended after the carried summary.
+    #[serde(alias = "body_after_prefix")]
+    BodyAfterPrefix,
 }
 
 impl ContextLimits {
@@ -165,6 +193,8 @@ impl ContextLimits {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: default_protect_turns(),
+            prefix_scope: PrefixScope::Total,
+            retention: None,
         }
     }
 
@@ -196,6 +226,13 @@ pub struct CompactRequest<'a, P: FnMut(Value)> {
     /// What the summary must keep, in the operator's own words. Carried into
     /// the summarizer prompt; the durable state block is retained regardless.
     pub focus: Option<String>,
+    /// What each pass of this run must keep when the request names no `focus` of
+    /// its own. A configured retention target applies to automatic passes too, so
+    /// an operator who always needs the same facts kept does not repeat them at
+    /// every `/compact`.
+    pub retention: Option<&'a str>,
+    /// Which tokens the threshold compares against once a checkpoint stands.
+    pub prefix_scope: PrefixScope,
     /// A low watermark that starts a pass before the window is nearly full.
     /// Folding the oldest part early keeps every pass small and keeps the
     /// Session away from the wall instead of compacting at it. `None` leaves the
@@ -313,6 +350,8 @@ where
         boundary,
         through,
         focus,
+        retention,
+        prefix_scope,
         forced,
         fold_at,
         budget,
@@ -383,11 +422,23 @@ where
         }
     };
     let total = context.saturating_add(pending_tokens);
+    // A carried summary stands in for the history it replaced, so counting it
+    // again charges the next pass for the previous one's own output. The scoped
+    // measurement discounts it and leaves the threshold reading growth since the
+    // checkpoint; the default keeps counting the request the provider counted.
+    let carried = match prefix_scope {
+        PrefixScope::Total => 0,
+        PrefixScope::BodyAfterPrefix => store.carried_prefix_tokens(session).await?,
+    };
+    let measured = match prefix_scope {
+        PrefixScope::Total => context,
+        PrefixScope::BodyAfterPrefix => context.saturating_sub(carried),
+    };
     // Two triggers: the threshold that says the next request is about to be
     // refused, and the optional low watermark that keeps passes small instead of
     // making every pass pay for the whole history.
     let folding = fold_at.is_some_and(|fold| total >= fold);
-    if !forced && !folding && !budget.should_compact(Some(context), pending_tokens) {
+    if !forced && !folding && !budget.should_compact(Some(measured), pending_tokens) {
         // Below half the threshold nothing is near the wall, and one line per
         // settled turn would bury the case somebody is investigating; the
         // progress notice still goes out every time.
@@ -398,6 +449,8 @@ where
                 "kind": "compaction.skipped", "gate": 1,
                 "reason": "under_threshold",
                 "context_tokens": context, "pending_tokens": pending_tokens,
+                "counted_tokens": measured,
+                "carried_prefix_tokens": carried,
                 "threshold": budget.threshold(),
             }),
             total.saturating_mul(2) >= budget.threshold(),
@@ -511,7 +564,7 @@ where
             let body = summarizer_body(&messages[*start..*end], SUMMARIZER_MESSAGE_CHARS);
             // A retention target is an operator instruction, not a replacement
             // for the durable block: the checkpoint carries both.
-            let instruction = match &focus {
+            let instruction = match focus.as_deref().or(retention) {
                 Some(focus) => format!(
                     "Summarize this portion of the conversation:\n{body}\n\nRetention target: {focus}"
                 ),
@@ -1472,6 +1525,31 @@ impl Store {
         .await
     }
 
+    /// The tokens the newest checkpoint's carried summary occupies in the next
+    /// request, so a scoped threshold can discount it. Zero means no checkpoint
+    /// stands, or the operator cleared it with an empty cut.
+    pub async fn carried_prefix_tokens(&self, session: &str) -> Result<u64, Error> {
+        let session = session.to_owned();
+        self.call(move |conn| {
+            let summary: Option<String> = conn
+                .query_row(
+                    "SELECT summary FROM engine_compaction WHERE session_id=?1 ORDER BY created_seq DESC LIMIT 1",
+                    [&session],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(match summary {
+                Some(summary) if !summary.is_empty() => {
+                    estimate_tokens(
+                        crate::history::history_summary_text(&summary).chars().count(),
+                    )
+                }
+                _ => 0,
+            })
+        })
+        .await
+    }
+
     /// Normalized context anchor from the newest `usage` event, or `None`
     /// before the first provider turn.
     pub async fn last_context_tokens(&self, session: &str) -> Result<Option<u64>, Error> {
@@ -1499,6 +1577,31 @@ impl Store {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The two spellings a host may use for the scoped measurement, and the
+    /// default that keeps every existing configuration counting the whole
+    /// request.
+    #[test]
+    fn a_scoped_prefix_and_a_retention_target_survive_the_wire() {
+        let scoped = ContextLimits::from_wire(
+            r#"{"window":1000,"ratio":0.5,"headroom":10,"perPass":0,"prefixScope":"bodyAfterPrefix","retention":"keep failing test names"}"#,
+        )
+        .unwrap();
+        assert_eq!(scoped.prefix_scope, PrefixScope::BodyAfterPrefix);
+        assert_eq!(scoped.retention.as_deref(), Some("keep failing test names"));
+
+        let snake = ContextLimits::from_wire(
+            r#"{"window":1000,"ratio":0.5,"headroom":10,"perPass":0,"prefixScope":"body_after_prefix"}"#,
+        )
+        .unwrap();
+        assert_eq!(snake.prefix_scope, PrefixScope::BodyAfterPrefix);
+
+        let bare =
+            ContextLimits::from_wire(r#"{"window":1000,"ratio":0.5,"headroom":10,"perPass":0}"#)
+                .unwrap();
+        assert_eq!(bare.prefix_scope, PrefixScope::Total);
+        assert_eq!(bare.retention, None);
+    }
 
     /// A summarizer call the interrupt aborted reports a transport error. Read
     /// as a summarizer failure it would feed gate ⑤, so an operator stopping a

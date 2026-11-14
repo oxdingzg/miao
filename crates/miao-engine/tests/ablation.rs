@@ -347,6 +347,8 @@ async fn pruned_request(optimizations: Optimizations) -> String {
             prune_chars: Some(2000),
             prune_total_chars: None,
             protect_turns: 0,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     runtime.set_optimizations(optimizations);
@@ -459,6 +461,8 @@ async fn compaction(optimizations: Optimizations) -> (usize, Vec<String>) {
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     runtime.set_optimizations(optimizations);

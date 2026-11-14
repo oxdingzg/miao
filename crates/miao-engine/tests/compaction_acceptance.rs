@@ -152,6 +152,8 @@ async fn a_crossed_limit_compacts_in_one_call_and_the_next_turn_starts_from_it()
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     let mut progress = runtime.progress();
@@ -301,6 +303,8 @@ async fn the_first_request_after_a_checkpoint_carries_the_restore_budget_note() 
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
 
@@ -427,6 +431,8 @@ async fn tool_continuations_compact_only_closed_answers_before_promoting_steers(
             prune_chars: None,
             prune_total_chars: None,
             protect_turns: 2,
+            prefix_scope: Default::default(),
+            retention: None,
         }))
         .await;
     let mut progress = runtime.progress();
