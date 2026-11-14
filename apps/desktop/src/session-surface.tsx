@@ -21,6 +21,13 @@ type Turn = { role: "user" | "assistant"; text: string }
 
 const SUGGESTIONS = ["分析一份调查数据", "创作一篇产品文档", "做一份深度研究", "写一份周报", "审查一段代码", "策划一个方案"]
 
+const isToday = (updatedAt: number) => {
+  if (updatedAt === 0) return true
+  const then = new Date(updatedAt)
+  const now = new Date()
+  return then.toDateString() === now.toDateString()
+}
+
 const dayLabel = (updatedAt: number) =>
   updatedAt === 0
     ? "刚刚"
@@ -203,21 +210,28 @@ export function SessionSurface(props: { url: string; token: string }) {
             + 新的任务
           </button>
         </div>
-        <div class="px-4 pb-1 pt-4 text-11-regular text-v2-text-text-weak">
-          任务 ({sessions().length})
+        <div class="px-4 pb-1 pt-4 text-11-medium text-v2-text-text-weak">
+          任务 · {sessions().length}
         </div>
-        <div class="flex-1 overflow-y-auto">
-          <For each={sessions()}>
-            {(session) => (
-              <button
-                type="button"
-                class="flex w-full items-center justify-between gap-2 px-4 py-2 text-left hover:bg-v2-background-bg-layer-01"
-                classList={{ "bg-v2-background-bg-layer-01": session.id === selected() }}
-                onClick={() => void open(session)}
-              >
-                <span class="min-w-0 flex-1 truncate text-12-regular">{session.title}</span>
-                <span class="shrink-0 text-11-regular text-v2-text-text-weak">{dayLabel(session.updatedAt)}</span>
-              </button>
+        <div class="flex-1 overflow-y-auto pb-2">
+          <For each={[{ label: "今天", rows: sessions().filter((row) => isToday(row.updatedAt)) }, { label: "更早", rows: sessions().filter((row) => !isToday(row.updatedAt)) }]}>
+            {(group) => (
+              <Show when={group.rows.length > 0}>
+                <div class="px-4 pb-1 pt-3 text-10-medium tracking-wide text-v2-text-text-weak">{group.label}</div>
+                <For each={group.rows}>
+                  {(session) => (
+                    <button
+                      type="button"
+                      class="mx-1 flex w-[calc(100%-0.5rem)] items-center justify-between gap-2 rounded px-3 py-1.5 text-left hover:bg-v2-background-bg-layer-01"
+                      classList={{ "bg-v2-background-bg-layer-01": session.id === selected() }}
+                      onClick={() => void open(session)}
+                    >
+                      <span class="min-w-0 flex-1 truncate text-12-regular">{session.title}</span>
+                      <span class="shrink-0 text-10-regular text-v2-text-text-weak">{dayLabel(session.updatedAt)}</span>
+                    </button>
+                  )}
+                </For>
+              </Show>
             )}
           </For>
           <Show when={sessions().length === 0}>
@@ -233,8 +247,9 @@ export function SessionSurface(props: { url: string; token: string }) {
           when={!welcome()}
           fallback={
             <div class="flex flex-1 flex-col items-center justify-center px-8 pb-10">
-              <h1 class="text-28-medium">miao，我帮你</h1>
-              <div class="mt-6 flex w-full max-w-2xl flex-col rounded-2xl border border-v2-border-border-weak bg-v2-background-bg-layer-01 shadow-sm">
+              <h1 class="text-32-medium">miao，我帮你</h1>
+              <p class="mt-2 text-13-regular text-v2-text-text-weak">一句话交代任务，剩下的交给我</p>
+              <div class="mt-8 flex w-full max-w-3xl flex-col rounded-2xl border border-v2-border-border-weak bg-v2-background-bg-layer-01 shadow-sm transition-shadow focus-within:border-v2-text-text-weak focus-within:shadow-md">
                 <textarea
                   ref={composer}
                   class="max-h-48 min-h-24 w-full resize-none bg-transparent px-4 pt-3 text-13-regular outline-none"
@@ -266,7 +281,7 @@ export function SessionSurface(props: { url: string; token: string }) {
                   {(suggestion) => (
                     <button
                       type="button"
-                      class="rounded-full border border-v2-border-border-weak px-3 py-1.5 text-12-regular hover:bg-v2-background-bg-layer-01"
+                      class="rounded-full border border-v2-border-border-weak px-3.5 py-1.5 text-12-regular transition-colors hover:border-v2-text-text-weak hover:bg-v2-background-bg-layer-01"
                       onClick={() => void submit(suggestion)}
                     >
                       {suggestion}
