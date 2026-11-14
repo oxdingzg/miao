@@ -3104,7 +3104,7 @@ fn hourly_lines(
         let hours_ago = now_ms.saturating_sub(start_ms) / 3_600_000;
         money.push(Span::styled(
             format!(
-                " · peak {}  {}",
+                " · peak {} · {}",
                 match hours_ago {
                     0 => "now".to_string(),
                     hours => format!("-{hours}h"),
@@ -3287,12 +3287,16 @@ impl Pane for SidebarPane {
                         (usage.context_window, usage.context_tokens)
                     {
                         let percent = tokens.saturating_mul(100) / window.max(1);
+                        // `ctx` asked the reader to know the word. Say what the
+                        // figure is — the conversation the model can still see
+                        // — and let the hover carry the rest, because the row
+                        // itself has only the column's 42 cells.
                         hoverable_line(
                             &mut self.hover_rows,
                             inner,
                             &mut lines,
                             format!(
-                                "ctx {} / {} · {}%",
+                                "context {} of {} · {}%",
                                 crate::status::compact_tokens(tokens),
                                 crate::status::compact_tokens(window),
                                 percent
@@ -3304,6 +3308,14 @@ impl Pane for SidebarPane {
                             }),
                             text_width,
                         );
+                        if let Some(row) = self.hover_rows.last_mut() {
+                            row.text = format!(
+                                "context {} of {} · {}% — the conversation the model can still read; compaction starts at 80%",
+                                crate::status::compact_tokens(tokens),
+                                crate::status::compact_tokens(window),
+                                percent
+                            );
+                        }
                     }
                     hoverable_line(
                         &mut self.hover_rows,
@@ -3369,11 +3381,19 @@ impl Pane for SidebarPane {
                                 plural(usage.failed_attempts)
                             ));
                         }
-                        parts.push(format!(
-                            "{} attempt{}",
-                            usage.attempts,
-                            plural(usage.attempts)
-                        ));
+                        // The engine reports the attempt count beside the two
+                        // counters above, and it can be zero while a replay or
+                        // a failure is recorded: the row then read
+                        // `retried 7 · 0 attempts`, a zero describing nothing
+                        // (see the comment on the row). State it only when it
+                        // carries a count of its own.
+                        if usage.attempts > 0 {
+                            parts.push(format!(
+                                "{} attempt{}",
+                                usage.attempts,
+                                plural(usage.attempts)
+                            ));
+                        }
                         hoverable_line(
                             &mut self.hover_rows,
                             inner,
@@ -7950,7 +7970,7 @@ mod tests {
                 changes: None,
                 mode: None,
                 theme: home_theme(),
-                session: Some(home_row("ses_c", "context", None)),
+                session: Some(home_row("ses_c", "occupancy", None)),
                 usage: Some(usage),
                 usage_hourly: None,
                 goal: None,
@@ -7976,15 +7996,15 @@ mod tests {
         let painted = rows(&mut terminal);
         let line = painted
             .iter()
-            .find(|row| row.contains("ctx "))
+            .find(|row| row.contains("context "))
             .expect("the occupancy line leads the Context section");
         assert!(
-            line.contains("ctx 630.0k / 1.0m · 60%"),
+            line.contains("context 630.0k of 1.0m · 60%"),
             "window and occupancy at the last turn: {line:?}"
         );
         let row = painted
             .iter()
-            .position(|row| row.contains("ctx "))
+            .position(|row| row.contains("context "))
             .expect("row")
             * 60;
         let warned = terminal.backend().buffer().content[row..row + 60]
@@ -8002,12 +8022,12 @@ mod tests {
         let painted = rows(&mut terminal);
         let line = painted
             .iter()
-            .find(|row| row.contains("ctx "))
+            .find(|row| row.contains("context "))
             .expect("line");
-        assert!(line.contains("ctx 900.0k / 1.0m · 90%"), "{line:?}");
+        assert!(line.contains("context 900.0k of 1.0m · 90%"), "{line:?}");
         let row = painted
             .iter()
-            .position(|row| row.contains("ctx "))
+            .position(|row| row.contains("context "))
             .expect("row")
             * 60;
         let warned = terminal.backend().buffer().content[row..row + 60]
@@ -8023,9 +8043,57 @@ mod tests {
             .draw(|frame| pane.render(frame, frame.area()))
             .expect("draw");
         assert!(
-            !rows(&mut terminal).iter().any(|row| row.contains("ctx ")),
+            !rows(&mut terminal)
+                .iter()
+                .any(|row| row.contains("context ")),
             "no reported window is not an empty one"
         );
+    }
+
+    /// The engine reports `attempts` beside `replayedTurns` and
+    /// `failedAttempts`, and it can be zero while either fires: the row then
+    /// read `retried 7 · 0 attempts`, a zero that describes nothing. Only a
+    /// count of its own earns the part.
+    #[test]
+    fn a_zero_attempt_count_is_not_painted_beside_a_replay() {
+        fn rows(terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(60)
+                .map(|cells| cells.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect()
+        }
+        let usage = crate::status::UsageSummary::from_value(&serde_json::json!({
+            "turns": 7,
+            "retries": {"attempts": 0, "failedAttempts": 0, "replayedTurns": 7},
+        }));
+        let mut pane = SidebarPane {
+            hover_rows: Vec::new(),
+            changes: None,
+            mode: None,
+            theme: home_theme(),
+            session: Some(home_row("ses_z", "zero", None)),
+            usage: Some(usage),
+            usage_hourly: None,
+            goal: None,
+            plan: None,
+            todos: Vec::new(),
+            chord: None,
+        };
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 40)).expect("terminal");
+        terminal
+            .draw(|frame| pane.render(frame, frame.area()))
+            .expect("draw");
+        let painted = rows(&mut terminal);
+        let rework = painted
+            .iter()
+            .find(|row| row.contains("retried"))
+            .expect("the replay keeps its row");
+        assert!(rework.contains("retried 7"), "{rework:?}");
+        assert!(!rework.contains("0 attempt"), "{rework:?}");
     }
 
     /// #2737: the billed-usage column is two scopes, and the rows inside the
