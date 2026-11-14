@@ -160,7 +160,7 @@ image.writeToFileAtomically({:?}, true)"#,
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-    let mut bytes = std::fs::read(&file).ok();
+    let bytes = std::fs::read(&file).ok();
     if !status.is_ok_and(|status| status.success()) {
         let _ = std::fs::remove_file(&file);
         return None;
