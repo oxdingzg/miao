@@ -3287,12 +3287,16 @@ impl Pane for SidebarPane {
                         (usage.context_window, usage.context_tokens)
                     {
                         let percent = tokens.saturating_mul(100) / window.max(1);
+                        // `ctx` asked the reader to know the word. Say what the
+                        // figure is — the conversation the model can still see
+                        // — and let the hover carry the rest, because the row
+                        // itself has only the column's 42 cells.
                         hoverable_line(
                             &mut self.hover_rows,
                             inner,
                             &mut lines,
                             format!(
-                                "ctx {} / {} · {}%",
+                                "context {} of {} · {}%",
                                 crate::status::compact_tokens(tokens),
                                 crate::status::compact_tokens(window),
                                 percent
@@ -3304,6 +3308,14 @@ impl Pane for SidebarPane {
                             }),
                             text_width,
                         );
+                        if let Some(row) = self.hover_rows.last_mut() {
+                            row.text = format!(
+                                "context {} of {} · {}% — the conversation the model can still read; compaction starts at 80%",
+                                crate::status::compact_tokens(tokens),
+                                crate::status::compact_tokens(window),
+                                percent
+                            );
+                        }
                     }
                     hoverable_line(
                         &mut self.hover_rows,
@@ -7958,7 +7970,7 @@ mod tests {
                 changes: None,
                 mode: None,
                 theme: home_theme(),
-                session: Some(home_row("ses_c", "context", None)),
+                session: Some(home_row("ses_c", "occupancy", None)),
                 usage: Some(usage),
                 usage_hourly: None,
                 goal: None,
@@ -7984,15 +7996,15 @@ mod tests {
         let painted = rows(&mut terminal);
         let line = painted
             .iter()
-            .find(|row| row.contains("ctx "))
+            .find(|row| row.contains("context "))
             .expect("the occupancy line leads the Context section");
         assert!(
-            line.contains("ctx 630.0k / 1.0m · 60%"),
+            line.contains("context 630.0k of 1.0m · 60%"),
             "window and occupancy at the last turn: {line:?}"
         );
         let row = painted
             .iter()
-            .position(|row| row.contains("ctx "))
+            .position(|row| row.contains("context "))
             .expect("row")
             * 60;
         let warned = terminal.backend().buffer().content[row..row + 60]
@@ -8010,12 +8022,12 @@ mod tests {
         let painted = rows(&mut terminal);
         let line = painted
             .iter()
-            .find(|row| row.contains("ctx "))
+            .find(|row| row.contains("context "))
             .expect("line");
-        assert!(line.contains("ctx 900.0k / 1.0m · 90%"), "{line:?}");
+        assert!(line.contains("context 900.0k of 1.0m · 90%"), "{line:?}");
         let row = painted
             .iter()
-            .position(|row| row.contains("ctx "))
+            .position(|row| row.contains("context "))
             .expect("row")
             * 60;
         let warned = terminal.backend().buffer().content[row..row + 60]
@@ -8031,7 +8043,9 @@ mod tests {
             .draw(|frame| pane.render(frame, frame.area()))
             .expect("draw");
         assert!(
-            !rows(&mut terminal).iter().any(|row| row.contains("ctx ")),
+            !rows(&mut terminal)
+                .iter()
+                .any(|row| row.contains("context ")),
             "no reported window is not an empty one"
         );
     }
