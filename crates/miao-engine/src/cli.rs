@@ -531,70 +531,7 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
         std::process::exit(2);
     }
     let acp = mode == Some("acp");
-    let mut options = HashMap::new();
-    let (flags, remainder) = args[1..].as_chunks::<2>();
-    for flag in flags {
-        if ![
-            "--db",
-            "--workspace",
-            "--model",
-            "--endpoint",
-            "--fallback-model",
-            "--fallback-endpoint",
-            "--provider",
-            "--policy",
-            "--agent-config",
-            "--agent-name",
-            "--config-dir",
-            "--config-sources",
-            "--mode",
-            "--auto-approve",
-            "--edit-recovery",
-            "--short-anchors",
-            "--batch-edit",
-            "--verify-command",
-            "--prompt-cache",
-            "--responses-cache-contract",
-            "--responses-websocket-contract",
-            "--tool-disclosure",
-            "--tool-replay",
-            "--mcp-config",
-            "--lsp-config",
-            "--formatter-config",
-            "--lsp-diagnostics",
-            "--codegraph",
-            "--context-limits",
-            "--optimizations",
-            "--hooks-config",
-            "--context-config",
-            "--workspace-instructions",
-            "--skills-config",
-            "--references-config",
-            "--model-routes-config",
-            "--product-tools",
-            "--worker-config",
-            "--credential-db",
-            "--credential-id",
-            "--credential-integration",
-            "--aws-region",
-            "--aws-profile",
-            "--credential-socket",
-            "--auth-file",
-            "--http",
-            "--http-token",
-            "--http-idle-ms",
-            "--permission-root-db",
-            "--permission-project",
-        ]
-        .contains(&flag[0].as_str())
-            || options.insert(flag[0].clone(), flag[1].clone()).is_some()
-        {
-            return Err("unknown or duplicate option".into());
-        }
-    }
-    if !remainder.is_empty() {
-        return Err("missing option value".into());
-    }
+    let mut options = parse_options(&args[1..])?;
     // The native single-binary start has no host to materialize a route
     // manifest, so the engine derives one from the operator's config and the
     // product credential store — the same plan the product's shim used to
@@ -1422,6 +1359,94 @@ pub async fn configure(args: &[String]) -> Result<Configured, Box<dyn Error + Se
     })
 }
 
+/// The serve/acp flags, scanned per token instead of in flag/value pairs so a
+/// valueless flag never consumes the next flag's own token (#2982: a start
+/// with `--auto-approve --model-routes-config ROUTES` failed with `missing
+/// option value` because the pair loop read the flag as the relaxation's
+/// value and orphaned the path).
+fn parse_options(
+    tokens: &[String],
+) -> Result<HashMap<String, String>, Box<dyn Error + Send + Sync>> {
+    const KNOWN: &[&str] = &[
+        "--db",
+        "--workspace",
+        "--model",
+        "--endpoint",
+        "--fallback-model",
+        "--fallback-endpoint",
+        "--provider",
+        "--policy",
+        "--agent-config",
+        "--agent-name",
+        "--config-dir",
+        "--config-sources",
+        "--mode",
+        "--auto-approve",
+        "--edit-recovery",
+        "--short-anchors",
+        "--batch-edit",
+        "--verify-command",
+        "--prompt-cache",
+        "--responses-cache-contract",
+        "--responses-websocket-contract",
+        "--tool-disclosure",
+        "--tool-replay",
+        "--mcp-config",
+        "--lsp-config",
+        "--formatter-config",
+        "--lsp-diagnostics",
+        "--codegraph",
+        "--context-limits",
+        "--optimizations",
+        "--hooks-config",
+        "--context-config",
+        "--workspace-instructions",
+        "--skills-config",
+        "--references-config",
+        "--model-routes-config",
+        "--product-tools",
+        "--worker-config",
+        "--credential-db",
+        "--credential-id",
+        "--credential-integration",
+        "--aws-region",
+        "--aws-profile",
+        "--credential-socket",
+        "--auth-file",
+        "--http",
+        "--http-token",
+        "--http-idle-ms",
+        "--permission-root-db",
+        "--permission-project",
+    ];
+    // `--auto-approve` is a spelling choice, not a level: bare, or with an
+    // explicit true/false written beside it.
+    const WITHOUT_VALUE: &[&str] = &["--auto-approve"];
+    let mut options = HashMap::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        let flag = tokens[index].as_str();
+        if !KNOWN.contains(&flag) {
+            return Err("unknown or duplicate option".into());
+        }
+        index += 1;
+        let standalone = WITHOUT_VALUE.contains(&flag);
+        let value = match tokens.get(index) {
+            Some(next) if standalone && next.starts_with("--") => String::new(),
+            Some(next) => {
+                index += 1;
+                next.clone()
+            }
+            None if standalone => String::new(),
+            None => return Err("missing option value".into()),
+        };
+        if options.insert(flag.to_owned(), value).is_some() {
+            return Err("unknown or duplicate option".into());
+        }
+    }
+    Ok(options)
+}
+
 async fn canonical_option(
     options: &HashMap<String, String>,
     name: &str,
@@ -1536,5 +1561,37 @@ mod tests {
         assert_eq!(limits.window, 4_000);
         let error = context_limits_from(Some("{"), None).unwrap_err();
         assert!(error.to_string().contains("invalid --context-limits"));
+    }
+
+    // A valueless flag followed by a valued one must not pair the next flag
+    // into the no-value slot and orphan its real value (#2982): every token
+    // here is valid, so the scan has to accept it.
+    #[test]
+    fn valueless_flag_never_consumes_the_next_flag() {
+        let args = [
+            "--auto-approve",
+            "--model-routes-config",
+            "/tmp/routes.json",
+            "--db",
+            "DB",
+        ]
+        .iter()
+        .map(|flag| flag.to_string())
+        .collect::<Vec<_>>();
+        let options = parse_options(&args).unwrap();
+        assert_eq!(options.get("--auto-approve").map(String::as_str), Some(""));
+        assert_eq!(
+            options.get("--model-routes-config").map(String::as_str),
+            Some("/tmp/routes.json")
+        );
+        assert_eq!(options.get("--db").map(String::as_str), Some("DB"));
+        // The spelled-out form keeps its value, including `off`.
+        let options = parse_options(&["--auto-approve".to_string(), "off".to_string()]).unwrap();
+        assert_eq!(
+            options.get("--auto-approve").map(String::as_str),
+            Some("off")
+        );
+        // A valued flag still requires its value.
+        assert!(parse_options(&["--db".to_string()]).is_err());
     }
 }
