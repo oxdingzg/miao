@@ -607,11 +607,7 @@ async fn validate_policy_boundary(
     tools: &Tools,
     provider: &dyn Provider,
 ) -> Result<(), Error> {
-    if policy.process_enabled()
-        && store
-            .path()
-            .starts_with(std::path::Path::new(tools.location()))
-    {
+    if policy.process_enabled() && within_workspace(store.path(), tools.location()) {
         return Err(Error::Invalid(
             "process-enabled runtime requires its database outside the workspace".into(),
         ));
@@ -623,13 +619,31 @@ async fn validate_policy_boundary(
     }
     for path in provider.protected_resources() {
         let path = tokio::fs::canonicalize(path).await?;
-        if policy.process_enabled() && path.starts_with(std::path::Path::new(tools.location())) {
+        if policy.process_enabled() && within_workspace(&path, tools.location()) {
             return Err(Error::Invalid(
                 "process credential resources must be outside workspace".into(),
             ));
         }
     }
     Ok(())
+}
+
+/// Whether `path` sits inside the workspace root.
+///
+/// `Path::starts_with` compares components, and on Windows the two sides are
+/// routinely spelled differently: canonicalization answers `\\?\C:\…` while the
+/// workspace was recorded as `C:\…`, so a direct comparison says "outside" for a
+/// database that is plainly inside the workspace. That let a reload enable
+/// process authority inside the workspace on Windows (it is refused on Unix).
+/// Comparing the de-prefixed paths restores one answer on both platforms.
+fn within_workspace(path: &std::path::Path, root: &str) -> bool {
+    fn plain(path: &std::path::Path) -> std::borrow::Cow<'_, std::path::Path> {
+        match path.to_string_lossy().strip_prefix(r"\\?\") {
+            Some(rest) => std::borrow::Cow::Owned(std::path::Path::new(rest).to_path_buf()),
+            None => std::borrow::Cow::Borrowed(path),
+        }
+    }
+    plain(path).starts_with(plain(std::path::Path::new(root)))
 }
 
 impl Runtime {
