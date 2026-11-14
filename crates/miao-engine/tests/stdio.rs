@@ -793,7 +793,7 @@ fn workspace_git_state_is_a_wire_command_that_answers_absent_repositories() {
     // The workspace is a plain temp directory, so the answer is "no repository"
     // with the root it looked at, not an error. The engine stores the location
     // canonicalized, which matters on hosts where the temp dir is a symlink.
-    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let root = miao_engine::placement::canonical(dir.path());
     assert_eq!(
         result(2),
         json!({"repository": false, "root": root.to_str().unwrap()})

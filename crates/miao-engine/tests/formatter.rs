@@ -141,7 +141,7 @@ async fn drive(tools: Tools, name: &str, input: Value) -> Value {
 #[tokio::test]
 async fn formatters_run_after_write_edit_and_patch_and_report_final_fingerprint() {
     let dir = tempfile::tempdir().unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let root = miao_engine::placement::canonical(dir.path());
     let tools = Tools::new(&root)
         .await
         .unwrap()
@@ -203,7 +203,7 @@ async fn formatters_run_after_write_edit_and_patch_and_report_final_fingerprint(
 #[tokio::test]
 async fn formatter_timeout_preserves_committed_mutation_and_final_hash() {
     let dir = tempfile::tempdir().unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let root = miao_engine::placement::canonical(dir.path());
     let mut config = config();
     config.argv = vec!["sh".into(), "-c".into(), "sleep 10".into()];
     config.timeout_ms = 100;

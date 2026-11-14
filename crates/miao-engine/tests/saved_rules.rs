@@ -80,9 +80,7 @@ async fn a_revoked_snapshot_asks_again_on_the_same_runtime_and_cannot_clear_anot
     let rules = json!([{"action":"read_file","resource":"*","effect":"allow"}]);
     let request:Request=serde_json::from_value(json!({"id":1,"method":"permission_saved_snapshot","params":{"workspace":workspace.join("."),"rules":rules}})).unwrap();
     host.dispatch(request.command).await.unwrap();
-    let canonical = workspace
-        .canonicalize()
-        .unwrap()
+    let canonical = miao_engine::placement::canonical(&workspace)
         .to_str()
         .unwrap()
         .to_owned();

@@ -410,7 +410,7 @@ async fn host_instruction_files_require_an_exact_reference_and_refresh_context_e
     let sibling = host.path().join("private.txt");
     std::fs::write(&instructions, "HOST_RULE_ONE").unwrap();
     std::fs::write(&sibling, "not authorized").unwrap();
-    let instructions = instructions.canonicalize().unwrap();
+    let instructions = miao_engine::placement::canonical(&instructions);
     let source = Source {
         label: "global-instructions".into(),
         path: instructions.to_string_lossy().into_owned(),

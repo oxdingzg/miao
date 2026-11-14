@@ -93,9 +93,7 @@ async fn pending(store: &Store, session: &str) -> Vec<Value> {
 /// on macOS (`/var` → `/private/var`) and on Windows (8.3 short names), and the
 /// mismatch is a placement conflict rather than a missing directory.
 async fn root(dir: &tempfile::TempDir) -> String {
-    tokio::fs::canonicalize(dir.path())
-        .await
-        .unwrap()
+    miao_engine::placement::canonical(dir.path())
         .to_string_lossy()
         .to_string()
 }

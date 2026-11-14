@@ -69,10 +69,7 @@ async fn independent_owners_replay_only_the_bound_project_and_directory_without_
     assert_eq!(
         last.changes[0].scope,
         Scope::Directory {
-            directory: directory
-                .path()
-                .canonicalize()
-                .unwrap()
+            directory: miao_engine::placement::canonical(directory.path())
                 .to_str()
                 .unwrap()
                 .into(),
