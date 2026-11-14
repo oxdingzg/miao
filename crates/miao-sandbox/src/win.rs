@@ -246,7 +246,9 @@ fn report_teardown_failure(message: &str) {
 /// themselves, and window objects are the caller's station or desktop.
 fn target_label(target: &AclTarget) -> String {
     match target {
-        AclTarget::Path(path) | AclTarget::Discovery(path) => path.display().to_string(),
+        AclTarget::Path(path) | AclTarget::Discovery(path) => String::from_utf16_lossy(path)
+            .trim_end_matches('\0')
+            .to_string(),
         AclTarget::Window(_) => "window station/desktop".to_string(),
     }
 }
